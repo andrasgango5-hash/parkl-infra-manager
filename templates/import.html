@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}Excel import - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Excel import</h1>
+    <p class="text-secondary mb-0">Parkl készletkezelő Excel beolvasása előnézettel és megerősített importtal.</p>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-xl-4">
+    <form method="post" enctype="multipart/form-data" class="form-panel">
+      <h2>Fájl feltöltése</h2>
+      <div class="mb-3">
+        <label class="form-label" for="excel_file">Excel fájl (.xlsx)</label>
+        <input class="form-control" id="excel_file" name="excel_file" type="file" accept=".xlsx" required>
+      </div>
+      <button class="btn btn-success" type="submit" name="action" value="dry_run">Előnézet készítése</button>
+    </form>
+
+    {% if pending_import and preview %}
+      <form method="post" class="form-panel mt-3">
+        <h2>Import megerősítése</h2>
+        <p class="text-secondary small mb-3">{{ pending_import.filename }}</p>
+        <div class="form-check mb-3">
+          <input class="form-check-input" id="execute_import" name="execute_import" type="checkbox">
+          <label class="form-check-label" for="execute_import">Importálás végrehajtása</label>
+        </div>
+        <button class="btn btn-success" type="submit" name="action" value="confirm">Adatbázisba importálás</button>
+      </form>
+    {% endif %}
+  </div>
+
+  <div class="col-xl-8">
+    {% if preview %}
+      <section class="data-section mb-4">
+        <div class="section-title"><h2>Dry-run előnézet</h2></div>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle">
+            <thead>
+              <tr>
+                <th>Munkalap</th>
+                <th>Típus</th>
+                <th>Importálható sor</th>
+                <th>Kihagyott sor</th>
+                <th>Figyelmeztetések</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for sheet in preview.sheets %}
+                <tr>
+                  <td class="fw-semibold">{{ sheet.sheet_name }}</td>
+                  <td>{{ sheet.type }}</td>
+                  <td>{{ sheet.parsed_count }}</td>
+                  <td>{{ sheet.skipped_count }}</td>
+                  <td>
+                    {% if sheet.warnings %}
+                      {% for warning in sheet.warnings %}
+                        <div class="text-warning">{{ warning }}</div>
+                      {% endfor %}
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="data-section mb-4">
+        <div class="section-title"><h2>Első 10 feldolgozott sor</h2></div>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle">
+            <thead>
+              <tr>
+                <th>Típus</th>
+                <th>Munkalap</th>
+                <th>Sor</th>
+                <th>Azonosító</th>
+                <th>Név / megnevezés</th>
+                <th>Partner</th>
+                <th>Érték</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in preview.preview_rows %}
+                <tr>
+                  <td>{{ row.tipus }}</td>
+                  <td>{{ row.munkalap }}</td>
+                  <td>{{ row.sor }}</td>
+                  <td class="fw-semibold">{{ row.azonosito or "-" }}</td>
+                  <td>{{ row.nev or "-" }}</td>
+                  <td>{{ row.partner or "-" }}</td>
+                  <td>{{ format_number(row.ertek) }}</td>
+                </tr>
+              {% else %}
+                <tr><td colspan="7" class="text-secondary">Nincs feldolgozható sor az előnézetben.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {% if preview.warnings %}
+        <section class="data-section mb-4">
+          <div class="section-title"><h2>Általános figyelmeztetések</h2></div>
+          <div class="p-3">
+            {% for warning in preview.warnings %}
+              <div class="text-warning">{{ warning }}</div>
+            {% endfor %}
+          </div>
+        </section>
+      {% endif %}
+    {% endif %}
+
+    {% if batch %}
+      <section class="data-section mb-4">
+        <div class="section-title"><h2>Legutóbbi import eredménye</h2></div>
+        <div class="p-3">
+          <div><strong>Fájl:</strong> {{ batch.filename }}</div>
+          <div><strong>Létrehozva:</strong> {{ batch.created_count }}</div>
+          <div><strong>Kihagyva:</strong> {{ batch.skipped_count }}</div>
+          <div><strong>Frissítve:</strong> {{ batch.updated_count }}</div>
+          <div><strong>Figyelmeztetés:</strong> {{ batch.warning_count }}</div>
+        </div>
+      </section>
+    {% endif %}
+
+    <section class="data-section">
+      <div class="section-title"><h2>Korábbi importok</h2></div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead>
+            <tr>
+              <th>Időpont</th>
+              <th>Fájl</th>
+              <th>Státusz</th>
+              <th>Létrehozva</th>
+              <th>Kihagyva</th>
+              <th>Figyelmeztetés</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in recent_batches %}
+              <tr>
+                <td>{{ item.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+                <td class="fw-semibold"><a href="{{ url_for('import_batch_detail', batch_id=item.id) }}">{{ item.filename }}</a></td>
+                <td>{{ import_status_label(item.status) }}</td>
+                <td>{{ item.created_count }}</td>
+                <td>{{ item.skipped_count }}</td>
+                <td>{{ item.warning_count }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="6" class="text-secondary">Még nincs importálási előzmény.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

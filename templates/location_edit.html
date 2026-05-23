@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Készlethely szerkesztése{% endblock %}
+
+{% block content %}
+<div class="page-header"><h1>Készlethely szerkesztése</h1></div>
+<form method="post" class="form-panel">
+  <div class="row g-3">
+    <div class="col-md-6"><label class="form-label" for="name">Név</label><input class="form-control" id="name" name="name" value="{{ location.name }}" required></div>
+    <div class="col-md-6">
+      <label class="form-label" for="location_type">Típus</label>
+      <select class="form-select" id="location_type" name="location_type">
+        {% for type, label in location_types.items() %}
+          <option value="{{ type }}" {% if location.location_type == type %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12"><label class="form-label" for="address">Cím</label><input class="form-control" id="address" name="address" value="{{ location.address }}"></div>
+    <div class="col-12"><label class="form-label" for="notes">Megjegyzés</label><textarea class="form-control" id="notes" name="notes" rows="3">{{ location.notes }}</textarea></div>
+  </div>
+  <div class="mt-3 d-flex gap-2">
+    <button class="btn btn-success" type="submit">Mentés</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('location_detail', location_id=location.id) }}">Mégse</a>
+  </div>
+</form>
+{% endblock %}

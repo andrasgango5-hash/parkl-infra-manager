@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}Import részletek{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Import részletek</h1>
+    <p class="text-secondary mb-0">{{ batch.filename }}</p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('excel_import') }}">Vissza</a>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-xl-3"><div class="metric"><span>Létrehozva</span><strong>{{ batch.created_count }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="metric"><span>Kihagyva</span><strong>{{ batch.skipped_count }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="metric"><span>Figyelmeztetés</span><strong>{{ batch.warning_count }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="metric"><span>Státusz</span><strong>{{ import_status_label(batch.status) }}</strong></div></div>
+</div>
+
+<section class="data-section mb-4">
+  <div class="section-title"><h2>Import visszavonása</h2></div>
+  <div class="p-3">
+    <p class="text-secondary">A visszavonás archiválja az importból létrejött rekordokat. Azok az eszközök, amelyeken az import óta további kézi készletmozgás történt, megmaradnak.</p>
+    <form method="post" action="{{ url_for('import_batch_rollback', batch_id=batch.id) }}" class="d-inline">
+      <button class="btn btn-outline-danger" type="submit" data-confirm="Biztosan visszavonod ezt az importot?">Import visszavonása</button>
+    </form>
+    <form method="post" action="{{ url_for('import_batch_archive', batch_id=batch.id) }}" class="d-inline">
+      <button class="btn btn-outline-secondary" type="submit" data-confirm="Archiválod az importcsomagot?">Importcsomag archiválása</button>
+    </form>
+  </div>
+</section>
+
+{% if warnings %}
+<section class="data-section mb-4">
+  <div class="section-title"><h2>Figyelmeztetések</h2></div>
+  <div class="p-3">{% for warning in warnings %}<div class="text-warning">{{ warning }}</div>{% endfor %}</div>
+</section>
+{% endif %}
+
+<section class="data-section mb-4">
+  <div class="section-title"><h2>Importált eszközök</h2></div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Forrás</th><th>Sor</th><th>Azonosító</th><th>Termék</th><th>Státusz</th><th></th></tr></thead>
+      <tbody>
+        {% for device in devices %}
+          <tr>
+            <td>{{ device.source_sheet or "-" }}</td>
+            <td>{{ device.source_row_number or "-" }}</td>
+            <td class="fw-semibold">{{ device.asset_tag }}</td>
+            <td>{{ device.product_name or device.model or "-" }}</td>
+            <td>{{ "Archiválva" if device.archived_at else status_label(device.status) }}</td>
+            <td><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_detail', device_id=device.id) }}">Részletek</a></td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" class="text-secondary">Nincs importált eszköz.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="data-section">
+  <div class="section-title"><h2>Importált gazdátlan számlasorok</h2></div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Forrás</th><th>Sor</th><th>Számlaszám</th><th>Partner</th><th>Megnevezés</th><th>Státusz</th></tr></thead>
+      <tbody>
+        {% for item in invoice_items %}
+          <tr>
+            <td>{{ item.source_sheet or "-" }}</td>
+            <td>{{ item.source_row_number or "-" }}</td>
+            <td class="fw-semibold">{{ item.invoice_number or "-" }}</td>
+            <td>{{ item.partner or "-" }}</td>
+            <td>{{ item.description or "-" }}</td>
+            <td>{{ "Archiválva" if item.archived_at else assignment_status_label(item.assignment_status) }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" class="text-secondary">Nincs importált számlasor.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

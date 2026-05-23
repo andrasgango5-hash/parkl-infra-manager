@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Projekt szerkesztése{% endblock %}
+
+{% block content %}
+<div class="page-header"><h1>Projekt szerkesztése</h1></div>
+<form method="post" class="form-panel">
+  <div class="row g-3">
+    <div class="col-md-6"><label class="form-label" for="code">Kód</label><input class="form-control" id="code" name="code" value="{{ project.code }}" required></div>
+    <div class="col-md-6"><label class="form-label" for="name">Név</label><input class="form-control" id="name" name="name" value="{{ project.name }}" required></div>
+    <div class="col-md-6"><label class="form-label" for="customer">Ügyfél</label><input class="form-control" id="customer" name="customer" value="{{ project.customer }}"></div>
+    <div class="col-md-6">
+      <label class="form-label" for="status">Státusz</label>
+      <select class="form-select" id="status" name="status">
+        {% for status, label in project_statuses.items() %}
+          <option value="{{ status }}" {% if project.status == status %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12"><label class="form-label" for="notes">Megjegyzés</label><textarea class="form-control" id="notes" name="notes" rows="3">{{ project.notes }}</textarea></div>
+  </div>
+  <div class="mt-3 d-flex gap-2">
+    <button class="btn btn-success" type="submit">Mentés</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('project_detail', project_id=project.id) }}">Mégse</a>
+  </div>
+</form>
+{% endblock %}

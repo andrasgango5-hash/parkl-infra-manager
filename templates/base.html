@@ -23,6 +23,7 @@
               <li class="nav-item"><a class="nav-link" href="{{ url_for('locations') }}">Készlethelyek</a></li>
               <li class="nav-item"><a class="nav-link" href="{{ url_for('movements') }}">Mozgások</a></li>
               <li class="nav-item"><a class="nav-link" href="{{ url_for('unassigned_invoices') }}">Gazdátlan számlasorok</a></li>
+              <li class="nav-item"><a class="nav-link" href="{{ url_for('excel_import') }}">Excel import</a></li>
             </ul>
             <form method="post" action="{{ url_for('logout') }}" class="d-flex align-items-center gap-2">
               <span class="navbar-text small">{{ current_user.username }}</span>

@@ -180,6 +180,10 @@
       <div class="section-title"><h2>Eszközlista</h2></div>
       <form method="get" class="filter-bar">
         <div>
+          <label class="form-label" for="q">Keresés</label>
+          <input class="form-control form-control-sm" id="q" name="q" value="{{ search }}" placeholder="Termék, azonosító, sorozatszám, beszállító, projekt">
+        </div>
+        <div>
           <label class="form-label" for="status">Státusz</label>
           <select class="form-select form-select-sm" id="status" name="status">
             <option value="">Minden státusz</option>
@@ -194,6 +198,33 @@
             <option value="">Minden kategória</option>
             {% for category in categories %}
               <option value="{{ category }}" {% if selected_category == category %}selected{% endif %}>{{ category_label(category) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="form-label" for="source_sheet">Forráslap</label>
+          <select class="form-select form-select-sm" id="source_sheet" name="source_sheet">
+            <option value="">Minden forráslap</option>
+            {% for sheet in source_sheets %}
+              <option value="{{ sheet }}" {% if selected_source_sheet == sheet %}selected{% endif %}>{{ sheet }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="form-label" for="project_id_filter">Projekt</label>
+          <select class="form-select form-select-sm" id="project_id_filter" name="project_id">
+            <option value="">Minden projekt</option>
+            {% for project in projects %}
+              <option value="{{ project.id }}" {% if selected_project_id == project.id %}selected{% endif %}>{{ project.code }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="form-label" for="location_id_filter">Készlethely</label>
+          <select class="form-select form-select-sm" id="location_id_filter" name="location_id">
+            <option value="">Minden készlethely</option>
+            {% for location in locations %}
+              <option value="{{ location.id }}" {% if selected_location_id == location.id %}selected{% endif %}>{{ location.name }}</option>
             {% endfor %}
           </select>
         </div>
@@ -214,6 +245,7 @@
               <th>Projekt</th>
               <th>Érkezés</th>
               <th>Számla</th>
+              <th>Műveletek</th>
             </tr>
           </thead>
           <tbody>
@@ -227,9 +259,16 @@
                 <td>{{ device.project.code if device.project else "-" }}</td>
                 <td>{{ yes_no_label(device.has_arrived) }}</td>
                 <td>{{ device.supplier_invoice_number or device.shipping_invoice_number or "-" }}</td>
+                <td class="text-nowrap">
+                  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_detail', device_id=device.id) }}">Részletek</a>
+                  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_edit', device_id=device.id) }}">Szerkesztés</a>
+                  <form method="post" action="{{ url_for('device_archive', device_id=device.id) }}" class="d-inline">
+                    <button class="btn btn-outline-danger btn-sm" type="submit" data-confirm="Biztosan archiválod ezt az eszközt?">Archiválás</button>
+                  </form>
+                </td>
               </tr>
             {% else %}
-              <tr><td colspan="8" class="text-secondary">Még nincs eszköz.</td></tr>
+              <tr><td colspan="9" class="text-secondary">Még nincs eszköz.</td></tr>
             {% endfor %}
           </tbody>
         </table>

@@ -118,6 +118,10 @@
       <div class="section-title"><h2>Számlasor lista</h2></div>
       <form method="get" class="filter-bar">
         <div>
+          <label class="form-label" for="q">Keresés</label>
+          <input class="form-control form-control-sm" id="q" name="q" value="{{ search }}" placeholder="Számlaszám, partner, megnevezés">
+        </div>
+        <div>
           <label class="form-label" for="assignment_status_filter">Hozzárendelési státusz</label>
           <select class="form-select form-select-sm" id="assignment_status_filter" name="assignment_status">
             <option value="">Minden státusz</option>
@@ -142,6 +146,7 @@
               <th>Bruttó (HUF)</th>
               <th>Státusz</th>
               <th>Projekt</th>
+              <th>Műveletek</th>
             </tr>
           </thead>
           <tbody>
@@ -154,9 +159,15 @@
                 <td>{{ format_number(item.line_gross_amount_huf or item.gross_amount_huf) }}</td>
                 <td><span class="badge text-bg-light">{{ assignment_status_label(item.assignment_status) }}</span></td>
                 <td>{{ item.assigned_project.code if item.assigned_project else "-" }}</td>
+                <td class="text-nowrap">
+                  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('unassigned_invoice_edit', item_id=item.id) }}">Szerkesztés</a>
+                  <form method="post" action="{{ url_for('unassigned_invoice_archive', item_id=item.id) }}" class="d-inline">
+                    <button class="btn btn-outline-danger btn-sm" type="submit" data-confirm="Biztosan archiválod ezt a számlasort?">Archiválás</button>
+                  </form>
+                </td>
               </tr>
             {% else %}
-              <tr><td colspan="7" class="text-secondary">Még nincs gazdátlan számlasor.</td></tr>
+              <tr><td colspan="8" class="text-secondary">Még nincs gazdátlan számlasor.</td></tr>
             {% endfor %}
           </tbody>
         </table>

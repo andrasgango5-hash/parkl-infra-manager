@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Projekt - {{ project.code }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ project.code }} - {{ project.name }}</h1>
+    <p class="text-secondary mb-0">{{ project.customer or "Nincs ügyfél megadva" }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('project_edit', project_id=project.id) }}">Szerkesztés</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('projects') }}">Vissza</a>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-xl-3"><div class="metric"><span>Eszközök</span><strong>{{ finance_summary.device_count }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="metric"><span>Mennyiség</span><strong>{{ format_number(finance_summary.quantity) }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="metric"><span>Érték (HUF)</span><strong>{{ format_number(finance_summary.huf_value) }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="metric"><span>Megérkezett</span><strong>{{ finance_summary.arrived }}</strong></div></div>
+</div>
+
+<section class="data-section mb-4">
+  <div class="section-title"><h2>Projekt adatok</h2></div>
+  <div class="p-3">
+    <div><strong>Státusz:</strong> {{ project_status_label(project.status) }}</div>
+    <div><strong>Megjegyzés:</strong> {{ project.notes or "-" }}</div>
+  </div>
+</section>
+
+<section class="data-section mb-4">
+  <div class="section-title"><h2>Hozzárendelt eszközök</h2></div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Azonosító</th><th>Termék</th><th>Státusz</th><th>Érték</th><th></th></tr></thead>
+      <tbody>
+        {% for device in devices %}
+          <tr>
+            <td class="fw-semibold">{{ device.asset_tag }}</td>
+            <td>{{ device.product_name or device.model or "-" }}</td>
+            <td>{{ status_label(device.status) }}</td>
+            <td>{{ format_number(device.huf_value) }}</td>
+            <td><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_detail', device_id=device.id) }}">Részletek</a></td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5" class="text-secondary">Nincs hozzárendelt eszköz.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="data-section">
+  <div class="section-title"><h2>Kapcsolódó mozgások</h2></div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Időpont</th><th>Eszköz</th><th>Típus</th><th>Megjegyzés</th></tr></thead>
+      <tbody>
+        {% for movement in movements %}
+          <tr>
+            <td>{{ movement.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+            <td>{{ movement.device.asset_tag }}</td>
+            <td>{{ movement_type_label(movement.movement_type) }}</td>
+            <td>{{ movement.notes or "-" }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" class="text-secondary">Nincs kapcsolódó mozgás.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

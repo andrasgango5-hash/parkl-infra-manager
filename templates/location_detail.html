@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Készlethely - {{ location.name }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ location.name }}</h1>
+    <p class="text-secondary mb-0">{{ location_type_label(location.location_type) }}</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('location_edit', location_id=location.id) }}">Szerkesztés</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('locations') }}">Vissza</a>
+  </div>
+</div>
+
+<section class="data-section mb-4">
+  <div class="section-title"><h2>Készlethely adatok</h2></div>
+  <div class="p-3">
+    <div><strong>Cím:</strong> {{ location.address or "-" }}</div>
+    <div><strong>Megjegyzés:</strong> {{ location.notes or "-" }}</div>
+  </div>
+</section>
+
+<section class="data-section mb-4">
+  <div class="section-title"><h2>Jelenlegi eszközök</h2></div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Azonosító</th><th>Termék</th><th>Státusz</th><th>Projekt</th><th></th></tr></thead>
+      <tbody>
+        {% for device in devices %}
+          <tr>
+            <td class="fw-semibold">{{ device.asset_tag }}</td>
+            <td>{{ device.product_name or device.model or "-" }}</td>
+            <td>{{ status_label(device.status) }}</td>
+            <td>{{ device.project.code if device.project else "-" }}</td>
+            <td><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_detail', device_id=device.id) }}">Részletek</a></td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5" class="text-secondary">Nincs eszköz ezen a készlethelyen.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="data-section">
+  <div class="section-title"><h2>Kapcsolódó mozgások</h2></div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Időpont</th><th>Eszköz</th><th>Típus</th><th>Innen</th><th>Ide</th></tr></thead>
+      <tbody>
+        {% for movement in movements %}
+          <tr>
+            <td>{{ movement.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+            <td>{{ movement.device.asset_tag }}</td>
+            <td>{{ movement_type_label(movement.movement_type) }}</td>
+            <td>{{ movement.from_location.name if movement.from_location else "-" }}</td>
+            <td>{{ movement.to_location.name if movement.to_location else "-" }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5" class="text-secondary">Nincs kapcsolódó mozgás.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

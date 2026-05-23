@@ -81,10 +81,22 @@ Az alkalmazás böngészőben látható felülete magyar nyelvű. A fő menüpon
 - `Készlethelyek` - raktárak, helyszínek és egyéb készlethelyek kezelése
 - `Mozgások` - készletmozgások rögzítése és megtekintése
 - `Gazdátlan számlasorok` - projekthez vagy eszközhöz még nem rendelt számlasorok nyilvántartása
+- `Excel import` - Parkl készletkezelő `.xlsx` feltöltése, dry-run előnézet és megerősített import
+
+Javasolt munkafolyamat:
+
+1. Hozz létre legalább egy készlethelyet, például `Fő raktár`.
+2. Hozz létre kézzel eszközöket, vagy importáld őket az `Excel import` oldalon.
+3. Rendeld az eszközöket projekthez az eszköz szerkesztésével vagy importált projektkód alapján.
+4. Az eszköz részletein használd a készletműveleteket: előjegyzés, kiadás, telepítés, visszavétel, szerviz, áthelyezés, selejtezés.
+5. Téves vagy tesztimport esetén az importcsomag részletein használd az `Import visszavonása` gombot.
+6. Export/PDF későbbi fejlesztés.
+
+A törlés jellegű műveletek alapértelmezés szerint archiválnak. Készletmozgással rendelkező eszközök és importált adatok így nem vesznek el, de eltűnnek az aktív listákból.
 
 ## Excel megfeleltetés
 
-A jelenlegi Parkl készletkezelő Excel nem csak készletet tartalmaz, hanem beszerzést, projekt-hozzárendelést, érkezési állapotot és pénzügyi számlainformációkat is. Az MVP ezt az adatmodellt készíti elő, de Excel import még nincs implementálva.
+A jelenlegi Parkl készletkezelő Excel nem csak készletet tartalmaz, hanem beszerzést, projekt-hozzárendelést, érkezési állapotot és pénzügyi számlainformációkat is. Az MVP az `Excel import` oldalon `.xlsx` fájlból tud dry-run előnézetet készíteni, majd külön megerősítés után adatbázisba importálni.
 
 A termék/készlet munkalapok nagy része az `Eszközök` oldalra és a `Device` modellre képezhető le:
 
@@ -105,7 +117,17 @@ A `Gazdátlanul` munkalap az új `Gazdátlan számlasorok` oldalra és az `Unass
 - `Egységár HUF`, `Számla sor nettó összeg HUF`, `Számla sor ÁFA összeg HUF`, `Számla sor bruttó összeg HUF`
 - hozzárendelési státusz, opcionális projekt- és eszközkapcsolat
 
-Az Excel import későbbi lépés. A mostani cél az, hogy az alkalmazás adatmodellje és kézi felülete már képes legyen fogadni az Excelben szereplő fő üzleti fogalmakat.
+Az import jelenleg ezeket a normál készlet/termék munkalapokat kezeli: `Töltő`, `Töltők`, `BMW töltő`, `Kioszk`, `Kamera`, `Egyéb`, `Nyitó`, `Matricák`. A `Gazdátlanul` munkalap külön `UnassignedInvoiceItem` rekordokként kerül be. A `Segéd`, `Önköltség`, `Dashboard`, `WORKFLOW` és hasonló segédlapok nem kerülnek normál készletsorként importálásra.
+
+Import használata:
+
+1. Lépj az `Excel import` oldalra.
+2. Tölts fel egy `.xlsx` fájlt.
+3. Ellenőrizd a dry-run előnézetet: munkalaponkénti sorok, kihagyások, figyelmeztetések és az első 10 feldolgozott sor.
+4. Jelöld be az `Importálás végrehajtása` mezőt.
+5. Kattints az `Adatbázisba importálás` gombra.
+
+Az import nem használ CSV-t és nem használ pandast. A `.xlsx` fájlt `openpyxl` olvassa. Duplikált eszközsor esetén az import kihagyja a sort, ha már létezik azonos importkulcs vagy ütköző eszközazonosító. Importált eszköz létrehozásakor automatikus `INBOUND` készletmozgás is létrejön.
 
 ## Készletszabályok
 
@@ -155,6 +177,7 @@ Státuszváltási szabályok:
 - `/locations` - készlethelyek listázása és létrehozása
 - `/movements` - készletmozgások listázása és létrehozása
 - `/unassigned-invoices` - gazdátlan számlasorok listázása és létrehozása
+- `/import` - Excel import előnézet és végrehajtás
 
 ## Fejlesztési megjegyzés
 

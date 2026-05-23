@@ -10,6 +10,22 @@
   </div>
 </div>
 
+<form method="get" class="filter-bar mb-4">
+  <div>
+    <label class="form-label" for="location_type_filter">Típus</label>
+    <select class="form-select form-select-sm" id="location_type_filter" name="location_type">
+      <option value="">Minden típus</option>
+      {% for type, label in location_types.items() %}
+        <option value="{{ type }}" {% if selected_type == type %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="filter-actions">
+    <button class="btn btn-outline-secondary btn-sm" type="submit">Szűrés</button>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('locations') }}">Alaphelyzet</a>
+  </div>
+</form>
+
 <div class="row g-4">
   <div class="col-lg-4">
     <form method="post" class="form-panel">
@@ -50,6 +66,7 @@
               <th>Típus</th>
               <th>Cím</th>
               <th>Eszközök</th>
+              <th>Műveletek</th>
             </tr>
           </thead>
           <tbody>
@@ -59,9 +76,16 @@
                 <td><span class="badge text-bg-light">{{ location_type_label(location.location_type) }}</span></td>
                 <td>{{ location.address or "-" }}</td>
                 <td>{{ location.devices|length }}</td>
+                <td class="text-nowrap">
+                  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('location_detail', location_id=location.id) }}">Részletek</a>
+                  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('location_edit', location_id=location.id) }}">Szerkesztés</a>
+                  <form method="post" action="{{ url_for('location_archive', location_id=location.id) }}" class="d-inline">
+                    <button class="btn btn-outline-danger btn-sm" type="submit" data-confirm="Biztosan archiválod ezt a készlethelyet?">Archiválás</button>
+                  </form>
+                </td>
               </tr>
             {% else %}
-              <tr><td colspan="4" class="text-secondary">Még nincs készlethely.</td></tr>
+              <tr><td colspan="5" class="text-secondary">Még nincs készlethely.</td></tr>
             {% endfor %}
           </tbody>
         </table>

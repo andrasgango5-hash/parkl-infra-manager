@@ -49,6 +49,7 @@ class User(db.Model):
     )
 
     movements = db.relationship("StockMovement", back_populates="created_by")
+    import_batches = db.relationship("ImportBatch", back_populates="imported_by")
 
 
 class Project(db.Model):
@@ -63,6 +64,7 @@ class Project(db.Model):
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+    archived_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     devices = db.relationship("Device", back_populates="project")
     movements = db.relationship("StockMovement", back_populates="project")
@@ -82,6 +84,7 @@ class Location(db.Model):
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+    archived_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     devices = db.relationship("Device", back_populates="location")
     outgoing_movements = db.relationship(
@@ -125,6 +128,10 @@ class Device(db.Model):
     invoice_value = db.Column(db.Float, nullable=True)
     shipping_invoice_number = db.Column(db.String(120), nullable=True)
     shipping_invoice_paid = db.Column(db.Boolean, nullable=True)
+    source_sheet = db.Column(db.String(120), nullable=True, index=True)
+    import_batch_id = db.Column(db.Integer, db.ForeignKey("import_batch.id"), nullable=True)
+    source_row_number = db.Column(db.Integer, nullable=True)
+    imported_at = db.Column(db.DateTime(timezone=True), nullable=True)
     status = db.Column(db.String(40), default="IN_STOCK", nullable=False)
     project_id = db.Column(db.Integer, db.ForeignKey("project.id"), nullable=True)
     location_id = db.Column(db.Integer, db.ForeignKey("location.id"), nullable=True)
@@ -139,6 +146,7 @@ class Device(db.Model):
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+    archived_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     project = db.relationship("Project", back_populates="devices")
     location = db.relationship("Location", back_populates="devices")
@@ -148,6 +156,7 @@ class Device(db.Model):
     unassigned_invoice_items = db.relationship(
         "UnassignedInvoiceItem", back_populates="assigned_device"
     )
+    import_batch = db.relationship("ImportBatch", back_populates="devices")
 
 
 class StockMovement(db.Model):
@@ -201,6 +210,10 @@ class UnassignedInvoiceItem(db.Model):
         db.Integer, db.ForeignKey("project.id"), nullable=True
     )
     assigned_device_id = db.Column(db.Integer, db.ForeignKey("device.id"), nullable=True)
+    source_sheet = db.Column(db.String(120), nullable=True)
+    import_batch_id = db.Column(db.Integer, db.ForeignKey("import_batch.id"), nullable=True)
+    source_row_number = db.Column(db.Integer, nullable=True)
+    imported_at = db.Column(db.DateTime(timezone=True), nullable=True)
     created_at = db.Column(
         db.DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -212,12 +225,40 @@ class UnassignedInvoiceItem(db.Model):
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+    archived_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     assigned_project = db.relationship(
         "Project", back_populates="unassigned_invoice_items"
     )
     assigned_device = db.relationship(
         "Device", back_populates="unassigned_invoice_items"
+    )
+    import_batch = db.relationship(
+        "ImportBatch", back_populates="unassigned_invoice_items"
+    )
+
+
+class ImportBatch(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(255), nullable=False)
+    imported_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    dry_run_summary_json = db.Column(db.Text, nullable=True)
+    created_count = db.Column(db.Integer, default=0, nullable=False)
+    skipped_count = db.Column(db.Integer, default=0, nullable=False)
+    updated_count = db.Column(db.Integer, default=0, nullable=False)
+    warning_count = db.Column(db.Integer, default=0, nullable=False)
+    status = db.Column(db.String(40), default="completed", nullable=False)
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    archived_at = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    imported_by = db.relationship("User", back_populates="import_batches")
+    devices = db.relationship("Device", back_populates="import_batch")
+    unassigned_invoice_items = db.relationship(
+        "UnassignedInvoiceItem", back_populates="import_batch"
     )
 
 

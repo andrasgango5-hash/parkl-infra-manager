@@ -10,6 +10,26 @@
   </div>
 </div>
 
+<form method="get" class="filter-bar mb-4">
+  <div>
+    <label class="form-label" for="q">Keresés</label>
+    <input class="form-control form-control-sm" id="q" name="q" value="{{ search }}" placeholder="Kód, név, ügyfél">
+  </div>
+  <div>
+    <label class="form-label" for="status_filter">Státusz</label>
+    <select class="form-select form-select-sm" id="status_filter" name="status">
+      <option value="">Minden státusz</option>
+      {% for status, label in project_statuses.items() %}
+        <option value="{{ status }}" {% if selected_status == status %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="filter-actions">
+    <button class="btn btn-outline-secondary btn-sm" type="submit">Szűrés</button>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('projects') }}">Alaphelyzet</a>
+  </div>
+</form>
+
 <div class="row g-4">
   <div class="col-lg-4">
     <form method="post" class="form-panel">
@@ -54,6 +74,7 @@
               <th>Ügyfél</th>
               <th>Státusz</th>
               <th>Eszközök</th>
+              <th>Műveletek</th>
             </tr>
           </thead>
           <tbody>
@@ -64,9 +85,16 @@
                 <td>{{ project.customer or "-" }}</td>
                 <td><span class="badge text-bg-light">{{ project_status_label(project.status) }}</span></td>
                 <td>{{ project.devices|length }}</td>
+                <td class="text-nowrap">
+                  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('project_detail', project_id=project.id) }}">Részletek</a>
+                  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('project_edit', project_id=project.id) }}">Szerkesztés</a>
+                  <form method="post" action="{{ url_for('project_archive', project_id=project.id) }}" class="d-inline">
+                    <button class="btn btn-outline-danger btn-sm" type="submit" data-confirm="Biztosan archiválod ezt a projektet?">Archiválás</button>
+                  </form>
+                </td>
               </tr>
             {% else %}
-              <tr><td colspan="5" class="text-secondary">Még nincs projekt.</td></tr>
+              <tr><td colspan="6" class="text-secondary">Még nincs projekt.</td></tr>
             {% endfor %}
           </tbody>
         </table>
