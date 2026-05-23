@@ -1,98 +1,235 @@
 {% extends "base.html" %}
 
-{% block title %}Devices - Parkl Infra Manager{% endblock %}
+{% block title %}Eszközök - Parkl Infra Manager{% endblock %}
 
 {% block content %}
 <div class="page-header">
   <div>
-    <h1>Devices</h1>
-    <p class="text-secondary mb-0">Register chargers, parking controllers, sensors, meters, cabinets, and network gear.</p>
+    <h1>Eszközök</h1>
+    <p class="text-secondary mb-0">Töltők, parkolásvezérlők, szenzorok, mérők, szekrények és hálózati eszközök nyilvántartása.</p>
   </div>
 </div>
 
 <div class="row g-4">
   <div class="col-xl-4">
     <form method="post" class="form-panel">
-      <h2>Create Device</h2>
+      <h2>Eszköz létrehozása</h2>
+      <h3 class="form-section-title">Alapadatok</h3>
       <div class="row g-3">
         <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="asset_tag">Asset tag</label>
+          <label class="form-label" for="asset_tag">Eszközazonosító</label>
           <input class="form-control" id="asset_tag" name="asset_tag" required>
         </div>
         <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="serial_number">Serial number</label>
+          <label class="form-label" for="serial_number">Sorozatszám</label>
           <input class="form-control" id="serial_number" name="serial_number">
         </div>
         <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="device_type">Type</label>
+          <label class="form-label" for="product_name">Terméknév</label>
+          <input class="form-control" id="product_name" name="product_name">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="device_type">Kategória</label>
           <select class="form-select" id="device_type" name="device_type" required>
-            <option value="">Choose...</option>
-            <option>EV charger</option>
-            <option>Parking controller</option>
-            <option>Barrier gate</option>
-            <option>Sensor</option>
-            <option>Energy meter</option>
-            <option>Network device</option>
-            <option>Cabinet</option>
+            <option value="">Válassz...</option>
+            {% for category in categories %}
+              <option value="{{ category }}">{{ category_label(category) }}</option>
+            {% endfor %}
           </select>
         </div>
         <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="manufacturer">Manufacturer</label>
+          <label class="form-label" for="subtype_note">Altípus / megjegyzés</label>
+          <input class="form-control" id="subtype_note" name="subtype_note">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="supplier_manufacturer">Beszállító / gyártó</label>
+          <input class="form-control" id="supplier_manufacturer" name="supplier_manufacturer">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="manufacturer">Gyártó</label>
           <input class="form-control" id="manufacturer" name="manufacturer">
         </div>
         <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="model">Model</label>
+          <label class="form-label" for="model">Modell</label>
           <input class="form-control" id="model" name="model">
         </div>
         <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="location_id">Initial location</label>
+          <label class="form-label" for="version">Verzió</label>
+          <input class="form-control" id="version" name="version">
+        </div>
+      </div>
+
+      <h3 class="form-section-title">Mennyiség és érték</h3>
+      <div class="row g-3">
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="quantity">Mennyiség</label>
+          <input class="form-control" id="quantity" name="quantity" type="number" step="0.01" min="0">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="unit_net_price">Nettó egységár</label>
+          <input class="form-control" id="unit_net_price" name="unit_net_price" type="number" step="0.01" min="0">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="currency">Deviza</label>
+          <input class="form-control" id="currency" name="currency" placeholder="HUF">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="huf_value">Érték (HUF)</label>
+          <input class="form-control" id="huf_value" name="huf_value" type="number" step="0.01" min="0">
+        </div>
+      </div>
+
+      <h3 class="form-section-title">Projekt hozzárendelés</h3>
+      <div class="row g-3">
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="location_id">Kezdő készlethely</label>
           <select class="form-select" id="location_id" name="location_id">
-            <option value="">Unassigned</option>
+            <option value="">Nincs megadva</option>
             {% for location in locations %}
               <option value="{{ location.id }}">{{ location.name }}</option>
             {% endfor %}
           </select>
         </div>
         <div class="col-12">
-          <label class="form-label" for="project_id">Project</label>
+          <label class="form-label" for="project_id">Projekt</label>
           <select class="form-select" id="project_id" name="project_id">
-            <option value="">None</option>
+            <option value="">Nincs</option>
             {% for project in projects %}
               <option value="{{ project.id }}">{{ project.code }} - {{ project.name }}</option>
             {% endfor %}
           </select>
         </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="assignment_quantity">Hozzárendelt mennyiség</label>
+          <input class="form-control" id="assignment_quantity" name="assignment_quantity" type="number" step="0.01" min="0">
+        </div>
+        <div class="col-12">
+          <label class="form-label" for="assignment_notes">Hozzárendelési megjegyzés</label>
+          <textarea class="form-control" id="assignment_notes" name="assignment_notes" rows="2"></textarea>
+        </div>
       </div>
-      <button class="btn btn-success mt-3" type="submit">Create</button>
+
+      <h3 class="form-section-title">Rendelés / érkezés</h3>
+      <div class="row g-3">
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="order_date">Rendelés napja</label>
+          <input class="form-control" id="order_date" name="order_date" type="date">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <div class="form-check form-switch mt-4">
+            <input class="form-check-input" id="is_ordered" name="is_ordered" type="checkbox">
+            <label class="form-check-label" for="is_ordered">Megrendelve</label>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="planned_arrival_date">Tervezett érkezés</label>
+          <input class="form-control" id="planned_arrival_date" name="planned_arrival_date" type="date">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="actual_arrival_date">Tényleges érkezés</label>
+          <input class="form-control" id="actual_arrival_date" name="actual_arrival_date" type="date">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <div class="form-check form-switch mt-4">
+            <input class="form-check-input" id="has_arrived" name="has_arrived" type="checkbox">
+            <label class="form-check-label" for="has_arrived">Megérkezett</label>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="shipping_cost">Szállítási költség</label>
+          <input class="form-control" id="shipping_cost" name="shipping_cost" type="number" step="0.01" min="0">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="shipping_date">Elszállítás napja</label>
+          <input class="form-control" id="shipping_date" name="shipping_date" type="date">
+        </div>
+      </div>
+
+      <h3 class="form-section-title">Pénzügyi adatok</h3>
+      <div class="row g-3">
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="supplier_invoice_number">Beszállítói számlaszám</label>
+          <input class="form-control" id="supplier_invoice_number" name="supplier_invoice_number">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <div class="form-check form-switch mt-4">
+            <input class="form-check-input" id="supplier_invoice_paid" name="supplier_invoice_paid" type="checkbox">
+            <label class="form-check-label" for="supplier_invoice_paid">Beszállítói számla fizetve</label>
+          </div>
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="invoice_value">Számla értéke</label>
+          <input class="form-control" id="invoice_value" name="invoice_value" type="number" step="0.01" min="0">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="shipping_invoice_number">Szállítmányozói számlaszám</label>
+          <input class="form-control" id="shipping_invoice_number" name="shipping_invoice_number">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <div class="form-check form-switch mt-4">
+            <input class="form-check-input" id="shipping_invoice_paid" name="shipping_invoice_paid" type="checkbox">
+            <label class="form-check-label" for="shipping_invoice_paid">Szállítmányozói számla fizetve</label>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-success mt-3" type="submit">Létrehozás</button>
     </form>
   </div>
   <div class="col-xl-8">
     <section class="data-section">
-      <div class="section-title"><h2>Device List</h2></div>
+      <div class="section-title"><h2>Eszközlista</h2></div>
+      <form method="get" class="filter-bar">
+        <div>
+          <label class="form-label" for="status">Státusz</label>
+          <select class="form-select form-select-sm" id="status" name="status">
+            <option value="">Minden státusz</option>
+            {% for status in statuses %}
+              <option value="{{ status }}" {% if selected_status == status %}selected{% endif %}>{{ status_label(status) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="form-label" for="category">Kategória</label>
+          <select class="form-select form-select-sm" id="category" name="category">
+            <option value="">Minden kategória</option>
+            {% for category in categories %}
+              <option value="{{ category }}" {% if selected_category == category %}selected{% endif %}>{{ category_label(category) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="filter-actions">
+          <button class="btn btn-outline-secondary btn-sm" type="submit">Szűrés</button>
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('devices') }}">Alaphelyzet</a>
+        </div>
+      </form>
       <div class="table-responsive">
         <table class="table table-hover align-middle">
           <thead>
             <tr>
-              <th>Asset</th>
-              <th>Type</th>
-              <th>Serial</th>
-              <th>Status</th>
-              <th>Location</th>
-              <th>Project</th>
+              <th>Eszközazonosító</th>
+              <th>Termék</th>
+              <th>Kategória</th>
+              <th>Mennyiség</th>
+              <th>Státusz</th>
+              <th>Projekt</th>
+              <th>Érkezés</th>
+              <th>Számla</th>
             </tr>
           </thead>
           <tbody>
             {% for device in devices %}
               <tr>
                 <td class="fw-semibold">{{ device.asset_tag }}</td>
-                <td>{{ device.device_type }}</td>
-                <td>{{ device.serial_number or "-" }}</td>
-                <td><span class="badge text-bg-light">{{ device.status }}</span></td>
-                <td>{{ device.location.name if device.location else "-" }}</td>
+                <td>{{ device.product_name or device.model or "-" }}</td>
+                <td>{{ category_label(device.device_type) }}</td>
+                <td>{{ format_number(device.quantity) }}</td>
+                <td><span class="badge text-bg-light">{{ status_label(device.status) }}</span></td>
                 <td>{{ device.project.code if device.project else "-" }}</td>
+                <td>{{ yes_no_label(device.has_arrived) }}</td>
+                <td>{{ device.supplier_invoice_number or device.shipping_invoice_number or "-" }}</td>
               </tr>
             {% else %}
-              <tr><td colspan="6" class="text-secondary">No devices yet.</td></tr>
+              <tr><td colspan="8" class="text-secondary">Még nincs eszköz.</td></tr>
             {% endfor %}
           </tbody>
         </table>

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="hu">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -12,20 +12,21 @@
       <div class="container-fluid">
         <a class="navbar-brand fw-semibold" href="{{ url_for('dashboard') }}">Parkl Infra Manager</a>
         {% if current_user %}
-          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Navigáció megnyitása">
             <span class="navbar-toggler-icon"></span>
           </button>
           <div class="collapse navbar-collapse" id="mainNav">
             <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-              <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a></li>
-              <li class="nav-item"><a class="nav-link" href="{{ url_for('projects') }}">Projects</a></li>
-              <li class="nav-item"><a class="nav-link" href="{{ url_for('devices') }}">Devices</a></li>
-              <li class="nav-item"><a class="nav-link" href="{{ url_for('locations') }}">Locations</a></li>
-              <li class="nav-item"><a class="nav-link" href="{{ url_for('movements') }}">Movements</a></li>
+              <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}">Áttekintés</a></li>
+              <li class="nav-item"><a class="nav-link" href="{{ url_for('projects') }}">Projektek</a></li>
+              <li class="nav-item"><a class="nav-link" href="{{ url_for('devices') }}">Eszközök</a></li>
+              <li class="nav-item"><a class="nav-link" href="{{ url_for('locations') }}">Készlethelyek</a></li>
+              <li class="nav-item"><a class="nav-link" href="{{ url_for('movements') }}">Mozgások</a></li>
+              <li class="nav-item"><a class="nav-link" href="{{ url_for('unassigned_invoices') }}">Gazdátlan számlasorok</a></li>
             </ul>
             <form method="post" action="{{ url_for('logout') }}" class="d-flex align-items-center gap-2">
               <span class="navbar-text small">{{ current_user.username }}</span>
-              <button class="btn btn-outline-light btn-sm" type="submit">Logout</button>
+              <button class="btn btn-outline-light btn-sm" type="submit">Kijelentkezés</button>
             </form>
           </div>
         {% endif %}
@@ -39,7 +40,7 @@
             {% for category, message in messages %}
               <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
                 {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Bezárás"></button>
               </div>
             {% endfor %}
           </div>

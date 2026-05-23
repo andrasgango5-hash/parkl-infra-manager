@@ -1,6 +1,40 @@
 from datetime import datetime, timezone
 
+from sqlalchemy import event, inspect
+from sqlalchemy.orm import object_session
+
 from app import db
+
+DEVICE_STATUSES = (
+    "IN_STOCK",
+    "RESERVED",
+    "ISSUED",
+    "INSTALLED",
+    "RETURNED",
+    "IN_SERVICE",
+    "SCRAPPED",
+)
+
+MOVEMENT_TYPES = (
+    "INBOUND",
+    "RESERVE",
+    "ISSUE",
+    "INSTALL",
+    "RETURN",
+    "SERVICE",
+    "SCRAP",
+    "TRANSFER",
+)
+
+DEVICE_CATEGORIES = (
+    "EV charger",
+    "Parking controller",
+    "Barrier gate",
+    "Sensor",
+    "Energy meter",
+    "Network device",
+    "Cabinet",
+)
 
 
 class User(db.Model):
@@ -32,6 +66,9 @@ class Project(db.Model):
 
     devices = db.relationship("Device", back_populates="project")
     movements = db.relationship("StockMovement", back_populates="project")
+    unassigned_invoice_items = db.relationship(
+        "UnassignedInvoiceItem", back_populates="assigned_project"
+    )
 
 
 class Location(db.Model):
@@ -66,7 +103,29 @@ class Device(db.Model):
     device_type = db.Column(db.String(80), nullable=False)
     manufacturer = db.Column(db.String(120), default="", nullable=False)
     model = db.Column(db.String(120), default="", nullable=False)
-    status = db.Column(db.String(40), default="unassigned", nullable=False)
+    product_name = db.Column(db.String(160), nullable=True)
+    subtype_note = db.Column(db.String(255), nullable=True)
+    supplier_manufacturer = db.Column(db.String(160), nullable=True)
+    version = db.Column(db.String(80), nullable=True)
+    quantity = db.Column(db.Float, nullable=True)
+    unit_net_price = db.Column(db.Float, nullable=True)
+    currency = db.Column(db.String(12), nullable=True)
+    huf_value = db.Column(db.Float, nullable=True)
+    assignment_quantity = db.Column(db.Float, nullable=True)
+    assignment_notes = db.Column(db.Text, nullable=True)
+    order_date = db.Column(db.Date, nullable=True)
+    is_ordered = db.Column(db.Boolean, nullable=True)
+    planned_arrival_date = db.Column(db.Date, nullable=True)
+    actual_arrival_date = db.Column(db.Date, nullable=True)
+    has_arrived = db.Column(db.Boolean, nullable=True)
+    shipping_cost = db.Column(db.Float, nullable=True)
+    shipping_date = db.Column(db.Date, nullable=True)
+    supplier_invoice_number = db.Column(db.String(120), nullable=True)
+    supplier_invoice_paid = db.Column(db.Boolean, nullable=True)
+    invoice_value = db.Column(db.Float, nullable=True)
+    shipping_invoice_number = db.Column(db.String(120), nullable=True)
+    shipping_invoice_paid = db.Column(db.Boolean, nullable=True)
+    status = db.Column(db.String(40), default="IN_STOCK", nullable=False)
     project_id = db.Column(db.Integer, db.ForeignKey("project.id"), nullable=True)
     location_id = db.Column(db.Integer, db.ForeignKey("location.id"), nullable=True)
     created_at = db.Column(
@@ -85,6 +144,9 @@ class Device(db.Model):
     location = db.relationship("Location", back_populates="devices")
     movements = db.relationship(
         "StockMovement", back_populates="device", cascade="all, delete-orphan"
+    )
+    unassigned_invoice_items = db.relationship(
+        "UnassignedInvoiceItem", back_populates="assigned_device"
     )
 
 
@@ -114,3 +176,72 @@ class StockMovement(db.Model):
     )
     project = db.relationship("Project", back_populates="movements")
     created_by = db.relationship("User", back_populates="movements")
+
+
+class UnassignedInvoiceItem(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    invoice_number = db.Column(db.String(120), nullable=True, index=True)
+    partner = db.Column(db.String(160), nullable=True)
+    invoice_date = db.Column(db.Date, nullable=True)
+    accounting_fulfillment_date = db.Column(db.Date, nullable=True)
+    payment_deadline = db.Column(db.Date, nullable=True)
+    gross_amount_huf = db.Column(db.Float, nullable=True)
+    currency = db.Column(db.String(12), nullable=True)
+    description = db.Column(db.Text, nullable=True)
+    quantity = db.Column(db.Float, nullable=True)
+    unit_price_huf = db.Column(db.Float, nullable=True)
+    net_amount_huf = db.Column(db.Float, nullable=True)
+    vat_amount_huf = db.Column(db.Float, nullable=True)
+    line_gross_amount_huf = db.Column(db.Float, nullable=True)
+    assignment_status = db.Column(
+        db.String(40), default="unassigned", nullable=False, index=True
+    )
+    notes = db.Column(db.Text, nullable=True)
+    assigned_project_id = db.Column(
+        db.Integer, db.ForeignKey("project.id"), nullable=True
+    )
+    assigned_device_id = db.Column(db.Integer, db.ForeignKey("device.id"), nullable=True)
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    assigned_project = db.relationship(
+        "Project", back_populates="unassigned_invoice_items"
+    )
+    assigned_device = db.relationship(
+        "Device", back_populates="unassigned_invoice_items"
+    )
+
+
+@event.listens_for(StockMovement, "before_update")
+def prevent_stock_movement_update(mapper, connection, target):
+    raise ValueError("A StockMovement rekordok nem módosíthatók.")
+
+
+@event.listens_for(StockMovement, "before_delete")
+def prevent_stock_movement_delete(mapper, connection, target):
+    raise ValueError("A StockMovement rekordok nem törölhetők.")
+
+
+@event.listens_for(Device, "before_update")
+def prevent_direct_device_status_update(mapper, connection, target):
+    status_history = inspect(target).attrs.status.history
+    if not status_history.has_changes():
+        return
+
+    session = object_session(target)
+    has_new_movement = session is not None and any(
+        isinstance(item, StockMovement)
+        and (item.device is target or item.device_id == target.id)
+        for item in session.new
+    )
+    if not has_new_movement:
+        raise ValueError("Az eszköz státusza csak StockMovement létrehozásával változhat.")

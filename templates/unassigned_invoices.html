@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}Gazdátlan számlasorok - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Gazdátlan számlasorok</h1>
+    <p class="text-secondary mb-0">Számlasorok, amelyek még nincsenek egyértelműen projekthez vagy eszközhöz rendelve.</p>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-xl-4">
+    <form method="post" class="form-panel">
+      <h2>Számlasor létrehozása</h2>
+
+      <h3 class="form-section-title">Számla adatok</h3>
+      <div class="row g-3">
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="invoice_number">Számlaszám</label>
+          <input class="form-control" id="invoice_number" name="invoice_number">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="partner">Partner</label>
+          <input class="form-control" id="partner" name="partner">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="invoice_date">Számla kelte</label>
+          <input class="form-control" id="invoice_date" name="invoice_date" type="date">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="accounting_fulfillment_date">Számviteli teljesítés</label>
+          <input class="form-control" id="accounting_fulfillment_date" name="accounting_fulfillment_date" type="date">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="payment_deadline">Fizetési határidő</label>
+          <input class="form-control" id="payment_deadline" name="payment_deadline" type="date">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="currency">Deviza</label>
+          <input class="form-control" id="currency" name="currency" placeholder="HUF">
+        </div>
+      </div>
+
+      <h3 class="form-section-title">Számlasor</h3>
+      <div class="row g-3">
+        <div class="col-12">
+          <label class="form-label" for="description">Megnevezés</label>
+          <textarea class="form-control" id="description" name="description" rows="2"></textarea>
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="quantity">Mennyiség</label>
+          <input class="form-control" id="quantity" name="quantity" type="number" step="0.01" min="0">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="unit_price_huf">Egységár (HUF)</label>
+          <input class="form-control" id="unit_price_huf" name="unit_price_huf" type="number" step="0.01" min="0">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="net_amount_huf">Nettó összeg (HUF)</label>
+          <input class="form-control" id="net_amount_huf" name="net_amount_huf" type="number" step="0.01" min="0">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="vat_amount_huf">ÁFA összeg (HUF)</label>
+          <input class="form-control" id="vat_amount_huf" name="vat_amount_huf" type="number" step="0.01" min="0">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="line_gross_amount_huf">Sori bruttó összeg (HUF)</label>
+          <input class="form-control" id="line_gross_amount_huf" name="line_gross_amount_huf" type="number" step="0.01" min="0">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="gross_amount_huf">Számla bruttó összeg (HUF)</label>
+          <input class="form-control" id="gross_amount_huf" name="gross_amount_huf" type="number" step="0.01" min="0">
+        </div>
+      </div>
+
+      <h3 class="form-section-title">Hozzárendelés</h3>
+      <div class="row g-3">
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="assignment_status">Hozzárendelési státusz</label>
+          <select class="form-select" id="assignment_status" name="assignment_status">
+            {% for status, label in assignment_statuses.items() %}
+              <option value="{{ status }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="assigned_project_id">Projekt</label>
+          <select class="form-select" id="assigned_project_id" name="assigned_project_id">
+            <option value="">Nincs</option>
+            {% for project in projects %}
+              <option value="{{ project.id }}">{{ project.code }} - {{ project.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="assigned_device_id">Eszköz</label>
+          <select class="form-select" id="assigned_device_id" name="assigned_device_id">
+            <option value="">Nincs</option>
+            {% for device in devices %}
+              <option value="{{ device.id }}">{{ device.asset_tag }} - {{ device.product_name or category_label(device.device_type) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12">
+          <label class="form-label" for="notes">Megjegyzés</label>
+          <textarea class="form-control" id="notes" name="notes" rows="2"></textarea>
+        </div>
+      </div>
+
+      <button class="btn btn-success mt-3" type="submit">Létrehozás</button>
+    </form>
+  </div>
+
+  <div class="col-xl-8">
+    <section class="data-section">
+      <div class="section-title"><h2>Számlasor lista</h2></div>
+      <form method="get" class="filter-bar">
+        <div>
+          <label class="form-label" for="assignment_status_filter">Hozzárendelési státusz</label>
+          <select class="form-select form-select-sm" id="assignment_status_filter" name="assignment_status">
+            <option value="">Minden státusz</option>
+            {% for status, label in assignment_statuses.items() %}
+              <option value="{{ status }}" {% if selected_assignment_status == status %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="filter-actions">
+          <button class="btn btn-outline-secondary btn-sm" type="submit">Szűrés</button>
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('unassigned_invoices') }}">Alaphelyzet</a>
+        </div>
+      </form>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead>
+            <tr>
+              <th>Számlaszám</th>
+              <th>Partner</th>
+              <th>Kelte</th>
+              <th>Megnevezés</th>
+              <th>Bruttó (HUF)</th>
+              <th>Státusz</th>
+              <th>Projekt</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in invoice_items %}
+              <tr>
+                <td class="fw-semibold">{{ item.invoice_number or "-" }}</td>
+                <td>{{ item.partner or "-" }}</td>
+                <td>{{ item.invoice_date.strftime("%Y-%m-%d") if item.invoice_date else "-" }}</td>
+                <td>{{ item.description or "-" }}</td>
+                <td>{{ format_number(item.line_gross_amount_huf or item.gross_amount_huf) }}</td>
+                <td><span class="badge text-bg-light">{{ assignment_status_label(item.assignment_status) }}</span></td>
+                <td>{{ item.assigned_project.code if item.assigned_project else "-" }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="7" class="text-secondary">Még nincs gazdátlan számlasor.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

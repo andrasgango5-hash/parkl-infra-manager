@@ -1,59 +1,59 @@
 {% extends "base.html" %}
 
-{% block title %}Projects - Parkl Infra Manager{% endblock %}
+{% block title %}Projektek - Parkl Infra Manager{% endblock %}
 
 {% block content %}
 <div class="page-header">
   <div>
-    <h1>Projects</h1>
-    <p class="text-secondary mb-0">Track parking and EV-charging deployments by customer and status.</p>
+    <h1>Projektek</h1>
+    <p class="text-secondary mb-0">Parkolási és EV-töltési projektek követése ügyfél és státusz szerint.</p>
   </div>
 </div>
 
 <div class="row g-4">
   <div class="col-lg-4">
     <form method="post" class="form-panel">
-      <h2>Create Project</h2>
+      <h2>Projekt létrehozása</h2>
       <div class="mb-3">
-        <label class="form-label" for="name">Name</label>
+        <label class="form-label" for="name">Név</label>
         <input class="form-control" id="name" name="name" required>
       </div>
       <div class="mb-3">
-        <label class="form-label" for="code">Code</label>
+        <label class="form-label" for="code">Kód</label>
         <input class="form-control" id="code" name="code" required>
       </div>
       <div class="mb-3">
-        <label class="form-label" for="customer">Customer</label>
+        <label class="form-label" for="customer">Ügyfél</label>
         <input class="form-control" id="customer" name="customer">
       </div>
       <div class="mb-3">
-        <label class="form-label" for="status">Status</label>
+        <label class="form-label" for="status">Státusz</label>
         <select class="form-select" id="status" name="status">
-          <option value="planned">Planned</option>
-          <option value="active">Active</option>
-          <option value="handover">Handover</option>
-          <option value="completed">Completed</option>
+          <option value="planned">Tervezett</option>
+          <option value="active">Aktív</option>
+          <option value="handover">Átadás alatt</option>
+          <option value="completed">Lezárt</option>
         </select>
       </div>
       <div class="mb-3">
-        <label class="form-label" for="notes">Notes</label>
+        <label class="form-label" for="notes">Megjegyzés</label>
         <textarea class="form-control" id="notes" name="notes" rows="3"></textarea>
       </div>
-      <button class="btn btn-success" type="submit">Create</button>
+      <button class="btn btn-success" type="submit">Létrehozás</button>
     </form>
   </div>
   <div class="col-lg-8">
     <section class="data-section">
-      <div class="section-title"><h2>Project List</h2></div>
+      <div class="section-title"><h2>Projektlista</h2></div>
       <div class="table-responsive">
         <table class="table table-hover align-middle">
           <thead>
             <tr>
-              <th>Code</th>
-              <th>Name</th>
-              <th>Customer</th>
-              <th>Status</th>
-              <th>Devices</th>
+              <th>Kód</th>
+              <th>Név</th>
+              <th>Ügyfél</th>
+              <th>Státusz</th>
+              <th>Eszközök</th>
             </tr>
           </thead>
           <tbody>
@@ -62,11 +62,11 @@
                 <td class="fw-semibold">{{ project.code }}</td>
                 <td>{{ project.name }}</td>
                 <td>{{ project.customer or "-" }}</td>
-                <td><span class="badge text-bg-light">{{ project.status }}</span></td>
+                <td><span class="badge text-bg-light">{{ project_status_label(project.status) }}</span></td>
                 <td>{{ project.devices|length }}</td>
               </tr>
             {% else %}
-              <tr><td colspan="5" class="text-secondary">No projects yet.</td></tr>
+              <tr><td colspan="5" class="text-secondary">Még nincs projekt.</td></tr>
             {% endfor %}
           </tbody>
         </table>
