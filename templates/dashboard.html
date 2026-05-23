@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Dashboard</h1>
+    <p class="text-secondary mb-0">Operational snapshot for Parkl parking and EV-charging infrastructure.</p>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-xl-3">
+    <div class="metric">
+      <span>Projects</span>
+      <strong>{{ stats.projects }}</strong>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="metric">
+      <span>Devices</span>
+      <strong>{{ stats.devices }}</strong>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="metric">
+      <span>Locations</span>
+      <strong>{{ stats.locations }}</strong>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="metric">
+      <span>Movements</span>
+      <strong>{{ stats.movements }}</strong>
+    </div>
+  </div>
+</div>
+
+<section class="data-section">
+  <div class="section-title">
+    <h2>Recent Stock Movements</h2>
+    <a href="{{ url_for('movements') }}" class="btn btn-outline-secondary btn-sm">View all</a>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Device</th>
+          <th>Type</th>
+          <th>From</th>
+          <th>To</th>
+          <th>Project</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for movement in recent_movements %}
+          <tr>
+            <td>{{ movement.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+            <td>{{ movement.device.asset_tag }}</td>
+            <td><span class="badge text-bg-light">{{ movement.movement_type }}</span></td>
+            <td>{{ movement.from_location.name if movement.from_location else "-" }}</td>
+            <td>{{ movement.to_location.name if movement.to_location else "-" }}</td>
+            <td>{{ movement.project.code if movement.project else "-" }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" class="text-secondary">No movements yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

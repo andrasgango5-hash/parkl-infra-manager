@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}Login - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="login-shell">
+  <div class="login-panel">
+    <h1 class="h3 mb-1">Sign in</h1>
+    <p class="text-secondary mb-4">Parkl parking and EV infrastructure inventory</p>
+    <form method="post">
+      <div class="mb-3">
+        <label for="username" class="form-label">Username</label>
+        <input class="form-control" id="username" name="username" autocomplete="username" required autofocus>
+      </div>
+      <div class="mb-4">
+        <label for="password" class="form-label">Password</label>
+        <input class="form-control" id="password" name="password" type="password" autocomplete="current-password" required>
+      </div>
+      <button class="btn btn-success w-100" type="submit">Login</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

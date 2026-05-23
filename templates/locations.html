@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}Locations - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Locations</h1>
+    <p class="text-secondary mb-0">Warehouses, project sites, service vehicles, and installed infrastructure locations.</p>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-4">
+    <form method="post" class="form-panel">
+      <h2>Create Location</h2>
+      <div class="mb-3">
+        <label class="form-label" for="name">Name</label>
+        <input class="form-control" id="name" name="name" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="location_type">Type</label>
+        <select class="form-select" id="location_type" name="location_type">
+          <option value="warehouse">Warehouse</option>
+          <option value="project_site">Project site</option>
+          <option value="service_vehicle">Service vehicle</option>
+          <option value="installed">Installed</option>
+          <option value="supplier">Supplier</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="address">Address</label>
+        <input class="form-control" id="address" name="address">
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="notes">Notes</label>
+        <textarea class="form-control" id="notes" name="notes" rows="3"></textarea>
+      </div>
+      <button class="btn btn-success" type="submit">Create</button>
+    </form>
+  </div>
+  <div class="col-lg-8">
+    <section class="data-section">
+      <div class="section-title"><h2>Location List</h2></div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Address</th>
+              <th>Devices</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for location in locations %}
+              <tr>
+                <td class="fw-semibold">{{ location.name }}</td>
+                <td><span class="badge text-bg-light">{{ location.location_type }}</span></td>
+                <td>{{ location.address or "-" }}</td>
+                <td>{{ location.devices|length }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="4" class="text-secondary">No locations yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

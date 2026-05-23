@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Devices - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Devices</h1>
+    <p class="text-secondary mb-0">Register chargers, parking controllers, sensors, meters, cabinets, and network gear.</p>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-xl-4">
+    <form method="post" class="form-panel">
+      <h2>Create Device</h2>
+      <div class="row g-3">
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="asset_tag">Asset tag</label>
+          <input class="form-control" id="asset_tag" name="asset_tag" required>
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="serial_number">Serial number</label>
+          <input class="form-control" id="serial_number" name="serial_number">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="device_type">Type</label>
+          <select class="form-select" id="device_type" name="device_type" required>
+            <option value="">Choose...</option>
+            <option>EV charger</option>
+            <option>Parking controller</option>
+            <option>Barrier gate</option>
+            <option>Sensor</option>
+            <option>Energy meter</option>
+            <option>Network device</option>
+            <option>Cabinet</option>
+          </select>
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="manufacturer">Manufacturer</label>
+          <input class="form-control" id="manufacturer" name="manufacturer">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="model">Model</label>
+          <input class="form-control" id="model" name="model">
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="location_id">Initial location</label>
+          <select class="form-select" id="location_id" name="location_id">
+            <option value="">Unassigned</option>
+            {% for location in locations %}
+              <option value="{{ location.id }}">{{ location.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12">
+          <label class="form-label" for="project_id">Project</label>
+          <select class="form-select" id="project_id" name="project_id">
+            <option value="">None</option>
+            {% for project in projects %}
+              <option value="{{ project.id }}">{{ project.code }} - {{ project.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-success mt-3" type="submit">Create</button>
+    </form>
+  </div>
+  <div class="col-xl-8">
+    <section class="data-section">
+      <div class="section-title"><h2>Device List</h2></div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead>
+            <tr>
+              <th>Asset</th>
+              <th>Type</th>
+              <th>Serial</th>
+              <th>Status</th>
+              <th>Location</th>
+              <th>Project</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for device in devices %}
+              <tr>
+                <td class="fw-semibold">{{ device.asset_tag }}</td>
+                <td>{{ device.device_type }}</td>
+                <td>{{ device.serial_number or "-" }}</td>
+                <td><span class="badge text-bg-light">{{ device.status }}</span></td>
+                <td>{{ device.location.name if device.location else "-" }}</td>
+                <td>{{ device.project.code if device.project else "-" }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="6" class="text-secondary">No devices yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

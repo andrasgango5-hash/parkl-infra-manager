@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}Movements - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Stock Movements</h1>
+    <p class="text-secondary mb-0">Every inventory action is recorded here as an auditable movement.</p>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-xl-4">
+    <form method="post" class="form-panel">
+      <h2>Create Movement</h2>
+      <div class="mb-3">
+        <label class="form-label" for="device_id">Device</label>
+        <select class="form-select" id="device_id" name="device_id" required>
+          <option value="">Choose...</option>
+          {% for device in devices %}
+            <option value="{{ device.id }}">{{ device.asset_tag }} - {{ device.device_type }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="movement_type">Type</label>
+        <select class="form-select" id="movement_type" name="movement_type" required>
+          <option value="">Choose...</option>
+          <option value="received">Received</option>
+          <option value="transfer">Transfer</option>
+          <option value="installed">Installed</option>
+          <option value="returned">Returned</option>
+          <option value="maintenance">Maintenance</option>
+          <option value="retired">Retired</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="from_location_id">From location</label>
+        <select class="form-select" id="from_location_id" name="from_location_id">
+          <option value="">None</option>
+          {% for location in locations %}
+            <option value="{{ location.id }}">{{ location.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="to_location_id">To location</label>
+        <select class="form-select" id="to_location_id" name="to_location_id">
+          <option value="">None</option>
+          {% for location in locations %}
+            <option value="{{ location.id }}">{{ location.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="project_id">Project</label>
+        <select class="form-select" id="project_id" name="project_id">
+          <option value="">None</option>
+          {% for project in projects %}
+            <option value="{{ project.id }}">{{ project.code }} - {{ project.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="notes">Notes</label>
+        <textarea class="form-control" id="notes" name="notes" rows="3"></textarea>
+      </div>
+      <button class="btn btn-success" type="submit">Record</button>
+    </form>
+  </div>
+  <div class="col-xl-8">
+    <section class="data-section">
+      <div class="section-title"><h2>Movement History</h2></div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Device</th>
+              <th>Type</th>
+              <th>From</th>
+              <th>To</th>
+              <th>Project</th>
+              <th>User</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for movement in movements %}
+              <tr>
+                <td>{{ movement.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+                <td class="fw-semibold">{{ movement.device.asset_tag }}</td>
+                <td><span class="badge text-bg-light">{{ movement.movement_type }}</span></td>
+                <td>{{ movement.from_location.name if movement.from_location else "-" }}</td>
+                <td>{{ movement.to_location.name if movement.to_location else "-" }}</td>
+                <td>{{ movement.project.code if movement.project else "-" }}</td>
+                <td>{{ movement.created_by.username }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="7" class="text-secondary">No movements yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}
