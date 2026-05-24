@@ -49,12 +49,19 @@
             <td>{{ device.source_sheet or "-" }}</td>
             <td>{{ device.source_row_number or "-" }}</td>
             <td class="fw-semibold">{{ device.asset_tag }}</td>
-            <td>{{ device.product_name or device.model or "-" }}</td>
-            <td>{{ "Archiválva" if device.archived_at else status_label(device.status) }}</td>
+            <td>{{ device_display_label(device) }}</td>
+            <td><span class="status-badge {{ 'status-neutral' if device.archived_at else status_badge_class(device.status) }}">{{ "Archiválva" if device.archived_at else status_label(device.status) }}</span></td>
             <td><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_detail', device_id=device.id) }}">Részletek</a></td>
           </tr>
         {% else %}
-          <tr><td colspan="6" class="text-secondary">Nincs importált eszköz.</td></tr>
+          <tr>
+            <td colspan="6">
+              <div class="empty-state">
+                <strong>Nincs importált eszköz.</strong>
+                <span>Ebben az importcsomagban nem jött létre eszközrekord.</span>
+              </div>
+            </td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>
@@ -74,10 +81,17 @@
             <td class="fw-semibold">{{ item.invoice_number or "-" }}</td>
             <td>{{ item.partner or "-" }}</td>
             <td>{{ item.description or "-" }}</td>
-            <td>{{ "Archiválva" if item.archived_at else assignment_status_label(item.assignment_status) }}</td>
+            <td><span class="status-badge status-reserved">{{ "Archiválva" if item.archived_at else assignment_status_label(item.assignment_status) }}</span></td>
           </tr>
         {% else %}
-          <tr><td colspan="6" class="text-secondary">Nincs importált számlasor.</td></tr>
+          <tr>
+            <td colspan="6">
+              <div class="empty-state">
+                <strong>Nincs importált számlasor.</strong>
+                <span>Ebben az importcsomagban nem jött létre gazdátlan számlasor.</span>
+              </div>
+            </td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>

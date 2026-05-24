@@ -14,6 +14,7 @@ Parkl-specifikus belső ERP/készletkezelő webalkalmazás első működő MVP v
 - Vanilla JavaScript
 - Flask session alapú hitelesítés
 - Werkzeug jelszó-hash-elés
+- ReportLab alapú PDF export
 
 ## Telepítés
 
@@ -37,6 +38,14 @@ Alapértelmezett admin felhasználó létrehozása:
 ```bash
 flask --app app seed-admin
 ```
+
+Tiszta helyi demóadatok létrehozása:
+
+```bash
+flask --app app reset-demo-data --yes
+```
+
+Ez a parancs csak akkor fut, ha `FLASK_ENV` nem `production`. A meglévő projekt-, eszköz-, készlethely-, készletmozgás-, import- és gazdátlan számlasor adatokat törli, az admin felhasználót viszont megtartja vagy létrehozza. `--yes` nélkül megerősítést kér.
 
 Alkalmazás indítása:
 
@@ -75,24 +84,46 @@ SECRET_KEY=replace-with-a-long-random-value
 
 Az alkalmazás böngészőben látható felülete magyar nyelvű. A fő menüpontok:
 
-- `Áttekintés` - összesített darabszámok és legutóbbi készletmozgások
+- `Áttekintés` - workflow indítópontok, figyelmet igénylő tételek és legutóbbi mozgások
 - `Projektek` - projektek listázása és létrehozása
-- `Eszközök` - eszközök listázása, szűrése és létrehozása
+- `Eszközök` - eszközök, bulk anyagok és importált készletsorok keresése, workflow nézetekkel
 - `Készlethelyek` - raktárak, helyszínek és egyéb készlethelyek kezelése
 - `Mozgások` - készletmozgások rögzítése és megtekintése
 - `Gazdátlan számlasorok` - projekthez vagy eszközhöz még nem rendelt számlasorok nyilvántartása
 - `Excel import` - Parkl készletkezelő `.xlsx` feltöltése, dry-run előnézet és megerősített import
 
-Javasolt munkafolyamat:
+## Hogyan használd az appot
 
-1. Hozz létre legalább egy készlethelyet, például `Fő raktár`.
-2. Hozz létre kézzel eszközöket, vagy importáld őket az `Excel import` oldalon.
-3. Rendeld az eszközöket projekthez az eszköz szerkesztésével vagy importált projektkód alapján.
-4. Az eszköz részletein használd a készletműveleteket: előjegyzés, kiadás, telepítés, visszavétel, szerviz, áthelyezés, selejtezés.
-5. Téves vagy tesztimport esetén az importcsomag részletein használd az `Import visszavonása` gombot.
-6. Export/PDF későbbi fejlesztés.
+Az app célja, hogy az Excelből átvett készlet-, beszerzési, projekt- és számlainformációk ne nyers táblázatként, hanem napi Parkl operációs folyamatként legyenek kezelhetők.
+
+Javasolt Parkl munkafolyamat:
+
+1. Hozd létre a projektet a `Projektek` oldalon.
+2. Rögzíts kézzel eszközt, vagy töltsd be a Parkl Excel fájlt az `Excel import` oldalon.
+3. Az `Eszközök` oldalon használd a workflow nézeteket: `Raktáron`, `Projekthez rendelve`, `Kiadva`, `Telepítve`, `Beérkezésre vár`, `Pénzügyileg nyitott`, `Figyelmet igényel`.
+4. Az eszköz részletein foglald, add ki, telepítsd, vedd vissza, küldd szervizbe, helyezd át vagy selejtezd.
+5. A projekt részletező oldalon ellenőrizd a hozzárendelt tételeket, az összértéket, a nyitott számlákat és a mozgástörténetet.
+6. Generálj PDF projektlistát, kiadási listát, telepítési listát vagy pénzügyi összesítőt.
+7. A `Gazdátlan számlasorok` és `Figyelmet igényel` oldalakkal zárd le a tisztázatlan pénzügyi és beszerzési tételeket.
+8. Téves vagy tesztimport esetén az importcsomag részletein használd az `Import visszavonása` gombot.
+
+Helyi kipróbáláshoz érdemes a `reset-demo-data` paranccsal indulni. A demo két projektet hoz létre (`PRK-001 - Arena EV Upgrade`, `PRK-002 - Office Park Sorompó projekt`), öt hasznos készlethelyet, hat érthető eszközt, hozzájuk tartozó bevételezési/készletmozgási naplót és két gazdátlan számlasort.
 
 A törlés jellegű műveletek alapértelmezés szerint archiválnak. Készletmozgással rendelkező eszközök és importált adatok így nem vesznek el, de eltűnnek az aktív listákból.
+
+Workflow fókuszú nézetek:
+
+- Az `Áttekintés` oldalon a fő műveletek indulnak: új projekt, Excel import, eszközkeresés, projektlista, figyelmet igénylő tételek és gazdátlan számlasorok.
+- Az `Eszközök` oldalon nézetgombok segítenek: `Összes`, `Raktáron`, `Projekthez rendelve`, `Kiadva`, `Telepítve`, `Beérkezésre vár`, `Pénzügyileg nyitott`, `Figyelmet igényel`.
+- A `Figyelmet igényel` oldal összegyűjti a problémás eszközöket és gazdátlan számlasorokat, például lejárt tervezett érkezést, nyitott számlát, hiányos projektadatot vagy hiányzó importált mezőt.
+- A projekt részletező oldal a fő munkalap: megmutatja a projekthez tartozó eszközöket, HUF értéket, kiadott/telepített/visszavett darabszámokat, nyitott beszállítói számlákat, beérkezésre váró tételeket, mozgástörténetet és PDF dokumentumokat generál.
+
+PDF dokumentumok projekt oldalról:
+
+- `PDF projektlista generálása` - teljes hozzárendelt eszköz- és anyaglista mennyiséggel, státusszal, lokációval, HUF értékkel és megjegyzéssel.
+- `Kiadási lista PDF` - kiadott tételek aláírási résszel.
+- `Telepítési lista PDF` - telepített tételek aláírási résszel.
+- `Pénzügyi összesítő PDF` - projektérték, számlaszámok, fizetettség, beszállító és HUF értékek.
 
 ## Excel megfeleltetés
 
@@ -117,7 +148,7 @@ A `Gazdátlanul` munkalap az új `Gazdátlan számlasorok` oldalra és az `Unass
 - `Egységár HUF`, `Számla sor nettó összeg HUF`, `Számla sor ÁFA összeg HUF`, `Számla sor bruttó összeg HUF`
 - hozzárendelési státusz, opcionális projekt- és eszközkapcsolat
 
-Az import jelenleg ezeket a normál készlet/termék munkalapokat kezeli: `Töltő`, `Töltők`, `BMW töltő`, `Kioszk`, `Kamera`, `Egyéb`, `Nyitó`, `Matricák`. A `Gazdátlanul` munkalap külön `UnassignedInvoiceItem` rekordokként kerül be. A `Segéd`, `Önköltség`, `Dashboard`, `WORKFLOW` és hasonló segédlapok nem kerülnek normál készletsorként importálásra.
+Az import jelenleg ezeket a normál készlet/termék munkalapokat kezeli: `Töltő`, `Töltők`, `BMW töltő`, `Kioszk`, `Kamera`, `Egyéb`, `Nyitó`, `Matricák`. A lapnév alapján az importált kategóriák érthetőbb címkéket kapnak: `Matricák` → `Matrica`, `Kamera` → `Kamera`, `Kioszk` → `Kioszk`, `Nyitó` → `Nyitó eszköz`, `Egyéb` → `Egyéb`. A `Gazdátlanul` munkalap külön `UnassignedInvoiceItem` rekordokként kerül be. A `Segéd`, `Önköltség`, `Dashboard`, `WORKFLOW` és hasonló segédlapok nem kerülnek normál készletsorként importálásra.
 
 Import használata:
 
@@ -171,13 +202,18 @@ Státuszváltási szabályok:
 ## MVP oldalak
 
 - `/login` - bejelentkezés
-- `/dashboard` - darabszámok és legutóbbi készletmozgások
+- `/dashboard` - workflow indítópult, gyors műveletek, figyelmet igénylő tételek és legutóbbi készletmozgások
 - `/projects` - projektek listázása és létrehozása
 - `/devices` - eszközök listázása, szűrése és létrehozása
 - `/locations` - készlethelyek listázása és létrehozása
 - `/movements` - készletmozgások listázása és létrehozása
 - `/unassigned-invoices` - gazdátlan számlasorok listázása és létrehozása
 - `/import` - Excel import előnézet és végrehajtás
+- `/attention` - figyelmet igénylő készlet-, projekt-, beszerzési és pénzügyi tételek
+- `/projects/<id>/pdf/equipment` - projekt eszközlista PDF
+- `/projects/<id>/pdf/issue` - kiadási lista PDF
+- `/projects/<id>/pdf/installation` - telepítési lista PDF
+- `/projects/<id>/pdf/finance` - pénzügyi összesítő PDF
 
 ## Fejlesztési megjegyzés
 

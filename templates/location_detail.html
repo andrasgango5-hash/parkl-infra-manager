@@ -31,13 +31,21 @@
         {% for device in devices %}
           <tr>
             <td class="fw-semibold">{{ device.asset_tag }}</td>
-            <td>{{ device.product_name or device.model or "-" }}</td>
-            <td>{{ status_label(device.status) }}</td>
+            <td>{{ device_display_label(device) }}</td>
+            <td><span class="status-badge {{ status_badge_class(device.status) }}">{{ status_label(device.status) }}</span></td>
             <td>{{ device.project.code if device.project else "-" }}</td>
             <td><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_detail', device_id=device.id) }}">Részletek</a></td>
           </tr>
         {% else %}
-          <tr><td colspan="5" class="text-secondary">Nincs eszköz ezen a készlethelyen.</td></tr>
+          <tr>
+            <td colspan="5">
+              <div class="empty-state">
+                <strong>Nincs eszköz ezen a készlethelyen.</strong>
+                <span>Mozgass ide eszközt az eszköz részletein vagy a Mozgások oldalon.</span>
+                <a class="btn btn-success btn-sm" href="{{ url_for('devices') }}">Eszközök megnyitása</a>
+              </div>
+            </td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>
@@ -53,13 +61,20 @@
         {% for movement in movements %}
           <tr>
             <td>{{ movement.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
-            <td>{{ movement.device.asset_tag }}</td>
-            <td>{{ movement_type_label(movement.movement_type) }}</td>
+            <td>{{ device_display_label(movement.device) }}</td>
+            <td><span class="movement-badge {{ movement_badge_class(movement.movement_type) }}">{{ movement_type_label(movement.movement_type) }}</span></td>
             <td>{{ movement.from_location.name if movement.from_location else "-" }}</td>
             <td>{{ movement.to_location.name if movement.to_location else "-" }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="5" class="text-secondary">Nincs kapcsolódó mozgás.</td></tr>
+          <tr>
+            <td colspan="5">
+              <div class="empty-state">
+                <strong>Nincs kapcsolódó mozgás.</strong>
+                <span>Ha erre a készlethelyre vagy innen mozog eszköz, az itt jelenik meg.</span>
+              </div>
+            </td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>

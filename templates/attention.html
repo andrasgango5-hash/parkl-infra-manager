@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Figyelmet igényel - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Figyelmet igényel</h1>
+    <p class="text-secondary mb-0">Beszerzési, készlet-, projekt- és pénzügyi problémák egy helyen.</p>
+  </div>
+</div>
+
+<section class="data-section">
+  <div class="section-title"><h2>Problémás tételek</h2></div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr>
+          <th>Típus</th>
+          <th>Tétel</th>
+          <th>Probléma</th>
+          <th>Projekt</th>
+          <th>Beszállító / számla</th>
+          <th>Forrás</th>
+          <th>Művelet</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in attention_items %}
+          <tr>
+            <td>{{ item.type }}</td>
+            <td class="fw-semibold">{{ item.name }}</td>
+            <td>
+              {% for reason in item.reasons %}
+                <div>{{ reason }}</div>
+              {% endfor %}
+            </td>
+            <td>{{ item.project }}</td>
+            <td>{{ item.supplier }} / {{ item.invoice }}</td>
+            <td>{{ item.source }}</td>
+            <td class="text-nowrap">
+              {% if item.detail_url %}
+                <a class="btn btn-outline-secondary btn-sm" href="{{ item.detail_url }}">Részletek</a>
+              {% endif %}
+              {% if item.edit_url %}
+                <a class="btn btn-outline-secondary btn-sm" href="{{ item.edit_url }}">Szerkesztés</a>
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="7">
+              <div class="empty-state">
+                <strong>Nincs figyelmet igénylő tétel.</strong>
+                <span>A készlet, projekt és pénzügyi adatok jelenleg rendben vannak.</span>
+                <a class="btn btn-success btn-sm" href="{{ url_for('dashboard') }}">Vissza az áttekintésre</a>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

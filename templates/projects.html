@@ -10,6 +10,10 @@
   </div>
 </div>
 
+<div class="help-box">
+  <strong>Projektközpontú munkanézet.</strong> Itt indíts új Parkl munkát, keresd meg a futó projekteket, majd a részletező oldalon ellenőrizd az eszközöket, mozgásokat, nyitott számlákat és PDF listákat.
+</div>
+
 <form method="get" class="filter-bar mb-4">
   <div>
     <label class="form-label" for="q">Keresés</label>
@@ -25,7 +29,7 @@
     </select>
   </div>
   <div class="filter-actions">
-    <button class="btn btn-outline-secondary btn-sm" type="submit">Szűrés</button>
+    <button class="btn btn-purple btn-sm" type="submit">Szűrés</button>
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('projects') }}">Alaphelyzet</a>
   </div>
 </form>
@@ -71,9 +75,9 @@
             <tr>
               <th>Kód</th>
               <th>Név</th>
-              <th>Ügyfél</th>
+              <th class="mobile-hide">Ügyfél</th>
               <th>Státusz</th>
-              <th>Eszközök</th>
+              <th class="mobile-hide">Eszközök</th>
               <th>Műveletek</th>
             </tr>
           </thead>
@@ -82,9 +86,9 @@
               <tr>
                 <td class="fw-semibold">{{ project.code }}</td>
                 <td>{{ project.name }}</td>
-                <td>{{ project.customer or "-" }}</td>
-                <td><span class="badge text-bg-light">{{ project_status_label(project.status) }}</span></td>
-                <td>{{ project.devices|length }}</td>
+                <td class="mobile-hide">{{ project.customer or "-" }}</td>
+                <td><span class="status-badge status-neutral">{{ project_status_label(project.status) }}</span></td>
+                <td class="mobile-hide">{{ project.devices|length }}</td>
                 <td class="text-nowrap">
                   <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('project_detail', project_id=project.id) }}">Részletek</a>
                   <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('project_edit', project_id=project.id) }}">Szerkesztés</a>
@@ -94,7 +98,15 @@
                 </td>
               </tr>
             {% else %}
-              <tr><td colspan="6" class="text-secondary">Még nincs projekt.</td></tr>
+              <tr>
+                <td colspan="6">
+                  <div class="empty-state">
+                    <strong>Még nincs projekt.</strong>
+                    <span>Hozd létre az első projektet, majd rendelj hozzá eszközöket.</span>
+                    <a class="btn btn-success btn-sm" href="#name">Projekt létrehozása</a>
+                  </div>
+                </td>
+              </tr>
             {% endfor %}
           </tbody>
         </table>

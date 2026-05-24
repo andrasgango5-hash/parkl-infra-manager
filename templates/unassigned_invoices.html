@@ -10,6 +10,10 @@
   </div>
 </div>
 
+<div class="help-box">
+  <strong>Pénzügyi tisztázólista.</strong> Ezek még nincsenek projekthez vagy eszközhöz rendelve. A cél, hogy minden számlasor kapjon felelőst, projektet vagy eszközkapcsolatot, mielőtt pénzügyileg lezártnak tekintjük.
+</div>
+
 <div class="row g-4">
   <div class="col-xl-4">
     <form method="post" class="form-panel">
@@ -99,7 +103,7 @@
           <select class="form-select" id="assigned_device_id" name="assigned_device_id">
             <option value="">Nincs</option>
             {% for device in devices %}
-              <option value="{{ device.id }}">{{ device.asset_tag }} - {{ device.product_name or category_label(device.device_type) }}</option>
+              <option value="{{ device.id }}">{{ device_display_label(device) }}</option>
             {% endfor %}
           </select>
         </div>
@@ -131,7 +135,7 @@
           </select>
         </div>
         <div class="filter-actions">
-          <button class="btn btn-outline-secondary btn-sm" type="submit">Szűrés</button>
+          <button class="btn btn-purple btn-sm" type="submit">Szűrés</button>
           <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('unassigned_invoices') }}">Alaphelyzet</a>
         </div>
       </form>
@@ -141,9 +145,9 @@
             <tr>
               <th>Számlaszám</th>
               <th>Partner</th>
-              <th>Kelte</th>
+              <th class="mobile-hide">Kelte</th>
               <th>Megnevezés</th>
-              <th>Bruttó (HUF)</th>
+              <th class="mobile-hide">Bruttó (HUF)</th>
               <th>Státusz</th>
               <th>Projekt</th>
               <th>Műveletek</th>
@@ -154,10 +158,10 @@
               <tr>
                 <td class="fw-semibold">{{ item.invoice_number or "-" }}</td>
                 <td>{{ item.partner or "-" }}</td>
-                <td>{{ item.invoice_date.strftime("%Y-%m-%d") if item.invoice_date else "-" }}</td>
+                <td class="mobile-hide">{{ item.invoice_date.strftime("%Y-%m-%d") if item.invoice_date else "-" }}</td>
                 <td>{{ item.description or "-" }}</td>
-                <td>{{ format_number(item.line_gross_amount_huf or item.gross_amount_huf) }}</td>
-                <td><span class="badge text-bg-light">{{ assignment_status_label(item.assignment_status) }}</span></td>
+                <td class="mobile-hide">{{ format_number(item.line_gross_amount_huf or item.gross_amount_huf) }}</td>
+                <td><span class="status-badge status-reserved">{{ assignment_status_label(item.assignment_status) }}</span></td>
                 <td>{{ item.assigned_project.code if item.assigned_project else "-" }}</td>
                 <td class="text-nowrap">
                   <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('unassigned_invoice_edit', item_id=item.id) }}">Szerkesztés</a>
@@ -167,7 +171,15 @@
                 </td>
               </tr>
             {% else %}
-              <tr><td colspan="8" class="text-secondary">Még nincs gazdátlan számlasor.</td></tr>
+              <tr>
+                <td colspan="8">
+                  <div class="empty-state">
+                    <strong>Nincs gazdátlan számlasor.</strong>
+                    <span>Importálhatsz Excelből, vagy kézzel rögzíthetsz olyan számlasort, amelyet még tisztázni kell.</span>
+                    <a class="btn btn-purple btn-sm" href="{{ url_for('excel_import') }}">Excel import</a>
+                  </div>
+                </td>
+              </tr>
             {% endfor %}
           </tbody>
         </table>

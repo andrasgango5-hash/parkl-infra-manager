@@ -28,7 +28,7 @@
       </select>
     </div>
     <div class="col-md-6"><label class="form-label" for="assigned_project_id">Projekt</label><select class="form-select" id="assigned_project_id" name="assigned_project_id"><option value="">Nincs</option>{% for project in projects %}<option value="{{ project.id }}" {% if item.assigned_project_id == project.id %}selected{% endif %}>{{ project.code }} - {{ project.name }}</option>{% endfor %}</select></div>
-    <div class="col-md-6"><label class="form-label" for="assigned_device_id">Eszköz</label><select class="form-select" id="assigned_device_id" name="assigned_device_id"><option value="">Nincs</option>{% for device in devices %}<option value="{{ device.id }}" {% if item.assigned_device_id == device.id %}selected{% endif %}>{{ device.asset_tag }} - {{ device.product_name or category_label(device.device_type) }}</option>{% endfor %}</select></div>
+    <div class="col-md-6"><label class="form-label" for="assigned_device_id">Eszköz</label><select class="form-select" id="assigned_device_id" name="assigned_device_id"><option value="">Nincs</option>{% for device in devices %}<option value="{{ device.id }}" {% if item.assigned_device_id == device.id %}selected{% endif %}>{{ device_display_label(device) }}</option>{% endfor %}</select></div>
     <div class="col-12"><label class="form-label" for="notes">Megjegyzés</label><textarea class="form-control" id="notes" name="notes" rows="2">{{ item.notes or '' }}</textarea></div>
   </div>
   <div class="mt-3 d-flex gap-2">

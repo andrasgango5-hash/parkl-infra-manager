@@ -6,47 +6,149 @@
 <div class="page-header">
   <div>
     <h1>Áttekintés</h1>
-    <p class="text-secondary mb-0">Parkl parkolási és EV-töltési infrastruktúra operatív állapota.</p>
+    <p class="text-secondary mb-0">Parkl projektkészlet, beszerzés és számlakövetés egy helyen.</p>
   </div>
 </div>
+
+<section class="data-section mb-4">
+  <div class="section-title">
+    <h2>Parkl munkafolyamat</h2>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('attention') }}">Problémás tételek</a>
+  </div>
+  <div class="p-3">
+    <div class="row g-3">
+      <div class="col-md-6 col-xl-4">
+        <div class="action-card workflow-card">
+          <span class="workflow-step">1</span>
+          <strong>Projekt létrehozása</strong>
+          <span>Rögzíts projektkódot, ügyfelet és státuszt, hogy minden készlettételnek legyen kontextusa.</span>
+          <div class="mt-3"><a class="btn btn-success btn-sm" href="{{ url_for('projects') }}">Projektek megnyitása</a></div>
+        </div>
+      </div>
+      <div class="col-md-6 col-xl-4">
+        <div class="action-card workflow-card">
+          <span class="workflow-step">2</span>
+          <strong>Eszközök rögzítése/importálása</strong>
+          <span>Vigyél fel kézzel eszközt, vagy töltsd be az aktuális Parkl Excel fájlt dry-run előnézettel.</span>
+          <div class="mt-3"><a class="btn btn-purple btn-sm" href="{{ url_for('excel_import') }}">Excel importálás</a></div>
+        </div>
+      </div>
+      <div class="col-md-6 col-xl-4">
+        <div class="action-card workflow-card">
+          <span class="workflow-step">3</span>
+          <strong>Eszköz hozzárendelése projekthez</strong>
+          <span>Szűrd és keresd a tételeket, majd rendeld őket projekthez és készlethelyhez.</span>
+          <div class="mt-3"><a class="btn btn-success btn-sm" href="{{ url_for('devices') }}">Eszközök keresése</a></div>
+        </div>
+      </div>
+      <div class="col-md-6 col-xl-4">
+        <div class="action-card workflow-card">
+          <span class="workflow-step">4</span>
+          <strong>Kiadás / telepítés / visszavétel</strong>
+          <span>A készlet státusza mozgásokon keresztül változik, így az előzmények auditálhatók maradnak.</span>
+          <div class="mt-3"><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('movements') }}">Mozgások megnyitása</a></div>
+        </div>
+      </div>
+      <div class="col-md-6 col-xl-4">
+        <div class="action-card workflow-card">
+          <span class="workflow-step">5</span>
+          <strong>PDF projektlista generálása</strong>
+          <span>A projektoldalon eszközlista, kiadási lista, telepítési lista és pénzügyi összesítő készülhet.</span>
+          <div class="mt-3"><a class="btn btn-export btn-sm" href="{{ url_for('projects') }}">Projektlista</a></div>
+        </div>
+      </div>
+      <div class="col-md-6 col-xl-4">
+        <div class="action-card workflow-card">
+          <span class="workflow-step">6</span>
+          <strong>Pénzügyi lezárás ellenőrzése</strong>
+          <span>Kövesd a nyitott számlákat és a gazdátlan számlasorokat, mielőtt a projekt lezárható.</span>
+          <div class="mt-3"><a class="btn btn-purple btn-sm" href="{{ url_for('unassigned_invoices') }}">Számlasorok</a></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
 <div class="row g-3 mb-4">
   <div class="col-6 col-xl-3">
     <div class="metric">
-      <span>Projektek</span>
-      <strong>{{ stats.projects }}</strong>
+      <span>Raktáron lévő eszközök</span>
+      <strong>{{ stats.in_stock }}</strong>
     </div>
   </div>
   <div class="col-6 col-xl-3">
     <div class="metric">
-      <span>Eszközök</span>
-      <strong>{{ stats.devices }}</strong>
+      <span>Előjegyzett eszközök</span>
+      <strong>{{ stats.reserved }}</strong>
     </div>
   </div>
   <div class="col-6 col-xl-3">
     <div class="metric">
-      <span>Készlethelyek</span>
-      <strong>{{ stats.locations }}</strong>
+      <span>Kiadott eszközök</span>
+      <strong>{{ stats.issued }}</strong>
     </div>
   </div>
   <div class="col-6 col-xl-3">
     <div class="metric">
-      <span>Mozgások</span>
-      <strong>{{ stats.movements }}</strong>
+      <span>Telepített eszközök</span>
+      <strong>{{ stats.installed }}</strong>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="metric">
+      <span>Beérkezésre vár</span>
+      <strong>{{ stats.awaiting_arrival }}</strong>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="metric">
+      <span>Gazdátlan számlasorok</span>
+      <strong>{{ stats.unassigned_invoices }}</strong>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="metric">
+      <span>Pénzügyileg nyitott tételek</span>
+      <strong>{{ stats.financial_open }}</strong>
+    </div>
+  </div>
+  <div class="col-6 col-xl-3">
+    <div class="metric">
+      <span>Figyelmet igénylő tételek</span>
+      <strong>{{ stats.attention }}</strong>
     </div>
   </div>
 </div>
 
 <section class="data-section mb-4">
-  <div class="section-title"><h2>Munkafolyamat</h2></div>
-  <div class="p-3">
-    <ol class="mb-0">
-      <li>Hozz létre készlethelyet.</li>
-      <li>Hozz létre vagy importálj eszközöket.</li>
-      <li>Rendeld projekthez az eszközöket.</li>
-      <li>Mozgasd kiadás, telepítés és visszavétel műveletekkel.</li>
-      <li>Export/PDF későbbi fejlesztés.</li>
-    </ol>
+  <div class="section-title">
+    <h2>Figyelmet igénylő tételek</h2>
+    <a href="{{ url_for('attention') }}" class="btn btn-outline-secondary btn-sm">Összes megtekintése</a>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Típus</th><th>Tétel</th><th>Probléma</th><th>Projekt</th><th></th></tr></thead>
+      <tbody>
+        {% for item in attention_items %}
+          <tr>
+            <td>{{ item.type }}</td>
+            <td class="fw-semibold">{{ item.name }}</td>
+            <td>{{ item.reasons[0] }}</td>
+            <td>{{ item.project }}</td>
+            <td>{% if item.edit_url %}<a class="btn btn-outline-secondary btn-sm" href="{{ item.edit_url }}">Megnyitás</a>{% endif %}</td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="5">
+              <div class="empty-state">
+                <strong>Nincs figyelmet igénylő tétel.</strong>
+                <span>A demo workflow tiszta: nincs lejárt érkezés vagy tisztázatlan számla.</span>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </section>
 
@@ -71,14 +173,22 @@
         {% for movement in recent_movements %}
           <tr>
             <td>{{ movement.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
-            <td>{{ movement.device.asset_tag }}</td>
-            <td><span class="badge text-bg-light">{{ movement_type_label(movement.movement_type) }}</span></td>
+            <td>{{ device_display_label(movement.device) }}</td>
+            <td><span class="movement-badge {{ movement_badge_class(movement.movement_type) }}">{{ movement_type_label(movement.movement_type) }}</span></td>
             <td>{{ movement.from_location.name if movement.from_location else "-" }}</td>
             <td>{{ movement.to_location.name if movement.to_location else "-" }}</td>
             <td>{{ movement.project.code if movement.project else "-" }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="6" class="text-secondary">Még nincs készletmozgás.</td></tr>
+          <tr>
+            <td colspan="6">
+              <div class="empty-state">
+                <strong>Még nincs készletmozgás.</strong>
+                <span>Rögzíts vagy importálj eszközt, majd hozz létre első mozgást.</span>
+                <a class="btn btn-success btn-sm" href="{{ url_for('devices') }}">Eszközök megnyitása</a>
+              </div>
+            </td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>

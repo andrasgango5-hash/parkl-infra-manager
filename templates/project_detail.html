@@ -9,23 +9,65 @@
     <p class="text-secondary mb-0">{{ project.customer or "Nincs ügyfél megadva" }}</p>
   </div>
   <div class="d-flex gap-2">
+    <a class="btn btn-success btn-sm" href="{{ url_for('devices', project_id=project.id) }}">Eszköz hozzárendelése</a>
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('project_edit', project_id=project.id) }}">Szerkesztés</a>
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('projects') }}">Vissza</a>
   </div>
 </div>
 
+<div class="data-section mb-4">
+  <div class="section-title"><h2>Projekt dokumentumok</h2></div>
+  <div class="p-3 d-flex flex-wrap gap-2">
+    <a class="btn btn-export btn-sm" href="{{ url_for('project_pdf', project_id=project.id, pdf_type='equipment') }}">PDF projektlista generálása</a>
+    <a class="btn btn-export btn-sm" href="{{ url_for('project_pdf', project_id=project.id, pdf_type='issue') }}">Kiadási lista PDF</a>
+    <a class="btn btn-export btn-sm" href="{{ url_for('project_pdf', project_id=project.id, pdf_type='installation') }}">Telepítési lista PDF</a>
+    <a class="btn btn-export btn-sm" href="{{ url_for('project_pdf', project_id=project.id, pdf_type='finance') }}">Pénzügyi összesítő PDF</a>
+  </div>
+</div>
+
 <div class="row g-3 mb-4">
   <div class="col-6 col-xl-3"><div class="metric"><span>Eszközök</span><strong>{{ finance_summary.device_count }}</strong></div></div>
-  <div class="col-6 col-xl-3"><div class="metric"><span>Mennyiség</span><strong>{{ format_number(finance_summary.quantity) }}</strong></div></div>
   <div class="col-6 col-xl-3"><div class="metric"><span>Érték (HUF)</span><strong>{{ format_number(finance_summary.huf_value) }}</strong></div></div>
-  <div class="col-6 col-xl-3"><div class="metric"><span>Megérkezett</span><strong>{{ finance_summary.arrived }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="metric"><span>Kiadott</span><strong>{{ finance_summary.issued }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="metric"><span>Telepített</span><strong>{{ finance_summary.installed }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="metric"><span>Visszavett</span><strong>{{ finance_summary.returned }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="metric"><span>Nyitott beszállítói számla</span><strong>{{ finance_summary.unpaid_supplier_invoice_count }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="metric"><span>Beérkezésre vár</span><strong>{{ finance_summary.awaiting_arrival_count }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="metric"><span>Figyelmet igényel</span><strong>{{ attention_items|length }}</strong></div></div>
 </div>
 
 <section class="data-section mb-4">
   <div class="section-title"><h2>Projekt adatok</h2></div>
   <div class="p-3">
-    <div><strong>Státusz:</strong> {{ project_status_label(project.status) }}</div>
+    <div><strong>Státusz:</strong> <span class="status-badge status-neutral">{{ project_status_label(project.status) }}</span></div>
     <div><strong>Megjegyzés:</strong> {{ project.notes or "-" }}</div>
+  </div>
+</section>
+
+<section class="data-section mb-4">
+  <div class="section-title"><h2>Figyelmet igénylő projekt tételek</h2></div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Eszköz</th><th>Probléma</th><th></th></tr></thead>
+      <tbody>
+        {% for item in attention_items %}
+          <tr>
+            <td class="fw-semibold">{{ device_display_label(item.device) }}</td>
+            <td>{% for reason in item.reasons %}<div>{{ reason }}</div>{% endfor %}</td>
+            <td><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_detail', device_id=item.device.id) }}">Részletek</a></td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="3">
+              <div class="empty-state">
+                <strong>Nincs figyelmet igénylő projekt tétel.</strong>
+                <span>A projekt készlet- és pénzügyi adatai jelenleg tisztának tűnnek.</span>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </section>
 
@@ -38,13 +80,21 @@
         {% for device in devices %}
           <tr>
             <td class="fw-semibold">{{ device.asset_tag }}</td>
-            <td>{{ device.product_name or device.model or "-" }}</td>
-            <td>{{ status_label(device.status) }}</td>
+            <td>{{ device_display_label(device) }}</td>
+            <td><span class="status-badge {{ status_badge_class(device.status) }}">{{ status_label(device.status) }}</span></td>
             <td>{{ format_number(device.huf_value) }}</td>
             <td><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_detail', device_id=device.id) }}">Részletek</a></td>
           </tr>
         {% else %}
-          <tr><td colspan="5" class="text-secondary">Nincs hozzárendelt eszköz.</td></tr>
+          <tr>
+            <td colspan="5">
+              <div class="empty-state">
+                <strong>Nincs hozzárendelt eszköz.</strong>
+                <span>Nyisd meg az eszközlistát, és rendelj tételeket ehhez a projekthez.</span>
+                <a class="btn btn-success btn-sm" href="{{ url_for('devices', project_id=project.id) }}">Eszköz hozzárendelése</a>
+              </div>
+            </td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>
@@ -60,12 +110,19 @@
         {% for movement in movements %}
           <tr>
             <td>{{ movement.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
-            <td>{{ movement.device.asset_tag }}</td>
-            <td>{{ movement_type_label(movement.movement_type) }}</td>
+            <td>{{ device_display_label(movement.device) }}</td>
+            <td><span class="movement-badge {{ movement_badge_class(movement.movement_type) }}">{{ movement_type_label(movement.movement_type) }}</span></td>
             <td>{{ movement.notes or "-" }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="4" class="text-secondary">Nincs kapcsolódó mozgás.</td></tr>
+          <tr>
+            <td colspan="4">
+              <div class="empty-state">
+                <strong>Nincs kapcsolódó mozgás.</strong>
+                <span>A projekthez rendelt kiadás, telepítés vagy visszavétel itt jelenik meg.</span>
+              </div>
+            </td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>

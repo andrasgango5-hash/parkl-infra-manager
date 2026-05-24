@@ -10,6 +10,10 @@
   </div>
 </div>
 
+<div class="help-box">
+  <strong>Biztonságos Excel betöltés.</strong> Először mindig előnézet készül: laponként látod, hány sor importálható, mi marad ki, és milyen figyelmeztetések vannak. Az adatbázis csak külön megerősítés után módosul.
+</div>
+
 <div class="row g-4">
   <div class="col-xl-4">
     <form method="post" enctype="multipart/form-data" class="form-panel">
@@ -18,7 +22,7 @@
         <label class="form-label" for="excel_file">Excel fájl (.xlsx)</label>
         <input class="form-control" id="excel_file" name="excel_file" type="file" accept=".xlsx" required>
       </div>
-      <button class="btn btn-success" type="submit" name="action" value="dry_run">Előnézet készítése</button>
+      <button class="btn btn-purple" type="submit" name="action" value="dry_run">Előnézet készítése</button>
     </form>
 
     {% if pending_import and preview %}
@@ -99,7 +103,14 @@
                   <td>{{ format_number(row.ertek) }}</td>
                 </tr>
               {% else %}
-                <tr><td colspan="7" class="text-secondary">Nincs feldolgozható sor az előnézetben.</td></tr>
+                <tr>
+                  <td colspan="7">
+                    <div class="empty-state">
+                      <strong>Nincs feldolgozható sor az előnézetben.</strong>
+                      <span>Ellenőrizd, hogy a fájl Parkl készlet Excel, és van benne támogatott munkalap.</span>
+                    </div>
+                  </td>
+                </tr>
               {% endfor %}
             </tbody>
           </table>
@@ -156,7 +167,14 @@
                 <td>{{ item.warning_count }}</td>
               </tr>
             {% else %}
-              <tr><td colspan="6" class="text-secondary">Még nincs importálási előzmény.</td></tr>
+              <tr>
+                <td colspan="6">
+                  <div class="empty-state">
+                    <strong>Még nincs importálási előzmény.</strong>
+                    <span>Tölts fel egy `.xlsx` fájlt, majd nézd át a dry-run előnézetet.</span>
+                  </div>
+                </td>
+              </tr>
             {% endfor %}
           </tbody>
         </table>

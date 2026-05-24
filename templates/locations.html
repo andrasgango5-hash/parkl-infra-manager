@@ -10,6 +10,10 @@
   </div>
 </div>
 
+<div class="help-box">
+  <strong>Készlethelyek és fizikai helyszínek.</strong> Itt hozd létre a raktárakat, szervizautókat és projekt helyszíneket, hogy az eszközmozgásoknál mindig látszódjon, hol van egy tétel.
+</div>
+
 <form method="get" class="filter-bar mb-4">
   <div>
     <label class="form-label" for="location_type_filter">Típus</label>
@@ -21,7 +25,7 @@
     </select>
   </div>
   <div class="filter-actions">
-    <button class="btn btn-outline-secondary btn-sm" type="submit">Szűrés</button>
+    <button class="btn btn-purple btn-sm" type="submit">Szűrés</button>
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('locations') }}">Alaphelyzet</a>
   </div>
 </form>
@@ -41,6 +45,7 @@
           <option value="project_site">Projekt helyszín</option>
           <option value="service_vehicle">Szervizautó</option>
           <option value="installed">Telepített helyszín</option>
+          <option value="service">Szerviz / javítás</option>
           <option value="supplier">Beszállító</option>
         </select>
       </div>
@@ -64,8 +69,8 @@
             <tr>
               <th>Név</th>
               <th>Típus</th>
-              <th>Cím</th>
-              <th>Eszközök</th>
+              <th class="mobile-hide">Cím</th>
+              <th class="mobile-hide">Eszközök</th>
               <th>Műveletek</th>
             </tr>
           </thead>
@@ -73,9 +78,9 @@
             {% for location in locations %}
               <tr>
                 <td class="fw-semibold">{{ location.name }}</td>
-                <td><span class="badge text-bg-light">{{ location_type_label(location.location_type) }}</span></td>
-                <td>{{ location.address or "-" }}</td>
-                <td>{{ location.devices|length }}</td>
+                <td><span class="status-badge status-neutral">{{ location_type_label(location.location_type) }}</span></td>
+                <td class="mobile-hide">{{ location.address or "-" }}</td>
+                <td class="mobile-hide">{{ location.devices|length }}</td>
                 <td class="text-nowrap">
                   <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('location_detail', location_id=location.id) }}">Részletek</a>
                   <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('location_edit', location_id=location.id) }}">Szerkesztés</a>
@@ -85,7 +90,15 @@
                 </td>
               </tr>
             {% else %}
-              <tr><td colspan="5" class="text-secondary">Még nincs készlethely.</td></tr>
+              <tr>
+                <td colspan="5">
+                  <div class="empty-state">
+                    <strong>Még nincs készlethely.</strong>
+                    <span>Hozz létre legalább egy raktárat vagy projekt helyszínt az eszközök mozgatásához.</span>
+                    <a class="btn btn-success btn-sm" href="#name">Készlethely létrehozása</a>
+                  </div>
+                </td>
+              </tr>
             {% endfor %}
           </tbody>
         </table>

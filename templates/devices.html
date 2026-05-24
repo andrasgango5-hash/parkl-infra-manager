@@ -10,6 +10,10 @@
   </div>
 </div>
 
+<div class="help-box">
+  Itt látod az összes készlet- és projekt tételt. A lista csak a napi döntésekhez szükséges oszlopokat mutatja; a beszerzési és számlaadatok az eszköz részletein érhetők el.
+</div>
+
 <div class="row g-4">
   <div class="col-xl-4">
     <form method="post" class="form-panel">
@@ -178,7 +182,25 @@
   <div class="col-xl-8">
     <section class="data-section">
       <div class="section-title"><h2>Eszközlista</h2></div>
+      <div class="p-3 border-bottom">
+        <div class="nav nav-pills gap-2">
+          {% set tabs = [
+            ("all", "Összes"),
+            ("in_stock", "Raktáron"),
+            ("assigned", "Projekthez rendelve"),
+            ("issued", "Kiadva"),
+            ("installed", "Telepítve"),
+            ("awaiting_arrival", "Beérkezésre vár"),
+            ("financial_open", "Pénzügyileg nyitott"),
+            ("attention", "Figyelmet igényel")
+          ] %}
+          {% for value, label in tabs %}
+            <a class="btn btn-sm {% if selected_view == value and not quick_filter %}btn-purple{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('devices', view=value) }}">{{ label }}</a>
+          {% endfor %}
+        </div>
+      </div>
       <form method="get" class="filter-bar">
+        <input type="hidden" name="view" value="{{ selected_view }}">
         <div>
           <label class="form-label" for="q">Keresés</label>
           <input class="form-control form-control-sm" id="q" name="q" value="{{ search }}" placeholder="Termék, azonosító, sorozatszám, beszállító, projekt">
@@ -190,6 +212,16 @@
             {% for status in statuses %}
               <option value="{{ status }}" {% if selected_status == status %}selected{% endif %}>{{ status_label(status) }}</option>
             {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="form-label" for="quick_filter">Gyorsszűrő</label>
+          <select class="form-select form-select-sm" id="quick_filter" name="quick_filter">
+            <option value="">Nincs gyorsszűrő</option>
+            <option value="attention" {% if quick_filter == "attention" %}selected{% endif %}>Csak figyelmet igényel</option>
+            <option value="financial_open" {% if quick_filter == "financial_open" %}selected{% endif %}>Pénzügyileg nyitott</option>
+            <option value="awaiting_arrival" {% if quick_filter == "awaiting_arrival" %}selected{% endif %}>Beérkezésre vár</option>
+            <option value="arrived_unassigned" {% if quick_filter == "arrived_unassigned" %}selected{% endif %}>Beérkezett, de nincs hozzárendelve</option>
           </select>
         </div>
         <div>
@@ -229,22 +261,27 @@
           </select>
         </div>
         <div class="filter-actions">
-          <button class="btn btn-outline-secondary btn-sm" type="submit">Szűrés</button>
+          <button class="btn btn-purple btn-sm" type="submit">Szűrés</button>
           <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('devices') }}">Alaphelyzet</a>
         </div>
       </form>
+      <div class="summary-strip">
+        <span>Látható eszközök: <strong>{{ visible_summary.count }}</strong></span>
+        <span>Összérték: <strong>{{ format_number(visible_summary.huf_value) }} HUF</strong></span>
+        <span>Nyitott számla: <strong>{{ visible_summary.unpaid_invoice_count }}</strong></span>
+        <span>Beérkezésre vár: <strong>{{ visible_summary.awaiting_arrival_count }}</strong></span>
+      </div>
       <div class="table-responsive">
         <table class="table table-hover align-middle">
           <thead>
             <tr>
-              <th>Eszközazonosító</th>
+              <th>Azonosító</th>
               <th>Termék</th>
-              <th>Kategória</th>
-              <th>Mennyiség</th>
+              <th class="mobile-hide">Kategória</th>
+              <th class="mobile-hide">Mennyiség</th>
               <th>Státusz</th>
               <th>Projekt</th>
-              <th>Érkezés</th>
-              <th>Számla</th>
+              <th class="mobile-hide">Lokáció</th>
               <th>Műveletek</th>
             </tr>
           </thead>
@@ -252,13 +289,15 @@
             {% for device in devices %}
               <tr>
                 <td class="fw-semibold">{{ device.asset_tag }}</td>
-                <td>{{ device.product_name or device.model or "-" }}</td>
-                <td>{{ category_label(device.device_type) }}</td>
-                <td>{{ format_number(device.quantity) }}</td>
-                <td><span class="badge text-bg-light">{{ status_label(device.status) }}</span></td>
+                <td>
+                  <div class="fw-semibold">{{ device_display_label(device) }}</div>
+                  {% if device.subtype_note %}<div class="text-secondary small">{{ device.subtype_note }}</div>{% endif %}
+                </td>
+                <td class="mobile-hide">{{ category_label(device.device_type) }}</td>
+                <td class="mobile-hide">{{ format_number(device.quantity) }}</td>
+                <td><span class="status-badge {{ status_badge_class(device.status) }}">{{ status_label(device.status) }}</span></td>
                 <td>{{ device.project.code if device.project else "-" }}</td>
-                <td>{{ yes_no_label(device.has_arrived) }}</td>
-                <td>{{ device.supplier_invoice_number or device.shipping_invoice_number or "-" }}</td>
+                <td class="mobile-hide">{{ device.location.name if device.location else "-" }}</td>
                 <td class="text-nowrap">
                   <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_detail', device_id=device.id) }}">Részletek</a>
                   <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_edit', device_id=device.id) }}">Szerkesztés</a>
@@ -268,7 +307,18 @@
                 </td>
               </tr>
             {% else %}
-              <tr><td colspan="9" class="text-secondary">Még nincs eszköz.</td></tr>
+              <tr>
+                <td colspan="8">
+                  <div class="empty-state">
+                    <strong>Nincs eszköz ebben a nézetben.</strong>
+                    <span>Rögzíts új tételt, importálj Excelt, vagy állítsd vissza a szűrőket.</span>
+                    <div class="action-buttons">
+                      <a class="btn btn-success btn-sm" href="{{ url_for('devices') }}">Új eszköz rögzítése</a>
+                      <a class="btn btn-purple btn-sm" href="{{ url_for('excel_import') }}">Excel import</a>
+                    </div>
+                  </div>
+                </td>
+              </tr>
             {% endfor %}
           </tbody>
         </table>

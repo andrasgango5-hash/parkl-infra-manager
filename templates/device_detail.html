@@ -1,12 +1,15 @@
 {% extends "base.html" %}
 
-{% block title %}Eszköz - {{ device.asset_tag }}{% endblock %}
+{% block title %}Eszköz - {{ device_display_label(device) }}{% endblock %}
 
 {% block content %}
 <div class="page-header">
   <div>
-    <h1>{{ device.asset_tag }}</h1>
-    <p class="text-secondary mb-0">{{ device.product_name or device.model or category_label(device.device_type) }}</p>
+    <h1>{{ device_display_label(device) }}</h1>
+    <p class="text-secondary mb-0">
+      <span class="status-badge {{ status_badge_class(device.status) }}">{{ status_label(device.status) }}</span>
+      <span class="ms-2">{{ category_label(device.device_type) }}{% if device.source_sheet %} · Forráslap: {{ device.source_sheet }}{% endif %}</span>
+    </p>
   </div>
   <div class="d-flex gap-2">
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_edit', device_id=device.id) }}">Szerkesztés</a>
@@ -41,12 +44,12 @@
         <input class="form-control" id="notes" name="notes">
       </div>
       <div class="col-12 d-flex flex-wrap gap-2">
-        <button class="btn btn-outline-secondary btn-sm" name="movement_type" value="RESERVE" type="submit">Előjegyzés</button>
-        <button class="btn btn-outline-secondary btn-sm" name="movement_type" value="ISSUE" type="submit">Kiadás</button>
-        <button class="btn btn-outline-secondary btn-sm" name="movement_type" value="INSTALL" type="submit">Telepítés</button>
-        <button class="btn btn-outline-secondary btn-sm" name="movement_type" value="RETURN" type="submit">Visszavétel</button>
-        <button class="btn btn-outline-secondary btn-sm" name="movement_type" value="SERVICE" type="submit">Szervizbe küldés</button>
-        <button class="btn btn-outline-secondary btn-sm" name="movement_type" value="TRANSFER" type="submit">Áthelyezés</button>
+        <button class="btn btn-outline-secondary btn-move-reserve btn-sm" name="movement_type" value="RESERVE" type="submit">Előjegyzés</button>
+        <button class="btn btn-outline-secondary btn-move-issue btn-sm" name="movement_type" value="ISSUE" type="submit">Kiadás</button>
+        <button class="btn btn-outline-secondary btn-move-install btn-sm" name="movement_type" value="INSTALL" type="submit">Telepítés</button>
+        <button class="btn btn-outline-secondary btn-move-return btn-sm" name="movement_type" value="RETURN" type="submit">Visszavétel</button>
+        <button class="btn btn-outline-secondary btn-move-service btn-sm" name="movement_type" value="SERVICE" type="submit">Szervizbe küldés</button>
+        <button class="btn btn-outline-secondary btn-move-transfer btn-sm" name="movement_type" value="TRANSFER" type="submit">Áthelyezés</button>
         <button class="btn btn-outline-danger btn-sm" name="movement_type" value="SCRAP" type="submit" data-confirm="Biztosan selejtezed ezt az eszközt?">Selejtezés</button>
       </div>
     </div>
@@ -58,7 +61,7 @@
     <section class="data-section mb-4">
       <div class="section-title"><h2>Eszköz adatok</h2></div>
       <div class="p-3 detail-grid">
-        <div><strong>Státusz:</strong> {{ status_label(device.status) }}</div>
+        <div><strong>Státusz:</strong> <span class="status-badge {{ status_badge_class(device.status) }}">{{ status_label(device.status) }}</span></div>
         <div><strong>Kategória:</strong> {{ category_label(device.device_type) }}</div>
         <div><strong>Sorozatszám:</strong> {{ device.serial_number or "-" }}</div>
         <div><strong>Terméknév:</strong> {{ device.product_name or "-" }}</div>
@@ -99,7 +102,7 @@
         {% for movement in movements %}
           <tr>
             <td>{{ movement.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
-            <td>{{ movement_type_label(movement.movement_type) }}</td>
+            <td><span class="movement-badge {{ movement_badge_class(movement.movement_type) }}">{{ movement_type_label(movement.movement_type) }}</span></td>
             <td>{{ movement.from_location.name if movement.from_location else "-" }}</td>
             <td>{{ movement.to_location.name if movement.to_location else "-" }}</td>
             <td>{{ movement.project.code if movement.project else "-" }}</td>
@@ -107,7 +110,14 @@
             <td>{{ movement.notes or "-" }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="7" class="text-secondary">Nincs mozgástörténet.</td></tr>
+          <tr>
+            <td colspan="7">
+              <div class="empty-state">
+                <strong>Nincs mozgástörténet.</strong>
+                <span>Az első készletművelet után itt jelenik meg az auditnapló.</span>
+              </div>
+            </td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>

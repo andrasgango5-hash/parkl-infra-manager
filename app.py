@@ -1,23 +1,32 @@
 from functools import wraps
 from datetime import date, datetime, timezone
+from io import BytesIO
 import json
 import os
 import re
 import unicodedata
 from uuid import uuid4
 
+import click
 from flask import (
+    abort,
     Flask,
     flash,
     redirect,
     render_template,
     request,
+    send_file,
     session,
     url_for,
 )
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from openpyxl import load_workbook
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import cm
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from sqlalchemy import or_
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -56,6 +65,13 @@ CATEGORY_LABELS = {
     "Energy meter": "Fogyasztásmérő",
     "Network device": "Hálózati eszköz",
     "Cabinet": "Szekrény",
+    "Sticker": "Matrica",
+    "Camera": "Kamera",
+    "Kiosk": "Kioszk",
+    "Opener": "Nyitó eszköz",
+    "Router": "Router",
+    "Parkl box": "Parkl box",
+    "Other": "Egyéb",
 }
 
 LOCATION_TYPE_LABELS = {
@@ -63,6 +79,7 @@ LOCATION_TYPE_LABELS = {
     "project_site": "Projekt helyszín",
     "service_vehicle": "Szervizautó",
     "installed": "Telepített helyszín",
+    "service": "Szerviz / javítás",
     "supplier": "Beszállító",
 }
 
@@ -138,6 +155,9 @@ def create_app(config_class=Config):
             "import_status_label": import_status_label,
             "yes_no_label": yes_no_label,
             "format_number": format_number,
+            "device_display_label": device_display_label,
+            "status_badge_class": status_badge_class,
+            "movement_badge_class": movement_badge_class,
         }
 
     def login_required(view):
@@ -178,6 +198,37 @@ def create_app(config_class=Config):
         db.session.commit()
         print(f"{action}: '{username}' admin felhasználó.")
 
+    @app.cli.command("reset-demo-data")
+    @click.option("--yes", is_flag=True, help="Megerősítés bekérésének kihagyása.")
+    def reset_demo_data_command(yes):
+        """Reset local business data and create a small Parkl demo dataset."""
+        if os.environ.get("FLASK_ENV", "").lower() == "production":
+            raise click.ClickException(
+                "A reset-demo-data parancs production környezetben nem futtatható."
+            )
+        if not yes and not click.confirm(
+            "Ez törli a helyi projekt-, eszköz-, lokáció-, import- és mozgásadatokat. Folytatod?"
+        ):
+            click.echo("Megszakítva.")
+            return
+
+        summary = reset_demo_dataset(
+            app,
+            User,
+            Project,
+            Location,
+            Device,
+            StockMovement,
+            UnassignedInvoiceItem,
+            ImportBatch,
+        )
+        click.echo(
+            "Demo adatbázis újraépítve: "
+            f"{summary['projects']} projekt, {summary['locations']} készlethely, "
+            f"{summary['devices']} eszköz, {summary['movements']} mozgás, "
+            f"{summary['invoice_items']} gazdátlan számlasor."
+        )
+
     @app.route("/")
     def index():
         if session.get("user_id"):
@@ -208,18 +259,47 @@ def create_app(config_class=Config):
     @app.route("/dashboard")
     @login_required
     def dashboard():
+        active_devices = Device.query.filter(Device.archived_at.is_(None)).all()
+        active_invoice_items = UnassignedInvoiceItem.query.filter(
+            UnassignedInvoiceItem.archived_at.is_(None)
+        ).all()
+        attention_items = build_attention_items(active_devices, active_invoice_items)
         stats = {
             "projects": Project.query.filter(Project.archived_at.is_(None)).count(),
-            "devices": Device.query.filter(Device.archived_at.is_(None)).count(),
             "locations": Location.query.filter(Location.archived_at.is_(None)).count(),
             "movements": StockMovement.query.count(),
+            "in_stock": sum(1 for device in active_devices if device.status == "IN_STOCK"),
+            "reserved": sum(1 for device in active_devices if device.status == "RESERVED"),
+            "issued": sum(1 for device in active_devices if device.status == "ISSUED"),
+            "installed": sum(1 for device in active_devices if device.status == "INSTALLED"),
+            "awaiting_arrival": sum(1 for device in active_devices if is_awaiting_arrival(device)),
+            "unassigned_invoices": sum(
+                1
+                for item in active_invoice_items
+                if item.assignment_status == "unassigned"
+            ),
+            "financial_open": sum(1 for device in active_devices if is_financially_open(device)),
+            "attention": len(attention_items),
         }
         recent_movements = (
             StockMovement.query.order_by(StockMovement.created_at.desc()).limit(6).all()
         )
         return render_template(
-            "dashboard.html", stats=stats, recent_movements=recent_movements
+            "dashboard.html",
+            stats=stats,
+            recent_movements=recent_movements,
+            attention_items=attention_items[:8],
         )
+
+    @app.route("/attention")
+    @login_required
+    def attention():
+        devices = Device.query.filter(Device.archived_at.is_(None)).all()
+        invoice_items = UnassignedInvoiceItem.query.filter(
+            UnassignedInvoiceItem.archived_at.is_(None)
+        ).all()
+        attention_items = build_attention_items(devices, invoice_items)
+        return render_template("attention.html", attention_items=attention_items)
 
     @app.route("/projects", methods=["GET", "POST"])
     @login_required
@@ -295,13 +375,59 @@ def create_app(config_class=Config):
             "invoice_value": sum(device.invoice_value or 0 for device in devices),
             "ordered": sum(1 for device in devices if device.is_ordered),
             "arrived": sum(1 for device in devices if device.has_arrived),
+            "issued": sum(1 for device in devices if device.status == "ISSUED"),
+            "installed": sum(1 for device in devices if device.status == "INSTALLED"),
+            "returned": sum(1 for device in devices if device.status == "RETURNED"),
+            "unpaid_supplier_invoice_count": sum(
+                1
+                for device in devices
+                if device.supplier_invoice_number and device.supplier_invoice_paid is not True
+            ),
+            "awaiting_arrival_count": sum(1 for device in devices if is_awaiting_arrival(device)),
         }
+        attention_items = [
+            {
+                "device": device,
+                "reasons": device_attention_reasons(device),
+            }
+            for device in devices
+            if device_attention_reasons(device)
+        ]
         return render_template(
             "project_detail.html",
             project=project,
             devices=devices,
             movements=movements,
             finance_summary=finance_summary,
+            attention_items=attention_items,
+        )
+
+    @app.route("/projects/<int:project_id>/pdf/<pdf_type>")
+    @login_required
+    def project_pdf(project_id, pdf_type):
+        project = Project.query.get_or_404(project_id)
+        devices = (
+            Device.query.filter_by(project_id=project.id)
+            .filter(Device.archived_at.is_(None))
+            .order_by(Device.asset_tag.asc())
+            .all()
+        )
+        if pdf_type not in {"equipment", "issue", "installation", "finance"}:
+            abort(404)
+
+        pdf_buffer = build_project_pdf(project, devices, pdf_type)
+        filenames = {
+            "equipment": "projekt-eszkozlista",
+            "issue": "kiadasi-lista",
+            "installation": "telepitesi-lista",
+            "finance": "penzugyi-osszesito",
+        }
+        filename = f"{project.code}-{filenames[pdf_type]}.pdf"
+        return send_file(
+            pdf_buffer,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=filename,
         )
 
     @app.route("/projects/<int:project_id>/edit", methods=["GET", "POST"])
@@ -362,6 +488,7 @@ def create_app(config_class=Config):
         selected_project_id = optional_int(request.args.get("project_id"))
         selected_location_id = optional_int(request.args.get("location_id"))
         search = request.args.get("q", "").strip()
+        selected_view = request.args.get("view", "all").strip() or "all"
         if request.method == "POST":
             data = device_form_data(request.form)
 
@@ -411,6 +538,30 @@ def create_app(config_class=Config):
             device_query = device_query.filter(Device.location_id == selected_location_id)
 
         device_list = device_query.order_by(Device.created_at.desc()).all()
+        quick_filter = request.args.get("quick_filter", "").strip()
+        workflow_filter = quick_filter or selected_view
+        if workflow_filter == "in_stock":
+            device_list = [device for device in device_list if device.status == "IN_STOCK"]
+        elif workflow_filter == "assigned":
+            device_list = [device for device in device_list if device.project_id]
+        elif workflow_filter == "issued":
+            device_list = [device for device in device_list if device.status == "ISSUED"]
+        elif workflow_filter == "installed":
+            device_list = [device for device in device_list if device.status == "INSTALLED"]
+        elif workflow_filter == "attention":
+            device_list = [device for device in device_list if device_attention_reasons(device)]
+        elif workflow_filter == "financial_open":
+            device_list = [device for device in device_list if is_financially_open(device)]
+        elif workflow_filter == "awaiting_arrival":
+            device_list = [device for device in device_list if is_awaiting_arrival(device)]
+        elif workflow_filter == "arrived_unassigned":
+            device_list = [device for device in device_list if is_arrived_unassigned(device)]
+        visible_summary = {
+            "count": len(device_list),
+            "huf_value": sum(device.huf_value or 0 for device in device_list),
+            "unpaid_invoice_count": sum(1 for device in device_list if is_financially_open(device)),
+            "awaiting_arrival_count": sum(1 for device in device_list if is_awaiting_arrival(device)),
+        }
         return render_template(
             "devices.html",
             devices=device_list,
@@ -425,6 +576,9 @@ def create_app(config_class=Config):
             selected_project_id=selected_project_id,
             selected_location_id=selected_location_id,
             search=search,
+            quick_filter=quick_filter,
+            selected_view=selected_view,
+            visible_summary=visible_summary,
         )
 
     @app.route("/devices/<int:device_id>")
@@ -521,7 +675,11 @@ def create_app(config_class=Config):
     @login_required
     def unassigned_invoices():
         projects = Project.query.filter(Project.archived_at.is_(None)).order_by(Project.name.asc()).all()
-        devices = Device.query.filter(Device.archived_at.is_(None)).order_by(Device.asset_tag.asc()).all()
+        devices = (
+            Device.query.filter(Device.archived_at.is_(None))
+            .order_by(Device.device_type.asc(), Device.product_name.asc(), Device.asset_tag.asc())
+            .all()
+        )
         selected_assignment_status = request.args.get("assignment_status", "").strip()
         search = request.args.get("q", "").strip()
 
@@ -605,7 +763,11 @@ def create_app(config_class=Config):
     def unassigned_invoice_edit(item_id):
         item = UnassignedInvoiceItem.query.get_or_404(item_id)
         projects = Project.query.filter(Project.archived_at.is_(None)).order_by(Project.name.asc()).all()
-        devices = Device.query.filter(Device.archived_at.is_(None)).order_by(Device.asset_tag.asc()).all()
+        devices = (
+            Device.query.filter(Device.archived_at.is_(None))
+            .order_by(Device.device_type.asc(), Device.product_name.asc(), Device.asset_tag.asc())
+            .all()
+        )
         if request.method == "POST":
             update_unassigned_invoice_from_form(item, request.form)
             db.session.commit()
@@ -888,7 +1050,11 @@ def create_app(config_class=Config):
     @app.route("/movements", methods=["GET", "POST"])
     @login_required
     def movements():
-        devices = Device.query.filter(Device.archived_at.is_(None)).order_by(Device.asset_tag.asc()).all()
+        devices = (
+            Device.query.filter(Device.archived_at.is_(None))
+            .order_by(Device.device_type.asc(), Device.product_name.asc(), Device.asset_tag.asc())
+            .all()
+        )
         locations = Location.query.filter(Location.archived_at.is_(None)).order_by(Location.name.asc()).all()
         projects = Project.query.filter(Project.archived_at.is_(None)).order_by(Project.name.asc()).all()
 
@@ -937,6 +1103,235 @@ def create_app(config_class=Config):
         )
 
     return app
+
+
+def reset_demo_dataset(
+    app,
+    User,
+    Project,
+    Location,
+    Device,
+    StockMovement,
+    UnassignedInvoiceItem,
+    ImportBatch,
+):
+    username = app.config["ADMIN_USERNAME"]
+    password = app.config["ADMIN_PASSWORD"]
+    user = User.query.filter_by(username=username).first()
+    if user is None:
+        user = User(
+            username=username,
+            password_hash=generate_password_hash(password),
+            is_admin=True,
+        )
+        db.session.add(user)
+        db.session.flush()
+
+    UnassignedInvoiceItem.query.delete()
+    StockMovement.query.delete()
+    Device.query.delete()
+    ImportBatch.query.delete()
+    Project.query.delete()
+    Location.query.delete()
+    db.session.flush()
+
+    projects = {
+        "PRK-001": Project(
+            code="PRK-001",
+            name="Arena EV Upgrade",
+            customer="Arena",
+            status="active",
+            notes="Demó EV-töltő bővítési projekt.",
+        ),
+        "PRK-002": Project(
+            code="PRK-002",
+            name="Office Park Sorompó projekt",
+            customer="Office Park",
+            status="active",
+            notes="Demó sorompó és beléptetési projekt.",
+        ),
+    }
+    db.session.add_all(projects.values())
+
+    locations = {
+        "warehouse": Location(name="Fő raktár", location_type="warehouse"),
+        "service_car": Location(name="Szervizautó 1", location_type="service_vehicle"),
+        "arena": Location(name="Arena helyszín", location_type="project_site"),
+        "office": Location(name="Office Park helyszín", location_type="project_site"),
+        "service": Location(name="Szerviz / javítás", location_type="service"),
+    }
+    db.session.add_all(locations.values())
+    db.session.flush()
+
+    devices = {
+        "EV-001": Device(
+            asset_tag="EV-001",
+            device_type="EV charger",
+            product_name="ABB Terra AC 22 kW charger",
+            manufacturer="ABB",
+            model="Terra AC 22 kW",
+            quantity=1,
+            currency="HUF",
+            huf_value=420000,
+        ),
+        "NET-001": Device(
+            asset_tag="NET-001",
+            device_type="Router",
+            product_name="Teltonika RUTX11 router",
+            manufacturer="Teltonika",
+            model="RUTX11",
+            quantity=1,
+            currency="HUF",
+            huf_value=89000,
+        ),
+        "BOX-001": Device(
+            asset_tag="BOX-001",
+            device_type="Parkl box",
+            product_name="Parkl Gate Controller Box",
+            manufacturer="Parkl",
+            model="Gate Controller Box",
+            quantity=1,
+            currency="HUF",
+            huf_value=180000,
+        ),
+        "BAR-001": Device(
+            asset_tag="BAR-001",
+            device_type="Barrier gate",
+            product_name="Sorompó vezérlő",
+            manufacturer="Parkl",
+            model="Sorompó vezérlő",
+            quantity=1,
+            currency="HUF",
+            huf_value=240000,
+        ),
+        "CAM-001": Device(
+            asset_tag="CAM-001",
+            device_type="Camera",
+            product_name="Hikvision ANPR kamera",
+            manufacturer="Hikvision",
+            model="ANPR",
+            quantity=1,
+            currency="HUF",
+            huf_value=160000,
+        ),
+        "MAT-001": Device(
+            asset_tag="MAT-001",
+            device_type="Sticker",
+            product_name="Matrica csomag",
+            manufacturer="Parkl",
+            model="Matrica csomag",
+            quantity=50,
+            currency="HUF",
+            huf_value=25000,
+        ),
+    }
+    db.session.add_all(devices.values())
+    db.session.flush()
+
+    warehouse_id = locations["warehouse"].id
+    for device in devices.values():
+        create_movement(
+            device=device,
+            movement_type="INBOUND",
+            to_location_id=warehouse_id,
+            notes="Demo kezdő bevételezés.",
+            user_id=user.id,
+        )
+        apply_device_state(device, "INBOUND", warehouse_id, None)
+
+    demo_actions = [
+        (
+            devices["NET-001"],
+            "RESERVE",
+            warehouse_id,
+            projects["PRK-001"].id,
+            "Demo előjegyzés Arena projektre.",
+        ),
+        (
+            devices["BOX-001"],
+            "ISSUE",
+            locations["service_car"].id,
+            projects["PRK-002"].id,
+            "Demo kiadás szervizautóra.",
+        ),
+        (
+            devices["BAR-001"],
+            "ISSUE",
+            locations["office"].id,
+            projects["PRK-002"].id,
+            "Demo kiadás telepítés előkészítéséhez.",
+        ),
+        (
+            devices["BAR-001"],
+            "INSTALL",
+            locations["office"].id,
+            projects["PRK-002"].id,
+            "Demo telepítés Office Park helyszínen.",
+        ),
+        (
+            devices["CAM-001"],
+            "SERVICE",
+            locations["service"].id,
+            None,
+            "Demo szervizbe küldés.",
+        ),
+    ]
+    for device, movement_type, to_location_id, project_id, notes in demo_actions:
+        create_movement(
+            device=device,
+            movement_type=movement_type,
+            from_location_id=device.location_id,
+            to_location_id=to_location_id,
+            project_id=project_id,
+            notes=notes,
+            user_id=user.id,
+        )
+        apply_device_state(device, movement_type, to_location_id, project_id)
+
+    invoice_items = [
+        UnassignedInvoiceItem(
+            invoice_number="TEL-2026-001",
+            partner="Teltonika",
+            invoice_date=date.today(),
+            payment_deadline=date.today(),
+            gross_amount_huf=113030,
+            currency="HUF",
+            description="Teltonika RUTX11 router számla",
+            quantity=1,
+            unit_price_huf=89000,
+            net_amount_huf=89000,
+            vat_amount_huf=24030,
+            line_gross_amount_huf=113030,
+            assignment_status="unassigned",
+            notes="Demo nyitott, még nem hozzárendelt számlasor.",
+        ),
+        UnassignedInvoiceItem(
+            invoice_number="SERV-2026-014",
+            partner="Kamera Szerviz Kft.",
+            invoice_date=date.today(),
+            payment_deadline=date.today(),
+            gross_amount_huf=63500,
+            currency="HUF",
+            description="Hikvision ANPR kamera szervizdíj",
+            quantity=1,
+            unit_price_huf=50000,
+            net_amount_huf=50000,
+            vat_amount_huf=13500,
+            line_gross_amount_huf=63500,
+            assignment_status="unassigned",
+            notes="Demo nyitott szerviz számlasor.",
+        ),
+    ]
+    db.session.add_all(invoice_items)
+    db.session.commit()
+
+    return {
+        "projects": len(projects),
+        "locations": len(locations),
+        "devices": len(devices),
+        "movements": StockMovement.query.count(),
+        "invoice_items": len(invoice_items),
+    }
 
 
 def optional_int(value):
@@ -989,6 +1384,35 @@ def category_label(value):
     return CATEGORY_LABELS.get(value, value)
 
 
+def device_display_label(device):
+    return device.human_label
+
+
+def status_badge_class(value):
+    return {
+        "IN_STOCK": "status-in-stock",
+        "RESERVED": "status-reserved",
+        "ISSUED": "status-issued",
+        "INSTALLED": "status-installed",
+        "RETURNED": "status-returned",
+        "IN_SERVICE": "status-service",
+        "SCRAPPED": "status-scrapped",
+    }.get(value, "status-neutral")
+
+
+def movement_badge_class(value):
+    return {
+        "INBOUND": "movement-inbound",
+        "RESERVE": "movement-reserve",
+        "ISSUE": "movement-issue",
+        "INSTALL": "movement-install",
+        "RETURN": "movement-return",
+        "SERVICE": "movement-service",
+        "SCRAP": "movement-scrap",
+        "TRANSFER": "movement-transfer",
+    }.get(value, "movement-neutral")
+
+
 def location_type_label(value):
     return LOCATION_TYPE_LABELS.get(value, value)
 
@@ -1019,6 +1443,235 @@ def format_number(value):
     if float(value).is_integer():
         return f"{int(value):,}".replace(",", " ")
     return f"{value:,.2f}".replace(",", " ").replace(".", ",")
+
+
+def is_awaiting_arrival(device):
+    return device.is_ordered is True and device.has_arrived is not True
+
+
+def is_arrived_unassigned(device):
+    return device.has_arrived is True and not device.project_id and not device.location_id
+
+
+def is_financially_open(device):
+    return (
+        bool(device.supplier_invoice_number) and device.supplier_invoice_paid is not True
+    ) or (
+        bool(device.shipping_invoice_number) and device.shipping_invoice_paid is not True
+    )
+
+
+def device_attention_reasons(device):
+    reasons = []
+    today = date.today()
+    if (
+        device.is_ordered is True
+        and device.has_arrived is not True
+        and device.planned_arrival_date
+        and device.planned_arrival_date < today
+    ):
+        reasons.append("Megrendelve, de a tervezett érkezési dátum lejárt.")
+    if is_arrived_unassigned(device):
+        reasons.append("Megérkezett, de nincs projekthez vagy készlethelyhez rendelve.")
+    if device.supplier_invoice_number and device.supplier_invoice_paid is not True:
+        reasons.append("Beszállítói számla van, de nincs fizetettként jelölve.")
+    if device.shipping_invoice_number and device.shipping_invoice_paid is not True:
+        reasons.append("Szállítmányozói számla van, de nincs fizetettként jelölve.")
+    if device.project and (
+        not device.project.code
+        or not device.project.name
+        or device.project.name == device.project.code
+        or not device.project.customer
+    ):
+        reasons.append("A kapcsolódó projekt adatai hiányosak.")
+    if device.source_sheet and not device.product_name:
+        reasons.append("Importált sorból hiányzik a terméknév.")
+    if not device.device_type or device.device_type not in CATEGORY_LABELS:
+        reasons.append("Hiányzó vagy ismeretlen kategória.")
+    if device.source_sheet and (device.quantity is None or device.quantity <= 0):
+        reasons.append("Hiányzó vagy nulla mennyiség.")
+    if device.status not in STATUS_LABELS:
+        reasons.append("Ismeretlen státusz.")
+    if device.status == "INSTALLED" and not device.project_id:
+        reasons.append("Telepített eszköz projekthozzárendelés nélkül.")
+    if device.status in {"ISSUED", "INSTALLED"} and not device.location_id:
+        reasons.append("Kiadott vagy telepített eszköz lokáció nélkül.")
+    return reasons
+
+
+def invoice_attention_reasons(item):
+    reasons = []
+    if item.assignment_status == "unassigned":
+        reasons.append("A számlasor nincs hozzárendelve.")
+    if not item.invoice_number:
+        reasons.append("Hiányzik a számlaszám.")
+    if not item.partner:
+        reasons.append("Hiányzik a partner.")
+    if not item.description:
+        reasons.append("Hiányzik a megnevezés.")
+    if item.line_gross_amount_huf is None and item.gross_amount_huf is None:
+        reasons.append("Hiányzik a bruttó összeg.")
+    return reasons
+
+
+def build_attention_items(devices, invoice_items):
+    items = []
+    for device in devices:
+        reasons = device_attention_reasons(device)
+        if reasons:
+            items.append(
+                {
+                    "type": "Eszköz",
+                    "name": device_display_label(device),
+                    "reasons": reasons,
+                    "project": device.project.code if device.project else "-",
+                    "supplier": device.supplier_manufacturer or device.manufacturer or "-",
+                    "invoice": device.supplier_invoice_number
+                    or device.shipping_invoice_number
+                    or "-",
+                    "source": f"{device.source_sheet or '-'} / {device.source_row_number or '-'}",
+                    "detail_url": url_for("device_detail", device_id=device.id),
+                    "edit_url": url_for("device_edit", device_id=device.id),
+                }
+            )
+    for item in invoice_items:
+        reasons = invoice_attention_reasons(item)
+        if reasons:
+            items.append(
+                {
+                    "type": "Számlasor",
+                    "name": item.description or item.invoice_number or "Névtelen számlasor",
+                    "reasons": reasons,
+                    "project": item.assigned_project.code if item.assigned_project else "-",
+                    "supplier": item.partner or "-",
+                    "invoice": item.invoice_number or "-",
+                    "source": f"{item.source_sheet or '-'} / {item.source_row_number or '-'}",
+                    "detail_url": None,
+                    "edit_url": url_for("unassigned_invoice_edit", item_id=item.id),
+                }
+            )
+    return items
+
+
+def build_project_pdf(project, devices, pdf_type):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=1.2 * cm,
+        leftMargin=1.2 * cm,
+        topMargin=1.2 * cm,
+        bottomMargin=1.2 * cm,
+    )
+    styles = getSampleStyleSheet()
+    story = []
+    titles = {
+        "equipment": "Projekt eszközlista",
+        "issue": "Kiadási lista",
+        "installation": "Telepítési lista",
+        "finance": "Pénzügyi összesítő",
+    }
+    story.append(Paragraph(pdf_escape(titles[pdf_type]), styles["Title"]))
+    story.append(Paragraph(pdf_escape(f"{project.code} - {project.name}"), styles["Heading2"]))
+    story.append(Paragraph(pdf_escape(f"Ügyfél: {project.customer or '-'}"), styles["Normal"]))
+    story.append(Paragraph(pdf_escape(f"Dátum: {date.today().isoformat()}"), styles["Normal"]))
+    story.append(Spacer(1, 0.4 * cm))
+
+    if pdf_type == "equipment":
+        rows = [["Tétel", "Mennyiség", "Státusz", "Lokáció", "Érték HUF", "Megjegyzés"]]
+        pdf_devices = devices
+        for device in pdf_devices:
+            rows.append(
+                [
+                    device_display_label(device),
+                    format_number(device.quantity),
+                    status_label(device.status),
+                    device.location.name if device.location else "-",
+                    format_number(device.huf_value),
+                    device.assignment_notes or device.subtype_note or "-",
+                ]
+            )
+    elif pdf_type in {"issue", "installation"}:
+        wanted_status = "ISSUED" if pdf_type == "issue" else "INSTALLED"
+        rows = [["Azonosító", "Termék", "Mennyiség", "Lokáció", "Megjegyzés"]]
+        pdf_devices = [device for device in devices if device.status == wanted_status]
+        for device in pdf_devices:
+            rows.append(
+                [
+                    device.asset_tag or "-",
+                    device.product_name or device.model or "-",
+                    format_number(device.quantity),
+                    device.location.name if device.location else "-",
+                    device.assignment_notes or device.subtype_note or "-",
+                ]
+            )
+    else:
+        rows = [["Beszállító", "Számlaszám", "Fizetve", "Érték HUF", "Tétel"]]
+        pdf_devices = devices
+        for device in pdf_devices:
+            invoice_number = device.supplier_invoice_number or device.shipping_invoice_number or "-"
+            paid = "Igen" if (device.supplier_invoice_paid or device.shipping_invoice_paid) else "Nem"
+            rows.append(
+                [
+                    device.supplier_manufacturer or device.manufacturer or "-",
+                    invoice_number,
+                    paid,
+                    format_number(device.huf_value or device.invoice_value),
+                    device.product_name or device.model or device.asset_tag or "-",
+                ]
+            )
+        total_value = sum(device.huf_value or 0 for device in devices)
+        unpaid_count = sum(1 for device in devices if is_financially_open(device))
+        story.append(
+            Paragraph(
+                pdf_escape(
+                    f"Összes projektérték: {format_number(total_value)} HUF, nyitott számlás tételek: {unpaid_count}"
+                ),
+                styles["Normal"],
+            )
+        )
+        story.append(Spacer(1, 0.3 * cm))
+
+    if len(rows) == 1:
+        rows.append(["Nincs megjeleníthető tétel.", "", "", "", "", ""][: len(rows[0])])
+
+    table = Table([[pdf_cell(cell, styles) for cell in row] for row in rows], repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e9eef5")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#1d2733")),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cbd3df")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f9fb")]),
+            ]
+        )
+    )
+    story.append(table)
+
+    if pdf_type in {"issue", "installation"}:
+        story.append(Spacer(1, 1.2 * cm))
+        signature_rows = [
+            ["Előkészítette", "Átvette"],
+            ["\n\n____________________________", "\n\n____________________________"],
+        ]
+        signature_table = Table(signature_rows, colWidths=[8 * cm, 8 * cm])
+        signature_table.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER")]))
+        story.append(signature_table)
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+
+def pdf_escape(value):
+    text = "" if value is None else str(value)
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def pdf_cell(value, styles):
+    return Paragraph(pdf_escape(value), styles["BodyText"])
 
 
 def now_utc():
@@ -1604,14 +2257,18 @@ def bool_value(value):
 
 def infer_device_type(sheet_name, type_value, product_name):
     sheet_key = normalize_key(sheet_name)
-    if sheet_key in {"tolto", "toltok", "bmw tolto", "matricak"}:
+    if sheet_key in {"tolto", "toltok", "bmw tolto"}:
         return "EV charger"
+    if sheet_key == "matricak":
+        return "Sticker"
     if sheet_key == "kamera":
-        return "Sensor"
+        return "Camera"
     if sheet_key == "kioszk":
-        return "Cabinet"
+        return "Kiosk"
     if sheet_key == "nyito":
-        return "Network device"
+        return "Opener"
+    if sheet_key == "egyeb":
+        return "Other"
     value = clean_string(type_value or product_name)
     return value or "Other"
 

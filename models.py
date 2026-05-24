@@ -34,7 +34,41 @@ DEVICE_CATEGORIES = (
     "Energy meter",
     "Network device",
     "Cabinet",
+    "Sticker",
+    "Camera",
+    "Kiosk",
+    "Opener",
+    "Router",
+    "Parkl box",
+    "Other",
 )
+
+DEVICE_STATUS_LABELS = {
+    "IN_STOCK": "Raktáron",
+    "RESERVED": "Előjegyezve",
+    "ISSUED": "Kiadva",
+    "INSTALLED": "Telepítve",
+    "RETURNED": "Visszavéve",
+    "IN_SERVICE": "Szervizben",
+    "SCRAPPED": "Selejtezve",
+}
+
+DEVICE_CATEGORY_LABELS = {
+    "EV charger": "EV töltő",
+    "Parking controller": "Parkolásvezérlő",
+    "Barrier gate": "Sorompó",
+    "Sensor": "Szenzor",
+    "Energy meter": "Fogyasztásmérő",
+    "Network device": "Hálózati eszköz",
+    "Cabinet": "Szekrény",
+    "Sticker": "Matrica",
+    "Camera": "Kamera",
+    "Kiosk": "Kioszk",
+    "Opener": "Nyitó eszköz",
+    "Router": "Router",
+    "Parkl box": "Parkl box",
+    "Other": "Egyéb",
+}
 
 
 class User(db.Model):
@@ -157,6 +191,28 @@ class Device(db.Model):
         "UnassignedInvoiceItem", back_populates="assigned_device"
     )
     import_batch = db.relationship("ImportBatch", back_populates="devices")
+
+    @property
+    def human_label(self):
+        parts = []
+        identifier = self.asset_tag or self.serial_number or f"#{self.id}"
+        product = self.product_name or self.model
+        category = DEVICE_CATEGORY_LABELS.get(self.device_type, self.device_type)
+        project_name = None
+        if self.project:
+            project_name = self.project.code or self.project.name
+        status = DEVICE_STATUS_LABELS.get(self.status, self.status)
+        location_name = self.location.name if self.location else None
+
+        for value in (identifier, product, category, project_name, status, location_name):
+            if value and value not in parts:
+                parts.append(value)
+
+        return " – ".join(parts) if parts else f"Eszköz #{self.id}"
+
+    @property
+    def display_name(self):
+        return self.human_label
 
 
 class StockMovement(db.Model):

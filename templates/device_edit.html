@@ -5,7 +5,7 @@
 {% block content %}
 <div class="page-header"><h1>Eszköz szerkesztése</h1></div>
 <form method="post" class="form-panel">
-  <h2>{{ device.asset_tag }}</h2>
+  <h2>{{ device_display_label(device) }}</h2>
   <div class="row g-3">
     <div class="col-md-4"><label class="form-label" for="asset_tag">Eszközazonosító</label><input class="form-control" id="asset_tag" name="asset_tag" value="{{ device.asset_tag }}" required></div>
     <div class="col-md-4"><label class="form-label" for="serial_number">Sorozatszám</label><input class="form-control" id="serial_number" name="serial_number" value="{{ device.serial_number }}"></div>

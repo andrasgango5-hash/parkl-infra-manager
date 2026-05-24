@@ -10,16 +10,26 @@
   </div>
 </div>
 
+<div class="help-box">
+  <strong>Auditálható készletnapló.</strong> Itt rögzíthetsz kézi mozgást, de napi munkához az eszköz részletein lévő színes műveletgombok a leggyorsabbak. Minden mozgás megmarad történeti naplóként.
+</div>
+
 <div class="row g-4">
   <div class="col-xl-4">
     <form method="post" class="form-panel">
       <h2>Készletmozgás létrehozása</h2>
       <div class="mb-3">
+        <label class="form-label" for="device_search">Eszköz keresése</label>
+        <input class="form-control mb-2" id="device_search" type="search" placeholder="Azonosító, termék, projekt, státusz vagy lokáció">
         <label class="form-label" for="device_id">Eszköz</label>
         <select class="form-select" id="device_id" name="device_id" required>
           <option value="">Válassz...</option>
-          {% for device in devices %}
-            <option value="{{ device.id }}">{{ device.asset_tag }} - {{ category_label(device.device_type) }}</option>
+          {% for category, grouped_devices in devices|groupby("device_type") %}
+            <optgroup label="{{ category_label(category) }}">
+              {% for device in grouped_devices %}
+                <option value="{{ device.id }}" data-search="{{ device_display_label(device)|lower }}">{{ device_display_label(device) }}</option>
+              {% endfor %}
+            </optgroup>
           {% endfor %}
         </select>
       </div>
@@ -86,15 +96,23 @@
             {% for movement in movements %}
               <tr>
                 <td>{{ movement.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
-                <td class="fw-semibold">{{ movement.device.asset_tag }}</td>
-                <td><span class="badge text-bg-light">{{ movement_type_label(movement.movement_type) }}</span></td>
+                <td class="fw-semibold">{{ device_display_label(movement.device) }}</td>
+                <td><span class="movement-badge {{ movement_badge_class(movement.movement_type) }}">{{ movement_type_label(movement.movement_type) }}</span></td>
                 <td>{{ movement.from_location.name if movement.from_location else "-" }}</td>
                 <td>{{ movement.to_location.name if movement.to_location else "-" }}</td>
                 <td>{{ movement.project.code if movement.project else "-" }}</td>
                 <td>{{ movement.created_by.username }}</td>
               </tr>
             {% else %}
-              <tr><td colspan="7" class="text-secondary">Még nincs készletmozgás.</td></tr>
+              <tr>
+                <td colspan="7">
+                  <div class="empty-state">
+                    <strong>Még nincs készletmozgás.</strong>
+                    <span>Rögzíts eszközt, majd hozz létre bevételezést, kiadást vagy telepítést.</span>
+                    <a class="btn btn-success btn-sm" href="{{ url_for('devices') }}">Eszközök megnyitása</a>
+                  </div>
+                </td>
+              </tr>
             {% endfor %}
           </tbody>
         </table>
@@ -102,4 +120,23 @@
     </section>
   </div>
 </div>
+<script>
+  const deviceSearch = document.querySelector("#device_search");
+  const deviceSelect = document.querySelector("#device_id");
+
+  if (deviceSearch && deviceSelect) {
+    deviceSearch.addEventListener("input", () => {
+      const term = deviceSearch.value.trim().toLowerCase();
+      deviceSelect.querySelectorAll("option[data-search]").forEach((option) => {
+        option.hidden = term && !option.dataset.search.includes(term);
+      });
+      deviceSelect.querySelectorAll("optgroup").forEach((group) => {
+        const hasVisibleOption = Array.from(group.querySelectorAll("option")).some(
+          (option) => !option.hidden
+        );
+        group.hidden = !hasVisibleOption;
+      });
+    });
+  }
+</script>
 {% endblock %}
