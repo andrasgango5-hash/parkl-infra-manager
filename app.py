@@ -12,10 +12,12 @@ from flask import (
     abort,
     Flask,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
     send_file,
+    send_from_directory,
     session,
     url_for,
 )
@@ -116,6 +118,62 @@ INVENTORY_SHEETS = {
 ORPHAN_INVOICE_SHEET = "gazdatlanul"
 IGNORED_IMPORT_SHEETS = {"workflow", "dashboard", "seged", "onkoltseg", "sheet1"}
 UPLOAD_SUBDIR = "uploads"
+DRAWING_UPLOAD_SUBDIR = "drawings"
+ALLOWED_DRAWING_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
+
+DRAWING_ICON_CATEGORIES = {
+    "Parking/access": [
+        ("barrier", "Sorompó"),
+        ("entry_barrier", "Bejárati sorompó"),
+        ("exit_barrier", "Kijárati sorompó"),
+        ("loop_detector", "Hurokdetektor"),
+        ("rfid_reader", "RFID olvasó"),
+        ("parking_space", "Parkolóhely"),
+        ("direction_arrow", "Irány nyíl"),
+    ],
+    "Cameras": [
+        ("entry_anpr_camera", "Belépő ANPR kamera"),
+        ("exit_anpr_camera", "Kilépő ANPR kamera"),
+        ("overview_camera", "Áttekintő kamera"),
+    ],
+    "Charging": [
+        ("ac_charger", "AC töltő"),
+        ("dc_charger", "DC töltő"),
+        ("charger_pedestal", "Töltőoszlop"),
+        ("dlm_controller", "DLM vezérlő"),
+        ("energy_meter", "Fogyasztásmérő"),
+        ("ct", "Áramváltó"),
+    ],
+    "Network/IT": [
+        ("rack", "Rack"),
+        ("switch", "Switch"),
+        ("poe_switch", "PoE switch"),
+        ("router", "Router"),
+        ("teltonika", "Teltonika"),
+        ("parkl_box", "Raspberry Pi / Parkl box"),
+        ("patch_panel", "Patch panel"),
+    ],
+    "Electrical": [
+        ("distribution_board", "Elosztószekrény"),
+        ("power_supply", "Tápegység"),
+        ("breaker", "Kismegszakító"),
+        ("busbar", "Sín / trunking"),
+        ("cable_tray", "Kábeltálca"),
+        ("wall_penetration", "Falfúrás"),
+        ("floor_penetration", "Födémáttörés"),
+        ("junction_box", "Kötődoboz"),
+    ],
+}
+
+DRAWING_LINE_TYPES = [
+    ("cat5e", "CAT5e / UTP", "#2563eb"),
+    ("power", "Erősáramú kábel", "#dc2626"),
+    ("barrier_control", "Sorompó vezérlés", "#f59e0b"),
+    ("camera_network", "Kamera hálózat", "#7c3aed"),
+    ("dlm", "DLM kommunikáció", "#0891b2"),
+    ("main_supply", "Fő betáp", "#111827"),
+    ("spare_conduit", "Tartalék védőcső", "#64748b"),
+]
 
 
 def create_app(config_class=Config):
@@ -134,6 +192,7 @@ def create_app(config_class=Config):
         ImportBatch,
         Location,
         Project,
+        ProjectDrawing,
         StockMovement,
         UnassignedInvoiceItem,
         User,
@@ -221,6 +280,7 @@ def create_app(config_class=Config):
             StockMovement,
             UnassignedInvoiceItem,
             ImportBatch,
+            ProjectDrawing,
         )
         click.echo(
             "Demo adatbázis újraépítve: "
@@ -368,6 +428,11 @@ def create_app(config_class=Config):
             .limit(50)
             .all()
         )
+        drawings = (
+            ProjectDrawing.query.filter_by(project_id=project.id)
+            .order_by(ProjectDrawing.updated_at.desc())
+            .all()
+        )
         finance_summary = {
             "device_count": len(devices),
             "quantity": sum(device.quantity or 0 for device in devices),
@@ -398,6 +463,7 @@ def create_app(config_class=Config):
             project=project,
             devices=devices,
             movements=movements,
+            drawings=drawings,
             finance_summary=finance_summary,
             attention_items=attention_items,
         )
@@ -429,6 +495,74 @@ def create_app(config_class=Config):
             as_attachment=True,
             download_name=filename,
         )
+
+    @app.route("/projects/<int:project_id>/drawings", methods=["POST"])
+    @login_required
+    def project_drawing_create(project_id):
+        project = Project.query.get_or_404(project_id)
+        name = request.form.get("name", "").strip() or "Helyszíni rajz"
+        upload = request.files.get("background_image")
+        background_filename = None
+        if upload and upload.filename:
+            if not allowed_drawing_file(upload.filename):
+                flash("Csak PNG, JPG, JPEG vagy WEBP alaprajz tölthető fel.", "danger")
+                return redirect(url_for("project_detail", project_id=project.id) + "#drawings")
+            background_filename = save_drawing_background(app, upload, project.id)
+
+        drawing = ProjectDrawing(
+            project_id=project.id,
+            name=name,
+            background_filename=background_filename,
+            canvas_json=json.dumps({"version": "5.3.0", "objects": []}),
+        )
+        db.session.add(drawing)
+        db.session.commit()
+        flash("A rajz létrejött.", "success")
+        return redirect(
+            url_for("project_drawing_editor", project_id=project.id, drawing_id=drawing.id)
+        )
+
+    @app.route("/projects/<int:project_id>/drawings/<int:drawing_id>")
+    @login_required
+    def project_drawing_editor(project_id, drawing_id):
+        project = Project.query.get_or_404(project_id)
+        drawing = ProjectDrawing.query.filter_by(
+            id=drawing_id, project_id=project.id
+        ).first_or_404()
+        background_url = None
+        if drawing.background_filename:
+            background_url = url_for(
+                "drawing_background", filename=drawing.background_filename
+            )
+        return render_template(
+            "drawing_editor.html",
+            project=project,
+            drawing=drawing,
+            background_url=background_url,
+            icon_categories=DRAWING_ICON_CATEGORIES,
+            line_types=DRAWING_LINE_TYPES,
+        )
+
+    @app.route("/projects/<int:project_id>/drawings/<int:drawing_id>/save", methods=["POST"])
+    @login_required
+    def project_drawing_save(project_id, drawing_id):
+        drawing = ProjectDrawing.query.filter_by(
+            id=drawing_id, project_id=project_id
+        ).first_or_404()
+        payload = request.get_json(silent=True) or {}
+        canvas_json = payload.get("canvas_json")
+        if not isinstance(canvas_json, str):
+            return jsonify({"ok": False, "error": "Hiányzó rajz JSON."}), 400
+        drawing.canvas_json = canvas_json
+        drawing.updated_at = now_utc()
+        db.session.commit()
+        return jsonify({"ok": True, "updated_at": drawing.updated_at.isoformat()})
+
+    @app.route("/drawing-backgrounds/<path:filename>")
+    @login_required
+    def drawing_background(filename):
+        upload_dir = os.path.join(app.instance_path, DRAWING_UPLOAD_SUBDIR)
+        return send_from_directory(upload_dir, filename)
 
     @app.route("/projects/<int:project_id>/edit", methods=["GET", "POST"])
     @login_required
@@ -1114,6 +1248,7 @@ def reset_demo_dataset(
     StockMovement,
     UnassignedInvoiceItem,
     ImportBatch,
+    ProjectDrawing,
 ):
     username = app.config["ADMIN_USERNAME"]
     password = app.config["ADMIN_PASSWORD"]
@@ -1127,6 +1262,7 @@ def reset_demo_dataset(
         db.session.add(user)
         db.session.flush()
 
+    ProjectDrawing.query.delete()
     UnassignedInvoiceItem.query.delete()
     StockMovement.query.delete()
     Device.query.delete()
@@ -1332,6 +1468,20 @@ def reset_demo_dataset(
         "movements": StockMovement.query.count(),
         "invoice_items": len(invoice_items),
     }
+
+
+def allowed_drawing_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_DRAWING_EXTENSIONS
+
+
+def save_drawing_background(app, upload, project_id):
+    upload_dir = os.path.join(app.instance_path, DRAWING_UPLOAD_SUBDIR)
+    os.makedirs(upload_dir, exist_ok=True)
+    extension = upload.filename.rsplit(".", 1)[1].lower()
+    base_name = secure_filename(upload.filename.rsplit(".", 1)[0]) or "alaprajz"
+    filename = f"project-{project_id}-{uuid4().hex}-{base_name}.{extension}"
+    upload.save(os.path.join(upload_dir, filename))
+    return filename
 
 
 def optional_int(value):

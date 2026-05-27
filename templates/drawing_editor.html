@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block title %}Rajzszerkesztő - {{ drawing.name }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ drawing.name }}</h1>
+    <p class="text-secondary mb-0">{{ project.code }} - {{ project.name }} · helyszíni / implementációs vázlat</p>
+  </div>
+</div>
+
+<div class="help-box">
+  <strong>Gyors vázlatrajz.</strong> Egérgörgővel zoomolsz, a Pan móddal húzható a vászon. Az ikonokat kattintással helyezheted el, majd mozgatni, méretezni, forgatni, duplikálni vagy törölni tudod őket.
+</div>
+
+<section class="drawing-topbar data-section mb-3">
+  <div class="action-buttons">
+    <button class="btn btn-success btn-sm" id="saveDrawing" type="button">Mentés</button>
+    <button class="btn btn-export btn-sm" id="exportPng" type="button">PNG export</button>
+    <button class="btn btn-export btn-sm" id="exportPdf" type="button">PDF export</button>
+    <button class="btn btn-outline-secondary btn-sm" id="undoDrawing" type="button">Undo</button>
+    <button class="btn btn-outline-secondary btn-sm" id="redoDrawing" type="button">Redo</button>
+    <button class="btn btn-outline-secondary btn-sm" id="zoomOut" type="button">- Zoom</button>
+    <button class="btn btn-outline-secondary btn-sm" id="zoomIn" type="button">+ Zoom</button>
+    <button class="btn btn-outline-secondary btn-sm" id="fitScreen" type="button">Képernyőhöz igazítás</button>
+    <a class="btn btn-outline-secondary btn-sm ms-auto" href="{{ url_for('project_detail', project_id=project.id) }}#drawings">Vissza a projekthez</a>
+  </div>
+  <div class="drawing-mode-strip">
+    <span>Mód: <strong id="modeIndicator">Select</strong></span>
+    <span>Zoom: <strong id="zoomValue">100%</strong></span>
+    <span id="saveStatus">Nincs mentetlen változás.</span>
+    <label class="form-check form-switch mb-0 ms-auto">
+      <input class="form-check-input" id="snapToGrid" type="checkbox" checked>
+      <span class="form-check-label">Rácsra illesztés</span>
+    </label>
+  </div>
+</section>
+
+<div class="drawing-layout">
+  <aside class="drawing-sidebar">
+    <section class="data-section mb-3">
+      <div class="section-title"><h2>Eszköztár</h2></div>
+      <div class="p-3">
+        <div class="action-buttons mb-3">
+          <button class="btn btn-outline-secondary btn-sm drawing-mode-button active" id="selectMode" type="button">Kijelölés</button>
+          <button class="btn btn-outline-secondary btn-sm drawing-mode-button" id="panMode" type="button">Pan</button>
+          <button class="btn btn-outline-secondary btn-sm drawing-mode-button" id="textMode" type="button">Szöveg</button>
+          <button class="btn btn-purple btn-sm drawing-mode-button" id="lineMode" type="button">Vonal rajzolása</button>
+          <button class="btn btn-outline-secondary btn-sm" id="duplicateObject" type="button">Duplikálás</button>
+          <button class="btn btn-outline-danger btn-sm" id="deleteObject" type="button">Törlés</button>
+        </div>
+
+        <label class="form-label" for="lineType">Kábelvonal típusa</label>
+        <select class="form-select form-select-sm mb-2" id="lineType">
+          {% for key, label, color in line_types %}
+            <option value="{{ key }}" data-color="{{ color }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+
+        <div class="drawing-legend">
+          {% for key, label, color in line_types %}
+            <div><span style="--line-color: {{ color }}"></span>{{ label }}</div>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <section class="data-section mb-3">
+      <div class="section-title"><h2>Infrastruktúra ikonok</h2></div>
+      <div class="p-3 drawing-palette">
+        <input class="form-control form-control-sm mb-3" id="iconSearch" type="search" placeholder="Ikon keresése">
+        <div class="accordion drawing-accordion" id="iconAccordion">
+          {% for category, icons in icon_categories.items() %}
+            <div class="accordion-item">
+              <h3 class="accordion-header">
+                <button class="accordion-button {% if not loop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#icon-group-{{ loop.index }}">
+                  {{ category }}
+                </button>
+              </h3>
+              <div id="icon-group-{{ loop.index }}" class="accordion-collapse collapse {% if loop.first %}show{% endif %}" data-bs-parent="#iconAccordion">
+                <div class="accordion-body">
+                  <div class="drawing-icon-grid">
+                    {% for key, label in icons %}
+                      <button class="drawing-icon-button" type="button" data-type="{{ key }}" data-label="{{ label }}">
+                        <span class="mini-icon"></span>
+                        <span>{{ label }}</span>
+                      </button>
+                    {% endfor %}
+                  </div>
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+  </aside>
+
+  <section class="drawing-stage data-section">
+    <div class="section-title">
+      <h2>Rajzvászon</h2>
+      <span class="text-secondary small">Objektumok: id, type, label, x, y, rotation, scale, notes, status</span>
+    </div>
+    <div class="drawing-canvas-wrap">
+      <canvas id="drawingCanvas" width="1600" height="1000"></canvas>
+    </div>
+  </section>
+
+  <aside class="drawing-properties">
+    <section class="data-section">
+      <div class="section-title"><h2>Tulajdonságok</h2></div>
+      <div class="p-3">
+        <div class="detail-grid mb-3 drawing-properties-grid">
+          <div><strong>Típus:</strong> <span id="objectType">-</span></div>
+          <div><strong>X:</strong> <span id="objectX">-</span></div>
+          <div><strong>Y:</strong> <span id="objectY">-</span></div>
+          <div><strong>Forgatás:</strong> <span id="objectRotation">-</span></div>
+          <div><strong>Skála:</strong> <span id="objectScale">-</span></div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label" for="objectLabel">Címke</label>
+          <input class="form-control form-control-sm" id="objectLabel">
+        </div>
+        <div class="mb-2">
+          <label class="form-label" for="objectStatus">Státusz</label>
+          <select class="form-select form-select-sm" id="objectStatus">
+            <option value="planned">Tervezett</option>
+            <option value="installed">Telepítve</option>
+            <option value="needs_check">Ellenőrizendő</option>
+            <option value="removed">Eltávolítandó</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label" for="objectNotes">Megjegyzés</label>
+          <textarea class="form-control form-control-sm" id="objectNotes" rows="3"></textarea>
+        </div>
+      </div>
+    </section>
+  </aside>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script>
+  window.ParklDrawing = {
+    saveUrl: "{{ url_for('project_drawing_save', project_id=project.id, drawing_id=drawing.id) }}",
+    backgroundUrl: {{ background_url|tojson }},
+    canvasJson: {{ (drawing.canvas_json or "")|tojson }},
+    lineTypes: {{ line_types|tojson }}
+  };
+</script>
+<script src="{{ url_for('static', filename='drawing_editor.js') }}"></script>
+{% endblock %}

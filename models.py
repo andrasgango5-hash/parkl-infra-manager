@@ -105,6 +105,9 @@ class Project(db.Model):
     unassigned_invoice_items = db.relationship(
         "UnassignedInvoiceItem", back_populates="assigned_project"
     )
+    drawings = db.relationship(
+        "ProjectDrawing", back_populates="project", cascade="all, delete-orphan"
+    )
 
 
 class Location(db.Model):
@@ -241,6 +244,27 @@ class StockMovement(db.Model):
     )
     project = db.relationship("Project", back_populates="movements")
     created_by = db.relationship("User", back_populates="movements")
+
+
+class ProjectDrawing(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey("project.id"), nullable=False, index=True)
+    name = db.Column(db.String(160), nullable=False)
+    background_filename = db.Column(db.String(255), nullable=True)
+    canvas_json = db.Column(db.Text, nullable=True)
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    project = db.relationship("Project", back_populates="drawings")
 
 
 class UnassignedInvoiceItem(db.Model):

@@ -36,6 +36,17 @@
   <div class="col-6 col-xl-3"><div class="metric"><span>Figyelmet igényel</span><strong>{{ attention_items|length }}</strong></div></div>
 </div>
 
+<ul class="nav nav-tabs project-tabs mb-3" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="project-overview-tab" data-bs-toggle="tab" data-bs-target="#project-overview" type="button" role="tab">Projekt áttekintés</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="drawings-tab" data-bs-toggle="tab" data-bs-target="#drawings" type="button" role="tab">Rajzok</button>
+  </li>
+</ul>
+
+<div class="tab-content">
+  <div class="tab-pane fade show active" id="project-overview" role="tabpanel" aria-labelledby="project-overview-tab">
 <section class="data-section mb-4">
   <div class="section-title"><h2>Projekt adatok</h2></div>
   <div class="p-3">
@@ -128,4 +139,57 @@
     </table>
   </div>
 </section>
+  </div>
+
+  <div class="tab-pane fade" id="drawings" role="tabpanel" aria-labelledby="drawings-tab">
+    <section class="data-section mb-4">
+      <div class="section-title">
+        <h2>Helyszíni / implementációs rajzok</h2>
+        <span class="text-secondary small">Fabric.js alapú vázlatrajz, nem CAD.</span>
+      </div>
+      <div class="p-3">
+        <div class="help-box mb-3">
+          <strong>Alaprajz alapú jelölés.</strong> Tölts fel parkoló- vagy alaprajz képet háttérként, majd helyezz rá sorompókat, kamerákat, töltőket, hálózati és elektromos elemeket, kábelvonalakat és címkéket.
+        </div>
+        <form method="post" enctype="multipart/form-data" action="{{ url_for('project_drawing_create', project_id=project.id) }}" class="row g-3 align-items-end">
+          <div class="col-md-4">
+            <label class="form-label" for="drawing_name">Rajz neve</label>
+            <input class="form-control" id="drawing_name" name="name" placeholder="Arena bejárati zóna">
+          </div>
+          <div class="col-md-5">
+            <label class="form-label" for="background_image">Alaprajz / parkoló kép</label>
+            <input class="form-control" id="background_image" name="background_image" type="file" accept=".png,.jpg,.jpeg,.webp">
+          </div>
+          <div class="col-md-3">
+            <button class="btn btn-success w-100" type="submit">Rajz létrehozása</button>
+          </div>
+        </form>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead><tr><th>Név</th><th>Alaprajz</th><th>Módosítva</th><th></th></tr></thead>
+          <tbody>
+            {% for drawing in drawings %}
+              <tr>
+                <td class="fw-semibold">{{ drawing.name }}</td>
+                <td>{{ "Van háttérkép" if drawing.background_filename else "Nincs háttérkép" }}</td>
+                <td>{{ drawing.updated_at.strftime("%Y-%m-%d %H:%M") }}</td>
+                <td><a class="btn btn-purple btn-sm" href="{{ url_for('project_drawing_editor', project_id=project.id, drawing_id=drawing.id) }}">Szerkesztő megnyitása</a></td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="4">
+                  <div class="empty-state">
+                    <strong>Még nincs rajz ehhez a projekthez.</strong>
+                    <span>Hozz létre egy rajzot alaprajzzal vagy üres vászonnal, majd jelöld rá az infrastruktúra elemeket.</span>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
 {% endblock %}

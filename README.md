@@ -15,6 +15,7 @@ Parkl-specifikus belső ERP/készletkezelő webalkalmazás első működő MVP v
 - Flask session alapú hitelesítés
 - Werkzeug jelszó-hash-elés
 - ReportLab alapú PDF export
+- Fabric.js alapú projekt rajzszerkesztő
 
 ## Telepítés
 
@@ -117,6 +118,7 @@ Workflow fókuszú nézetek:
 - Az `Eszközök` oldalon nézetgombok segítenek: `Összes`, `Raktáron`, `Projekthez rendelve`, `Kiadva`, `Telepítve`, `Beérkezésre vár`, `Pénzügyileg nyitott`, `Figyelmet igényel`.
 - A `Figyelmet igényel` oldal összegyűjti a problémás eszközöket és gazdátlan számlasorokat, például lejárt tervezett érkezést, nyitott számlát, hiányos projektadatot vagy hiányzó importált mezőt.
 - A projekt részletező oldal a fő munkalap: megmutatja a projekthez tartozó eszközöket, HUF értéket, kiadott/telepített/visszavett darabszámokat, nyitott beszállítói számlákat, beérkezésre váró tételeket, mozgástörténetet és PDF dokumentumokat generál.
+- A projekt részletező oldalon a `Rajzok` tabon parkoló- vagy alaprajz képre készíthető egyszerű megvalósítási vázlat. A szerkesztő Fabric.js-t használ, támogatja a zoomot, pan módot, infrastruktúra ikonokat, kábelvonalakat, címkéket, JSON mentést és PNG/PDF exportot.
 
 PDF dokumentumok projekt oldalról:
 
