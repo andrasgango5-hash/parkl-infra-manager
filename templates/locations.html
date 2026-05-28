@@ -25,8 +25,8 @@
     </select>
   </div>
   <div class="filter-actions">
-    <button class="btn btn-purple btn-sm" type="submit">Szűrés</button>
-    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('locations') }}">Alaphelyzet</a>
+    <button class="btn btn-purple btn-sm btn-icon" type="submit" data-bs-toggle="tooltip" data-bs-title="Készlethelyek szűrése"><i class="bi bi-funnel"></i> Szűrés</button>
+    <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('locations') }}" data-bs-toggle="tooltip" data-bs-title="Szűrők törlése"><i class="bi bi-arrow-counterclockwise"></i> Alaphelyzet</a>
   </div>
 </form>
 
@@ -57,7 +57,7 @@
         <label class="form-label" for="notes">Megjegyzés</label>
         <textarea class="form-control" id="notes" name="notes" rows="3"></textarea>
       </div>
-      <button class="btn btn-success" type="submit">Létrehozás</button>
+      <button class="btn btn-success btn-icon" type="submit" data-bs-toggle="tooltip" data-bs-title="Új készlethely mentése"><i class="bi bi-plus-circle"></i> Létrehozás</button>
     </form>
   </div>
   <div class="col-lg-8">
@@ -77,15 +77,15 @@
           <tbody>
             {% for location in locations %}
               <tr>
-                <td class="fw-semibold">{{ location.name }}</td>
+                <td class="fw-semibold"><span class="table-item-with-icon"><span class="table-item-icon"><i class="bi bi-geo-alt"></i></span>{{ location.name }}</span></td>
                 <td><span class="status-badge status-neutral">{{ location_type_label(location.location_type) }}</span></td>
                 <td class="mobile-hide">{{ location.address or "-" }}</td>
                 <td class="mobile-hide">{{ location.devices|length }}</td>
                 <td class="text-nowrap">
-                  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('location_detail', location_id=location.id) }}">Részletek</a>
-                  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('location_edit', location_id=location.id) }}">Szerkesztés</a>
+                  <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('location_detail', location_id=location.id) }}" data-bs-toggle="tooltip" data-bs-title="Készlethely megnyitása"><i class="bi bi-eye"></i> Részletek</a>
+                  <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('location_edit', location_id=location.id) }}" data-bs-toggle="tooltip" data-bs-title="Készlethely szerkesztése"><i class="bi bi-pencil"></i> Szerkesztés</a>
                   <form method="post" action="{{ url_for('location_archive', location_id=location.id) }}" class="d-inline">
-                    <button class="btn btn-outline-danger btn-sm" type="submit" data-confirm="Biztosan archiválod ezt a készlethelyet?">Archiválás</button>
+                    <button class="btn btn-outline-danger btn-sm btn-icon" type="submit" data-confirm="Biztosan archiválod ezt a készlethelyet?" data-bs-toggle="tooltip" data-bs-title="Készlethely archiválása"><i class="bi bi-trash"></i> Archiválás</button>
                   </form>
                 </td>
               </tr>
@@ -95,7 +95,7 @@
                   <div class="empty-state">
                     <strong>Még nincs készlethely.</strong>
                     <span>Hozz létre legalább egy raktárat vagy projekt helyszínt az eszközök mozgatásához.</span>
-                    <a class="btn btn-success btn-sm" href="#name">Készlethely létrehozása</a>
+                    <a class="btn btn-success btn-sm btn-icon" href="#name"><i class="bi bi-plus-circle"></i> Készlethely létrehozása</a>
                   </div>
                 </td>
               </tr>

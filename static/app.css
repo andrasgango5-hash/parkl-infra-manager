@@ -411,7 +411,17 @@ body {
     radial-gradient(circle at 85% 20%, rgba(159, 77, 255, 0.16), transparent 5rem),
     linear-gradient(180deg, #fff, #fbf8ff);
   border-left: 4px solid var(--accent);
+  display: flex;
+  gap: 0.9rem;
+  min-height: 118px;
   padding: 1rem 1.1rem;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+.metric:hover {
+  border-color: rgba(109, 69, 196, 0.35);
+  box-shadow: 0 22px 54px rgba(109, 69, 196, 0.16);
+  transform: translateY(-2px);
 }
 
 .metric span {
@@ -425,6 +435,55 @@ body {
   display: block;
   font-size: 2rem;
   line-height: 1.1;
+}
+
+.metric-icon,
+.quick-action-icon,
+.table-item-icon {
+  align-items: center;
+  background:
+    radial-gradient(circle at 35% 25%, rgba(255, 255, 255, 0.75), transparent 1.7rem),
+    linear-gradient(135deg, #efe4ff, #dbcaff);
+  border: 1px solid rgba(109, 69, 196, 0.18);
+  border-radius: 18px;
+  box-shadow: 0 14px 28px rgba(109, 69, 196, 0.16);
+  color: var(--purple);
+  display: inline-flex;
+  flex: 0 0 auto;
+  justify-content: center;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+.metric .metric-icon {
+  align-items: center;
+  display: flex;
+  font-size: 2rem;
+  height: 58px;
+  justify-content: center;
+  line-height: 1;
+  width: 58px;
+}
+
+.metric .metric-icon .bi {
+  display: block;
+  font-size: 1em;
+  line-height: 1;
+  margin: 0;
+}
+
+.metric:hover .metric-icon,
+.quick-action-card:hover .quick-action-icon,
+.action-card:hover .quick-action-icon {
+  background:
+    radial-gradient(circle at 35% 25%, rgba(255, 255, 255, 0.85), transparent 1.7rem),
+    linear-gradient(135deg, #7b4dde, #b257ff);
+  box-shadow: 0 18px 36px rgba(159, 77, 255, 0.28);
+  color: #fff;
+  transform: scale(1.06);
+}
+
+.metric-body {
+  min-width: 0;
 }
 
 .badge {
@@ -509,6 +568,26 @@ body {
   border-radius: 999px;
   font-weight: 700;
   transition: transform 0.14s ease, box-shadow 0.14s ease, background-color 0.14s ease;
+}
+
+.btn .bi {
+  line-height: 1;
+}
+
+.btn-icon {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.35rem;
+  justify-content: center;
+}
+
+.btn-icon-only {
+  align-items: center;
+  display: inline-flex;
+  height: 34px;
+  justify-content: center;
+  padding: 0;
+  width: 34px;
 }
 
 .btn-outline-secondary {
@@ -596,6 +675,107 @@ body {
   justify-content: center;
   margin-bottom: 0.75rem;
   width: 32px;
+}
+
+.quick-action-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.quick-action-card {
+  align-items: center;
+  background:
+    radial-gradient(circle at 95% 0%, rgba(159, 77, 255, 0.18), transparent 5rem),
+    linear-gradient(180deg, #fff, #fbf8ff);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: var(--shadow-soft);
+  color: var(--ink);
+  display: flex;
+  gap: 0.85rem;
+  min-height: 104px;
+  padding: 1rem;
+  text-decoration: none;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+.quick-action-card:hover {
+  border-color: rgba(109, 69, 196, 0.38);
+  box-shadow: 0 20px 46px rgba(109, 69, 196, 0.16);
+  color: var(--ink);
+  transform: translateY(-2px);
+}
+
+.quick-action-icon {
+  font-size: 1.35rem;
+  height: 50px;
+  width: 50px;
+}
+
+.quick-action-card strong {
+  display: block;
+  line-height: 1.2;
+}
+
+.quick-action-card > span:not(.quick-action-icon) {
+  color: var(--muted);
+  display: block;
+  font-size: 0.82rem;
+  margin-top: 0.2rem;
+}
+
+.quick-action-card > span:not(.quick-action-icon) strong {
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+
+.table-item-with-icon {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.5rem;
+}
+
+.table-item-icon {
+  border-radius: 12px;
+  box-shadow: none;
+  font-size: 0.95rem;
+  height: 30px;
+  width: 30px;
+}
+
+tr:hover .table-item-icon {
+  background:
+    radial-gradient(circle at 35% 25%, rgba(255, 255, 255, 0.8), transparent 1.4rem),
+    linear-gradient(135deg, #7b4dde, #b257ff);
+  color: #fff;
+  transform: scale(1.04);
+}
+
+@media (max-width: 576px) {
+  .metric {
+    min-height: 106px;
+  }
+
+  .metric-icon {
+    font-size: 1.35rem;
+    height: 46px;
+    width: 46px;
+  }
+
+  .metric .metric-icon {
+    font-size: 1.65rem;
+    height: 46px;
+    width: 46px;
+  }
+
+  .metric strong {
+    font-size: 1.55rem;
+  }
+
+  .quick-action-card {
+    min-height: 92px;
+  }
 }
 
 .action-buttons {

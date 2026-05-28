@@ -29,8 +29,8 @@
     </select>
   </div>
   <div class="filter-actions">
-    <button class="btn btn-purple btn-sm" type="submit">Szűrés</button>
-    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('projects') }}">Alaphelyzet</a>
+    <button class="btn btn-purple btn-sm btn-icon" type="submit" data-bs-toggle="tooltip" data-bs-title="Projektlista szűrése"><i class="bi bi-funnel"></i> Szűrés</button>
+    <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('projects') }}" data-bs-toggle="tooltip" data-bs-title="Szűrők törlése"><i class="bi bi-arrow-counterclockwise"></i> Alaphelyzet</a>
   </div>
 </form>
 
@@ -63,7 +63,7 @@
         <label class="form-label" for="notes">Megjegyzés</label>
         <textarea class="form-control" id="notes" name="notes" rows="3"></textarea>
       </div>
-      <button class="btn btn-success" type="submit">Létrehozás</button>
+      <button class="btn btn-success btn-icon" type="submit" data-bs-toggle="tooltip" data-bs-title="Új projekt mentése"><i class="bi bi-plus-circle"></i> Létrehozás</button>
     </form>
   </div>
   <div class="col-lg-8">
@@ -84,16 +84,16 @@
           <tbody>
             {% for project in projects %}
               <tr>
-                <td class="fw-semibold">{{ project.code }}</td>
+                <td class="fw-semibold"><span class="table-item-with-icon"><span class="table-item-icon"><i class="bi bi-building"></i></span>{{ project.code }}</span></td>
                 <td>{{ project.name }}</td>
                 <td class="mobile-hide">{{ project.customer or "-" }}</td>
                 <td><span class="status-badge status-neutral">{{ project_status_label(project.status) }}</span></td>
                 <td class="mobile-hide">{{ project.devices|length }}</td>
                 <td class="text-nowrap">
-                  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('project_detail', project_id=project.id) }}">Részletek</a>
-                  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('project_edit', project_id=project.id) }}">Szerkesztés</a>
+                  <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('project_detail', project_id=project.id) }}" data-bs-toggle="tooltip" data-bs-title="Projekt megnyitása"><i class="bi bi-eye"></i> Részletek</a>
+                  <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('project_edit', project_id=project.id) }}" data-bs-toggle="tooltip" data-bs-title="Projekt szerkesztése"><i class="bi bi-pencil"></i> Szerkesztés</a>
                   <form method="post" action="{{ url_for('project_archive', project_id=project.id) }}" class="d-inline">
-                    <button class="btn btn-outline-danger btn-sm" type="submit" data-confirm="Biztosan archiválod ezt a projektet?">Archiválás</button>
+                    <button class="btn btn-outline-danger btn-sm btn-icon" type="submit" data-confirm="Biztosan archiválod ezt a projektet?" data-bs-toggle="tooltip" data-bs-title="Projekt archiválása"><i class="bi bi-trash"></i> Archiválás</button>
                   </form>
                 </td>
               </tr>
@@ -103,7 +103,7 @@
                   <div class="empty-state">
                     <strong>Még nincs projekt.</strong>
                     <span>Hozd létre az első projektet, majd rendelj hozzá eszközöket.</span>
-                    <a class="btn btn-success btn-sm" href="#name">Projekt létrehozása</a>
+                    <a class="btn btn-success btn-sm btn-icon" href="#name"><i class="bi bi-plus-circle"></i> Projekt létrehozása</a>
                   </div>
                 </td>
               </tr>

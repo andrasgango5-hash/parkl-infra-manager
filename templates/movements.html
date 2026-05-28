@@ -73,7 +73,7 @@
         <label class="form-label" for="notes">Megjegyzés</label>
         <textarea class="form-control" id="notes" name="notes" rows="3"></textarea>
       </div>
-      <button class="btn btn-success" type="submit">Rögzítés</button>
+      <button class="btn btn-success btn-icon" type="submit" data-bs-toggle="tooltip" data-bs-title="Készletmozgás mentése"><i class="bi bi-save"></i> Rögzítés</button>
     </form>
   </div>
   <div class="col-xl-8">
@@ -96,7 +96,7 @@
             {% for movement in movements %}
               <tr>
                 <td>{{ movement.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
-                <td class="fw-semibold">{{ device_display_label(movement.device) }}</td>
+                <td class="fw-semibold"><span class="table-item-with-icon"><span class="table-item-icon"><i class="bi bi-arrow-left-right"></i></span>{{ device_display_label(movement.device) }}</span></td>
                 <td><span class="movement-badge {{ movement_badge_class(movement.movement_type) }}">{{ movement_type_label(movement.movement_type) }}</span></td>
                 <td>{{ movement.from_location.name if movement.from_location else "-" }}</td>
                 <td>{{ movement.to_location.name if movement.to_location else "-" }}</td>
@@ -109,7 +109,7 @@
                   <div class="empty-state">
                     <strong>Még nincs készletmozgás.</strong>
                     <span>Rögzíts eszközt, majd hozz létre bevételezést, kiadást vagy telepítést.</span>
-                    <a class="btn btn-success btn-sm" href="{{ url_for('devices') }}">Eszközök megnyitása</a>
+                    <a class="btn btn-success btn-sm btn-icon" href="{{ url_for('devices') }}"><i class="bi bi-cpu"></i> Eszközök megnyitása</a>
                   </div>
                 </td>
               </tr>

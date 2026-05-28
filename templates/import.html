@@ -22,7 +22,7 @@
         <label class="form-label" for="excel_file">Excel fájl (.xlsx)</label>
         <input class="form-control" id="excel_file" name="excel_file" type="file" accept=".xlsx" required>
       </div>
-      <button class="btn btn-purple" type="submit" name="action" value="dry_run">Előnézet készítése</button>
+      <button class="btn btn-purple btn-icon" type="submit" name="action" value="dry_run" data-bs-toggle="tooltip" data-bs-title="Excel fájl feltöltése és előnézet készítése"><i class="bi bi-upload"></i> Előnézet készítése</button>
     </form>
 
     {% if pending_import and preview %}
@@ -33,7 +33,7 @@
           <input class="form-check-input" id="execute_import" name="execute_import" type="checkbox">
           <label class="form-check-label" for="execute_import">Importálás végrehajtása</label>
         </div>
-        <button class="btn btn-success" type="submit" name="action" value="confirm">Adatbázisba importálás</button>
+        <button class="btn btn-success btn-icon" type="submit" name="action" value="confirm" data-bs-toggle="tooltip" data-bs-title="Import végrehajtása"><i class="bi bi-cloud-arrow-up"></i> Adatbázisba importálás</button>
       </form>
     {% endif %}
   </div>
@@ -160,7 +160,7 @@
             {% for item in recent_batches %}
               <tr>
                 <td>{{ item.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
-                <td class="fw-semibold"><a href="{{ url_for('import_batch_detail', batch_id=item.id) }}">{{ item.filename }}</a></td>
+                <td class="fw-semibold"><a class="table-item-with-icon" href="{{ url_for('import_batch_detail', batch_id=item.id) }}" data-bs-toggle="tooltip" data-bs-title="Import részleteinek megnyitása"><span class="table-item-icon"><i class="bi bi-file-earmark-spreadsheet"></i></span>{{ item.filename }}</a></td>
                 <td>{{ import_status_label(item.status) }}</td>
                 <td>{{ item.created_count }}</td>
                 <td>{{ item.skipped_count }}</td>

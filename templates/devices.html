@@ -176,7 +176,7 @@
           </div>
         </div>
       </div>
-      <button class="btn btn-success mt-3" type="submit">Létrehozás</button>
+      <button class="btn btn-success mt-3 btn-icon" type="submit" data-bs-toggle="tooltip" data-bs-title="Új eszköz mentése"><i class="bi bi-plus-circle"></i> Létrehozás</button>
     </form>
   </div>
   <div class="col-xl-8">
@@ -261,8 +261,8 @@
           </select>
         </div>
         <div class="filter-actions">
-          <button class="btn btn-purple btn-sm" type="submit">Szűrés</button>
-          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('devices') }}">Alaphelyzet</a>
+          <button class="btn btn-purple btn-sm btn-icon" type="submit" data-bs-toggle="tooltip" data-bs-title="Eszközlista szűrése"><i class="bi bi-funnel"></i> Szűrés</button>
+          <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('devices') }}" data-bs-toggle="tooltip" data-bs-title="Szűrők törlése"><i class="bi bi-arrow-counterclockwise"></i> Alaphelyzet</a>
         </div>
       </form>
       <div class="summary-strip">
@@ -288,7 +288,7 @@
           <tbody>
             {% for device in devices %}
               <tr>
-                <td class="fw-semibold">{{ device.asset_tag }}</td>
+                <td class="fw-semibold"><span class="table-item-with-icon"><span class="table-item-icon"><i class="bi bi-cpu"></i></span>{{ device.asset_tag }}</span></td>
                 <td>
                   <div class="fw-semibold">{{ device_display_label(device) }}</div>
                   {% if device.subtype_note %}<div class="text-secondary small">{{ device.subtype_note }}</div>{% endif %}
@@ -299,10 +299,10 @@
                 <td>{{ device.project.code if device.project else "-" }}</td>
                 <td class="mobile-hide">{{ device.location.name if device.location else "-" }}</td>
                 <td class="text-nowrap">
-                  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_detail', device_id=device.id) }}">Részletek</a>
-                  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_edit', device_id=device.id) }}">Szerkesztés</a>
+                  <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_detail', device_id=device.id) }}" data-bs-toggle="tooltip" data-bs-title="Eszköz megnyitása"><i class="bi bi-eye"></i> Részletek</a>
+                  <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_edit', device_id=device.id) }}" data-bs-toggle="tooltip" data-bs-title="Eszköz szerkesztése"><i class="bi bi-pencil"></i> Szerkesztés</a>
                   <form method="post" action="{{ url_for('device_archive', device_id=device.id) }}" class="d-inline">
-                    <button class="btn btn-outline-danger btn-sm" type="submit" data-confirm="Biztosan archiválod ezt az eszközt?">Archiválás</button>
+                    <button class="btn btn-outline-danger btn-sm btn-icon" type="submit" data-confirm="Biztosan archiválod ezt az eszközt?" data-bs-toggle="tooltip" data-bs-title="Eszköz archiválása"><i class="bi bi-trash"></i> Archiválás</button>
                   </form>
                 </td>
               </tr>
@@ -313,8 +313,8 @@
                     <strong>Nincs eszköz ebben a nézetben.</strong>
                     <span>Rögzíts új tételt, importálj Excelt, vagy állítsd vissza a szűrőket.</span>
                     <div class="action-buttons">
-                      <a class="btn btn-success btn-sm" href="{{ url_for('devices') }}">Új eszköz rögzítése</a>
-                      <a class="btn btn-purple btn-sm" href="{{ url_for('excel_import') }}">Excel import</a>
+                      <a class="btn btn-success btn-sm btn-icon" href="{{ url_for('devices') }}#asset_tag"><i class="bi bi-plus-circle"></i> Új eszköz rögzítése</a>
+                      <a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('excel_import') }}"><i class="bi bi-upload"></i> Excel import</a>
                     </div>
                   </div>
                 </td>

@@ -113,7 +113,7 @@
         </div>
       </div>
 
-      <button class="btn btn-success mt-3" type="submit">Létrehozás</button>
+      <button class="btn btn-success mt-3 btn-icon" type="submit" data-bs-toggle="tooltip" data-bs-title="Új számlasor mentése"><i class="bi bi-plus-circle"></i> Létrehozás</button>
     </form>
   </div>
 
@@ -135,8 +135,8 @@
           </select>
         </div>
         <div class="filter-actions">
-          <button class="btn btn-purple btn-sm" type="submit">Szűrés</button>
-          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('unassigned_invoices') }}">Alaphelyzet</a>
+          <button class="btn btn-purple btn-sm btn-icon" type="submit" data-bs-toggle="tooltip" data-bs-title="Számlasorok szűrése"><i class="bi bi-funnel"></i> Szűrés</button>
+          <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('unassigned_invoices') }}" data-bs-toggle="tooltip" data-bs-title="Szűrők törlése"><i class="bi bi-arrow-counterclockwise"></i> Alaphelyzet</a>
         </div>
       </form>
       <div class="table-responsive">
@@ -156,7 +156,7 @@
           <tbody>
             {% for item in invoice_items %}
               <tr>
-                <td class="fw-semibold">{{ item.invoice_number or "-" }}</td>
+                <td class="fw-semibold"><span class="table-item-with-icon"><span class="table-item-icon"><i class="bi bi-receipt"></i></span>{{ item.invoice_number or "-" }}</span></td>
                 <td>{{ item.partner or "-" }}</td>
                 <td class="mobile-hide">{{ item.invoice_date.strftime("%Y-%m-%d") if item.invoice_date else "-" }}</td>
                 <td>{{ item.description or "-" }}</td>
@@ -164,9 +164,9 @@
                 <td><span class="status-badge status-reserved">{{ assignment_status_label(item.assignment_status) }}</span></td>
                 <td>{{ item.assigned_project.code if item.assigned_project else "-" }}</td>
                 <td class="text-nowrap">
-                  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('unassigned_invoice_edit', item_id=item.id) }}">Szerkesztés</a>
+                  <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('unassigned_invoice_edit', item_id=item.id) }}" data-bs-toggle="tooltip" data-bs-title="Számlasor szerkesztése"><i class="bi bi-pencil"></i> Szerkesztés</a>
                   <form method="post" action="{{ url_for('unassigned_invoice_archive', item_id=item.id) }}" class="d-inline">
-                    <button class="btn btn-outline-danger btn-sm" type="submit" data-confirm="Biztosan archiválod ezt a számlasort?">Archiválás</button>
+                    <button class="btn btn-outline-danger btn-sm btn-icon" type="submit" data-confirm="Biztosan archiválod ezt a számlasort?" data-bs-toggle="tooltip" data-bs-title="Számlasor archiválása"><i class="bi bi-trash"></i> Archiválás</button>
                   </form>
                 </td>
               </tr>
@@ -176,7 +176,7 @@
                   <div class="empty-state">
                     <strong>Nincs gazdátlan számlasor.</strong>
                     <span>Importálhatsz Excelből, vagy kézzel rögzíthetsz olyan számlasort, amelyet még tisztázni kell.</span>
-                    <a class="btn btn-purple btn-sm" href="{{ url_for('excel_import') }}">Excel import</a>
+                    <a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('excel_import') }}"><i class="bi bi-upload"></i> Excel import</a>
                   </div>
                 </td>
               </tr>
