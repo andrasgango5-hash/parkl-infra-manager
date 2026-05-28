@@ -11,8 +11,12 @@
     <nav class="navbar navbar-expand-lg navbar-dark app-navbar">
       <div class="container-fluid">
         <a class="navbar-brand fw-semibold" href="{{ url_for('dashboard') }}">
-          <span class="brand-mark">P</span>
-          Parkl Infra Manager
+          <span class="brand-logo-frame">
+            <img class="brand-logo" src="{{ url_for('static', filename='parkl-logo.png') }}" alt="Parkl" onerror="this.closest('.brand-logo-frame').classList.add('is-missing')">
+            <span class="brand-mark">P</span>
+          </span>
+          <span class="brand-text brand-text-logo">Infra Manager</span>
+          <span class="brand-text brand-text-fallback">Parkl Infra Manager</span>
         </a>
         {% if current_user %}
           <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Navigáció megnyitása">
@@ -20,14 +24,14 @@
           </button>
           <div class="collapse navbar-collapse" id="mainNav">
             <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-              <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}">Áttekintés</a></li>
-              <li class="nav-item"><a class="nav-link" href="{{ url_for('projects') }}">Projektek</a></li>
-              <li class="nav-item"><a class="nav-link" href="{{ url_for('devices') }}">Eszközök</a></li>
-              <li class="nav-item"><a class="nav-link" href="{{ url_for('locations') }}">Készlethelyek</a></li>
-              <li class="nav-item"><a class="nav-link" href="{{ url_for('movements') }}">Mozgások</a></li>
-              <li class="nav-item"><a class="nav-link" href="{{ url_for('unassigned_invoices') }}">Gazdátlan számlasorok</a></li>
-              <li class="nav-item"><a class="nav-link" href="{{ url_for('excel_import') }}">Excel import</a></li>
-              <li class="nav-item"><a class="nav-link" href="{{ url_for('attention') }}">Figyelmet igényel</a></li>
+              <li class="nav-item"><a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">Áttekintés</a></li>
+              <li class="nav-item"><a class="nav-link {% if request.endpoint in ['projects', 'project_detail', 'project_edit', 'project_drawing_editor'] %}active{% endif %}" href="{{ url_for('projects') }}">Projektek</a></li>
+              <li class="nav-item"><a class="nav-link {% if request.endpoint in ['devices', 'device_detail', 'device_edit'] %}active{% endif %}" href="{{ url_for('devices') }}">Eszközök</a></li>
+              <li class="nav-item"><a class="nav-link {% if request.endpoint in ['locations', 'location_detail', 'location_edit'] %}active{% endif %}" href="{{ url_for('locations') }}">Készlethelyek</a></li>
+              <li class="nav-item"><a class="nav-link {% if request.endpoint == 'movements' %}active{% endif %}" href="{{ url_for('movements') }}">Mozgások</a></li>
+              <li class="nav-item"><a class="nav-link {% if request.endpoint in ['unassigned_invoices', 'unassigned_invoice_edit'] %}active{% endif %}" href="{{ url_for('unassigned_invoices') }}">Gazdátlan számlasorok</a></li>
+              <li class="nav-item"><a class="nav-link {% if request.endpoint in ['excel_import', 'import_batch_detail'] %}active{% endif %}" href="{{ url_for('excel_import') }}">Excel import</a></li>
+              <li class="nav-item"><a class="nav-link {% if request.endpoint == 'attention' %}active{% endif %}" href="{{ url_for('attention') }}">Figyelmet igényel</a></li>
             </ul>
             <form method="post" action="{{ url_for('logout') }}" class="d-flex align-items-center gap-2">
               <span class="navbar-text small">{{ current_user.username }}</span>
