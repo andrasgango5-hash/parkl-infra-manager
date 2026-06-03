@@ -11,18 +11,20 @@
   <body>
     {% if current_user %}
       {% set endpoint = request.endpoint or '' %}
-      {% set requested_section = request.args.get('section', '') %}
       {% set dashboard_active = endpoint == 'dashboard' %}
-      {% set projects_active = endpoint in ['projects', 'project_detail', 'project_edit'] and requested_section != 'drawings' %}
-      {% set drawings_active = requested_section == 'drawings' or endpoint in ['project_drawing_create', 'project_drawing_editor', 'project_drawing_save', 'drawing_background'] %}
-      {% set devices_active = endpoint in ['devices', 'device_detail', 'device_edit', 'device_action'] and requested_section != 'qr' %}
-      {% set qr_active = requested_section == 'qr' or endpoint in ['device_qr', 'device_label', 'device_units', 'device_units_create', 'device_unit_detail', 'device_unit_edit', 'device_unit_qr', 'device_unit_label', 'device_unit_labels_pdf', 'location_qr', 'project_qr'] %}
+      {% set projects_active = endpoint in ['projects', 'project_detail', 'project_edit', 'project_drawing_create', 'project_drawing_editor', 'project_drawing_save', 'drawing_background'] %}
+      {% set devices_active = endpoint in ['devices', 'device_detail', 'device_edit', 'device_action'] %}
+      {% set labels_active = endpoint in ['labels', 'device_qr', 'device_label', 'device_units', 'device_units_create', 'device_unit_detail', 'device_unit_edit', 'device_unit_qr', 'device_unit_label', 'device_unit_labels_pdf', 'location_qr', 'project_qr'] %}
       {% set locations_active = endpoint in ['locations', 'location_detail', 'location_edit', 'location_archive'] %}
       {% set movements_active = endpoint == 'movements' %}
-      {% set imports_active = endpoint in ['excel_import', 'import_batch_detail', 'import_batch_rollback', 'import_batch_archive'] %}
-      {% set work_orders_active = endpoint.startswith('work_order') and endpoint != 'work_order_pdf' and requested_section != 'pdf' %}
+      {% set import_export_active = endpoint == 'import_export' %}
+      {% set work_orders_active = endpoint.startswith('work_order') and endpoint != 'work_order_pdf' %}
+      {% set documents_active = endpoint in ['documents', 'work_order_pdf', 'project_pdf'] %}
       {% set attention_active = endpoint == 'attention' %}
       {% set invoices_active = endpoint in ['unassigned_invoices', 'unassigned_invoice_edit', 'unassigned_invoice_archive'] %}
+      {% set admin_active = endpoint == 'admin_tools' %}
+      {% set legacy_active = endpoint in ['legacy', 'legacy_parkl_excel_import', 'import_batch_detail', 'import_batch_rollback', 'import_batch_archive'] %}
+      {% set help_active = endpoint == 'help_page' %}
 
       <header class="app-mobile-header">
         <button class="btn sidebar-mobile-toggle" type="button" data-sidebar-toggle aria-controls="appSidebar" aria-expanded="false" aria-label="Navigáció megnyitása">
@@ -48,6 +50,9 @@
             <span class="sidebar-brand-text"><strong>Infra Manager</strong><small>Parkl operations</small></span>
           </a>
           <button class="sidebar-close d-lg-none" type="button" data-sidebar-close aria-label="Navigáció bezárása"><i class="bi bi-x-lg"></i></button>
+          <button class="sidebar-collapse-toggle d-none d-lg-inline-flex" type="button" data-sidebar-collapse aria-label="Sidebar összecsukása" title="Sidebar összecsukása">
+            <i class="bi bi-chevron-left"></i>
+          </button>
         </div>
 
         <nav class="sidebar-nav" aria-label="Fő navigáció">
@@ -55,6 +60,9 @@
             <div class="sidebar-group-label">Áttekintés</div>
             <a class="sidebar-link {% if dashboard_active %}active{% endif %}" href="{{ url_for('dashboard') }}" title="Dashboard">
               <i class="bi bi-speedometer2"></i><span>Dashboard</span>
+            </a>
+            <a class="sidebar-link {% if attention_active %}active{% endif %}" href="{{ url_for('attention') }}" title="Figyelmet igényel">
+              <i class="bi bi-exclamation-triangle"></i><span>Figyelmet igényel</span>
             </a>
           </div>
 
@@ -69,7 +77,7 @@
             <a class="sidebar-link {% if movements_active %}active{% endif %}" href="{{ url_for('movements') }}" title="Mozgások">
               <i class="bi bi-arrow-left-right"></i><span>Mozgások</span>
             </a>
-            <a class="sidebar-link {% if qr_active %}active{% endif %}" href="{{ url_for('devices', section='qr') }}" title="QR / címkék">
+            <a class="sidebar-link {% if labels_active %}active{% endif %}" href="{{ url_for('labels') }}" title="QR / címkék">
               <i class="bi bi-qr-code"></i><span>QR / címkék</span>
             </a>
           </div>
@@ -79,9 +87,6 @@
             <a class="sidebar-link {% if projects_active %}active{% endif %}" href="{{ url_for('projects') }}" title="Projektek">
               <i class="bi bi-kanban"></i><span>Projektek</span>
             </a>
-            <a class="sidebar-link {% if drawings_active %}active{% endif %}" href="{{ url_for('projects', section='drawings') }}" title="Rajzok / tervező">
-              <i class="bi bi-map"></i><span>Rajzok / tervező</span>
-            </a>
           </div>
 
           <div class="sidebar-group">
@@ -89,25 +94,37 @@
             <a class="sidebar-link {% if work_orders_active %}active{% endif %}" href="{{ url_for('work_orders') }}" title="Munkalapok">
               <i class="bi bi-clipboard-check"></i><span>Munkalapok</span>
             </a>
-            <a class="sidebar-link {% if requested_section == 'pdf' or endpoint in ['work_order_pdf', 'project_pdf'] %}active{% endif %}" href="{{ url_for('work_orders', section='pdf') }}" title="PDF-ek / jegyzőkönyvek">
-              <i class="bi bi-file-earmark-pdf"></i><span>PDF-ek / jegyzőkönyvek</span>
-            </a>
+            {% if can_export %}
+              <a class="sidebar-link {% if documents_active %}active{% endif %}" href="{{ url_for('documents') }}" title="PDF-ek / jegyzőkönyvek">
+                <i class="bi bi-file-earmark-pdf"></i><span>PDF-ek / jegyzőkönyvek</span>
+              </a>
+            {% endif %}
+            {% if can_view_finance %}
+              <a class="sidebar-link {% if invoices_active %}active{% endif %}" href="{{ url_for('unassigned_invoices') }}" title="Gazdátlan számlasorok">
+                <i class="bi bi-receipt"></i><span>Gazdátlan számlasorok</span>
+              </a>
+            {% endif %}
           </div>
 
-          <div class="sidebar-group">
-            <div class="sidebar-group-label">Adatkezelés</div>
-            <a class="sidebar-link {% if imports_active %}active{% endif %}" href="{{ url_for('excel_import') }}" title="Importok">
-              <i class="bi bi-file-earmark-excel"></i><span>Importok</span>
-            </a>
-          </div>
+          {% if can_export %}
+            <div class="sidebar-group">
+              <div class="sidebar-group-label">Adatkezelés</div>
+              <a class="sidebar-link {% if import_export_active %}active{% endif %}" href="{{ url_for('import_export') }}" title="Import / Export">
+                <i class="bi bi-arrow-down-up"></i><span>Import / Export</span>
+              </a>
+            </div>
+          {% endif %}
 
-          {% if current_user.is_admin %}
+          {% if can_manage_users %}
             <div class="sidebar-group">
               <div class="sidebar-group-label">Admin</div>
-              <a class="sidebar-link {% if attention_active %}active{% endif %}" href="{{ url_for('attention') }}" title="Admin eszközök">
+              <a class="sidebar-link {% if admin_active %}active{% endif %}" href="{{ url_for('admin_tools') }}" title="Admin eszközök">
                 <i class="bi bi-gear"></i><span>Admin eszközök</span>
               </a>
-              <a class="sidebar-link {% if invoices_active %}active{% endif %}" href="{{ url_for('unassigned_invoices') }}" title="Legacy funkciók">
+              <a class="sidebar-link {% if endpoint.startswith('admin_user') %}active{% endif %}" href="{{ url_for('admin_users') }}" title="Felhasználók">
+                <i class="bi bi-people"></i><span>Felhasználók</span>
+              </a>
+              <a class="sidebar-link {% if legacy_active %}active{% endif %}" href="{{ url_for('legacy') }}" title="Legacy funkciók">
                 <i class="bi bi-archive"></i><span>Legacy funkciók</span>
               </a>
             </div>
@@ -115,14 +132,14 @@
 
           <div class="sidebar-group">
             <div class="sidebar-group-label">Támogatás</div>
-            <a class="sidebar-link" href="{{ url_for('dashboard') }}#workflow" title="Súgó / dokumentáció">
+            <a class="sidebar-link {% if help_active %}active{% endif %}" href="{{ url_for('help_page') }}" title="Súgó / dokumentáció">
               <i class="bi bi-question-circle"></i><span>Súgó / dokumentáció</span>
             </a>
           </div>
         </nav>
 
         <div class="sidebar-footer">
-          <div class="sidebar-user"><i class="bi bi-person-circle"></i><span>{{ current_user.username }}</span></div>
+          <div class="sidebar-user"><i class="bi bi-person-circle"></i><span>{{ current_user.username }} · {{ user_role_label(current_user.effective_role) }}</span></div>
           <form method="post" action="{{ url_for('logout') }}">
             <button class="sidebar-logout" type="submit" title="Kijelentkezés"><i class="bi bi-box-arrow-right"></i><span>Kijelentkezés</span></button>
           </form>
@@ -162,6 +179,7 @@
 
       const sidebar = document.querySelector("#appSidebar");
       const sidebarToggle = document.querySelector("[data-sidebar-toggle]");
+      const sidebarCollapse = document.querySelector("[data-sidebar-collapse]");
       const closeSidebar = () => {
         document.body.classList.remove("sidebar-open");
         if (sidebarToggle) sidebarToggle.setAttribute("aria-expanded", "false");
@@ -177,6 +195,19 @@
         });
         sidebar.querySelectorAll("a").forEach((link) => {
           link.addEventListener("click", closeSidebar);
+        });
+      }
+
+      if (sidebar && sidebarCollapse) {
+        const savedCollapsed = window.localStorage.getItem("parklSidebarCollapsed") === "true";
+        document.body.classList.toggle("sidebar-collapsed", savedCollapsed);
+        sidebarCollapse.setAttribute("aria-label", savedCollapsed ? "Sidebar kinyitása" : "Sidebar összecsukása");
+        sidebarCollapse.setAttribute("title", savedCollapsed ? "Sidebar kinyitása" : "Sidebar összecsukása");
+        sidebarCollapse.addEventListener("click", () => {
+          const collapsed = document.body.classList.toggle("sidebar-collapsed");
+          window.localStorage.setItem("parklSidebarCollapsed", String(collapsed));
+          sidebarCollapse.setAttribute("aria-label", collapsed ? "Sidebar kinyitása" : "Sidebar összecsukása");
+          sidebarCollapse.setAttribute("title", collapsed ? "Sidebar kinyitása" : "Sidebar összecsukása");
         });
       }
 

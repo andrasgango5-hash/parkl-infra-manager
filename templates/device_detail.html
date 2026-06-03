@@ -12,11 +12,12 @@
     </p>
   </div>
   <div class="d-flex gap-2">
-    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_edit', device_id=device.id) }}">Szerkesztés</a>
+    {% if can_write %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_edit', device_id=device.id) }}">Szerkesztés</a>{% endif %}
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('devices') }}">Vissza</a>
   </div>
 </div>
 
+{% if can_write %}
 <section class="data-section mb-4">
   <div class="section-title"><h2>Készletműveletek</h2></div>
   <form method="post" action="{{ url_for('device_action', device_id=device.id) }}" class="p-3">
@@ -55,9 +56,10 @@
     </div>
   </form>
 </section>
+{% endif %}
 
 <div class="row g-4">
-  <div class="col-xl-6">
+  <div class="{% if can_view_finance %}col-xl-6{% else %}col-12{% endif %}">
     <section class="data-section mb-4">
       <div class="section-title"><h2>Eszköz adatok</h2></div>
       <div class="p-3 detail-grid">
@@ -75,7 +77,7 @@
       </div>
     </section>
   </div>
-  <div class="col-xl-6">
+  {% if can_view_finance %}<div class="col-xl-6">
     <section class="data-section mb-4">
       <div class="section-title"><h2>Beszerzés és pénzügy</h2></div>
       <div class="p-3 detail-grid">
@@ -98,7 +100,7 @@
         <div class="alert alert-warning mx-3 mb-3">Az összérték nem számolható, mert nincs megadva deviza.</div>
       {% endif %}
     </section>
-  </div>
+  </div>{% endif %}
 </div>
 
 {% if device.quantity and device.quantity > 1 %}
@@ -111,7 +113,7 @@
   <div class="section-title">
     <h2>Eszközpéldányok</h2>
     <div class="d-flex flex-wrap gap-2">
-      <a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('device_units_create', device_id=device.id) }}"><i class="bi bi-plus-circle"></i> Példányok létrehozása</a>
+      {% if can_write %}<a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('device_units_create', device_id=device.id) }}"><i class="bi bi-plus-circle"></i> Példányok létrehozása</a>{% endif %}
       <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_units', device_id=device.id) }}"><i class="bi bi-list-ul"></i> Példányok listázása</a>
       {% if units %}
         <a class="btn btn-info btn-sm btn-icon" href="{{ url_for('device_unit_labels_pdf', device_id=device.id) }}"><i class="bi bi-printer"></i> QR címkék nyomtatása</a>

@@ -26,7 +26,7 @@ from flask import (
 )
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from PIL import Image as PILImage, UnidentifiedImageError
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -125,6 +125,16 @@ DEVICE_QR_MODE_LABELS = {
     "group": "Csoport QR",
     "individual": "Egyedi QR példányonként",
 }
+
+TEMPLATE_PROJECT_HEADERS = [
+    "project_code", "project_name", "customer_name", "site_name", "address", "status", "notes"
+]
+TEMPLATE_DEVICE_HEADERS = [
+    "project_code", "category", "product_name", "manufacturer", "model", "serial_number",
+    "asset_tag", "quantity", "currency", "unit_net_price", "total_net_price", "vat_rate",
+    "unit_gross_price", "total_gross_price", "location_name", "status", "notes",
+]
+TEMPLATE_LOCATION_HEADERS = ["location_name", "location_type", "address", "notes"]
 
 INVENTORY_SHEETS = {
     "tolto",
@@ -237,6 +247,8 @@ def create_app(config_class=Config):
         DEVICE_CATEGORIES,
         DEVICE_STATUSES,
         MOVEMENT_TYPES,
+        USER_ROLES,
+        USER_ROLE_LABELS,
         Device,
         DeviceUnit,
         ImportBatch,
@@ -253,13 +265,27 @@ def create_app(config_class=Config):
         WorkOrderTemplate,
     )
 
+    def get_current_user():
+        user_id = session.get("user_id")
+        if not user_id:
+            return None
+        return db.session.get(User, user_id)
+
+    def user_can(*roles):
+        user = get_current_user()
+        return bool(user and user.is_active and user.has_role(*roles))
+
     @app.context_processor
     def inject_current_user():
-        user = None
-        if session.get("user_id"):
-            user = db.session.get(User, session["user_id"])
+        user = get_current_user()
         return {
             "current_user": user,
+            "can_write": user_can("admin", "manager"),
+            "can_manage_work_orders": user_can("admin", "manager", "technician"),
+            "can_export": user_can("admin", "manager"),
+            "can_view_finance": user_can("admin", "manager"),
+            "can_manage_users": user_can("admin"),
+            "user_role_label": lambda value: USER_ROLE_LABELS.get(value, value or "–"),
             "status_label": status_label,
             "movement_type_label": movement_type_label,
             "category_label": category_label,
@@ -285,12 +311,176 @@ def create_app(config_class=Config):
     def login_required(view):
         @wraps(view)
         def wrapped_view(*args, **kwargs):
-            if not session.get("user_id"):
+            user = get_current_user()
+            if user is None:
+                session.clear()
                 flash("A folytatáshoz jelentkezz be.", "warning")
+                return redirect(url_for("login"))
+            if not user.is_active:
+                session.clear()
+                flash("A felhasználói fiók inaktív. Fordulj egy adminisztrátorhoz.", "danger")
                 return redirect(url_for("login"))
             return view(*args, **kwargs)
 
         return wrapped_view
+
+    def role_required(*roles):
+        def decorator(view):
+            @wraps(view)
+            @login_required
+            def wrapped_view(*args, **kwargs):
+                if not user_can(*roles):
+                    abort(403)
+                return view(*args, **kwargs)
+
+            return wrapped_view
+
+        return decorator
+
+    def method_role_required(*roles):
+        def decorator(view):
+            @wraps(view)
+            @login_required
+            def wrapped_view(*args, **kwargs):
+                if request.method not in {"GET", "HEAD", "OPTIONS"} and not user_can(*roles):
+                    abort(403)
+                return view(*args, **kwargs)
+
+            return wrapped_view
+
+        return decorator
+
+    def admin_required(view):
+        return role_required("admin")(view)
+
+    def write_required(view):
+        return method_role_required("admin", "manager")(view)
+
+    def export_required(view):
+        return role_required("admin", "manager")(view)
+
+    def finance_required(view):
+        return role_required("admin", "manager")(view)
+
+    def work_order_write_required(view):
+        return method_role_required("admin", "manager", "technician")(view)
+
+    def work_order_edit_required(view):
+        return role_required("admin", "manager", "technician")(view)
+
+    def manager_write_required(view):
+        return role_required("admin", "manager")(view)
+
+    @app.errorhandler(403)
+    def forbidden(_error):
+        if session.get("user_id"):
+            flash("Ehhez a művelethez nincs jogosultságod.", "danger")
+            return redirect(url_for("dashboard"))
+        return redirect(url_for("login"))
+
+    @app.cli.command("seed-role-users")
+    def seed_role_users():
+        """Create local role test users. Do not use in production."""
+        if os.environ.get("FLASK_ENV", "").lower() == "production":
+            raise click.ClickException(
+                "A seed-role-users parancs production környezetben nem futtatható."
+            )
+        demo_users = {
+            "admin": ("admin", "AdminDemo123!"),
+            "manager": ("manager", "ManagerDemo123!"),
+            "technician": ("technician", "TechnicianDemo123!"),
+            "viewer": ("viewer", "ViewerDemo123!"),
+        }
+        for username, (role, password) in demo_users.items():
+            user = User.query.filter_by(username=username).first()
+            if user is None:
+                user = User(username=username)
+                db.session.add(user)
+            user.password_hash = generate_password_hash(password)
+            user.role = role
+            user.is_admin = role == "admin"
+            user.is_active = True
+        db.session.commit()
+        click.echo("Szerepkör tesztfelhasználók létrehozva/frissítve.")
+        for username, (role, password) in demo_users.items():
+            click.echo(f"- {username} / {password} ({role})")
+
+    def validate_user_role(role):
+        if role not in USER_ROLES:
+            abort(400)
+        return role
+
+    def sync_admin_flag(user):
+        user.is_admin = user.role == "admin"
+
+    def prevent_last_active_admin_change(user, new_role=None, new_active=None):
+        removes_admin = new_role is not None and new_role != "admin"
+        deactivates_admin = new_active is False
+        if user.effective_role != "admin" or not user.is_active:
+            return
+        if not removes_admin and not deactivates_admin:
+            return
+        active_admin_count = User.query.filter_by(role="admin", is_active=True).count()
+        if active_admin_count <= 1:
+            flash("Az utolsó aktív adminisztrátor nem módosítható vagy deaktiválható.", "danger")
+            return False
+        return True
+
+    def get_user_or_404(user_id):
+        user = db.session.get(User, user_id)
+        if user is None:
+            abort(404)
+        return user
+
+    def set_user_role(user, role):
+        user.role = validate_user_role(role)
+        sync_admin_flag(user)
+
+    def set_user_active(user, is_active):
+        user.is_active = is_active
+
+    def current_user_is(user):
+        current = get_current_user()
+        return bool(current and current.id == user.id)
+
+    def protect_current_user_deactivation(user, is_active):
+        if current_user_is(user) and not is_active:
+            flash("A saját felhasználói fiókodat nem deaktiválhatod.", "danger")
+            return False
+        return True
+
+    def protect_current_user_role_change(user, role):
+        if current_user_is(user) and role != "admin":
+            flash("A saját admin szerepkörödet nem módosíthatod.", "danger")
+            return False
+        return True
+
+    def apply_user_management_change(user, role=None, is_active=None):
+        if role is not None:
+            if not protect_current_user_role_change(user, role):
+                return False
+            if prevent_last_active_admin_change(user, new_role=role) is False:
+                return False
+            set_user_role(user, role)
+        if is_active is not None:
+            if not protect_current_user_deactivation(user, is_active):
+                return False
+            if prevent_last_active_admin_change(user, new_active=is_active) is False:
+                return False
+            set_user_active(user, is_active)
+        return True
+
+    def user_search_query(search):
+        query = User.query
+        if search:
+            query = query.filter(User.username.ilike(f"%{search}%"))
+        return query.order_by(User.username.asc())
+
+    def reject_inactive_login(user):
+        if user and not user.is_active:
+            flash("A felhasználói fiók inaktív. Fordulj egy adminisztrátorhoz.", "danger")
+            return True
+        return False
 
     @app.cli.command("seed-admin")
     def seed_admin():
@@ -303,12 +493,16 @@ def create_app(config_class=Config):
                 username=username,
                 password_hash=generate_password_hash(password),
                 is_admin=True,
+                role="admin",
+                is_active=True,
             )
             db.session.add(user)
             action = "Létrehozva"
         else:
             user.password_hash = generate_password_hash(password)
             user.is_admin = True
+            user.role = "admin"
+            user.is_active = True
             action = "Frissítve"
         for location in Location.query.all():
             if location.name == "Main Warehouse":
@@ -371,7 +565,12 @@ def create_app(config_class=Config):
             username = request.form.get("username", "").strip()
             password = request.form.get("password", "")
             user = User.query.filter_by(username=username).first()
+            if reject_inactive_login(user):
+                return render_template("login.html")
             if user and check_password_hash(user.password_hash, password):
+                if user.is_admin and user.role != "admin":
+                    user.role = "admin"
+                    db.session.commit()
                 session.clear()
                 session["user_id"] = user.id
                 flash("Sikeres bejelentkezés.", "success")
@@ -390,10 +589,15 @@ def create_app(config_class=Config):
     @login_required
     def dashboard():
         active_devices = Device.query.filter(Device.archived_at.is_(None)).all()
-        active_invoice_items = UnassignedInvoiceItem.query.filter(
-            UnassignedInvoiceItem.archived_at.is_(None)
-        ).all()
-        attention_items = build_attention_items(active_devices, active_invoice_items)
+        finance_visible = user_can("admin", "manager")
+        active_invoice_items = (
+            UnassignedInvoiceItem.query.filter(UnassignedInvoiceItem.archived_at.is_(None)).all()
+            if finance_visible
+            else []
+        )
+        attention_items = build_attention_items(
+            active_devices, active_invoice_items, include_finance=finance_visible
+        )
         stats = {
             "projects": Project.query.filter(Project.archived_at.is_(None)).count(),
             "locations": Location.query.filter(Location.archived_at.is_(None)).count(),
@@ -425,11 +629,171 @@ def create_app(config_class=Config):
     @login_required
     def attention():
         devices = Device.query.filter(Device.archived_at.is_(None)).all()
-        invoice_items = UnassignedInvoiceItem.query.filter(
-            UnassignedInvoiceItem.archived_at.is_(None)
-        ).all()
-        attention_items = build_attention_items(devices, invoice_items)
+        finance_visible = user_can("admin", "manager")
+        invoice_items = (
+            UnassignedInvoiceItem.query.filter(UnassignedInvoiceItem.archived_at.is_(None)).all()
+            if finance_visible
+            else []
+        )
+        attention_items = build_attention_items(
+            devices, invoice_items, include_finance=finance_visible
+        )
         return render_template("attention.html", attention_items=attention_items)
+
+    @app.route("/labels")
+    @login_required
+    def labels():
+        active_devices = Device.query.filter(Device.archived_at.is_(None)).count()
+        active_units = DeviceUnit.query.filter(DeviceUnit.archived_at.is_(None)).count()
+        return render_template(
+            "labels.html",
+            active_devices=active_devices,
+            active_units=active_units,
+        )
+
+    @app.route("/import-export", methods=["GET", "POST"])
+    @export_required
+    def import_export():
+        pending_import = session.get("pending_template_import")
+        preview = None
+        if request.method == "POST":
+            action = request.form.get("action", "dry_run")
+            if action == "confirm":
+                if request.form.get("execute_import") != "on":
+                    flash("Az importálás végrehajtásához jelöld be a megerősítést.", "danger")
+                    return redirect(url_for("import_export"))
+                if not pending_import or not os.path.exists(pending_import["path"]):
+                    flash("Nincs érvényes előnézeti import. Töltsd fel újra a sablont.", "danger")
+                    return redirect(url_for("import_export"))
+                preview = parse_template_workbook(
+                    pending_import["path"], Project, Device, Location
+                )
+                if preview["critical_error_count"]:
+                    flash("Az import nem véglegesíthető, mert kritikus hibák vannak.", "danger")
+                    return redirect(url_for("import_export"))
+                result = import_template_workbook(
+                    preview, Project, Device, Location, session["user_id"]
+                )
+                db.session.commit()
+                session.pop("pending_template_import", None)
+                flash(
+                    "Sablonimport kész: "
+                    f"{result['projects_created']} projekt, "
+                    f"{result['locations_created']} készlethely és "
+                    f"{result['devices_created']} eszköz létrehozva.",
+                    "success",
+                )
+                return redirect(url_for("import_export"))
+
+            upload = request.files.get("template_file")
+            if not upload or upload.filename == "":
+                flash("Válassz ki egy .xlsx sablonfájlt.", "danger")
+                return redirect(url_for("import_export"))
+            if not upload.filename.lower().endswith(".xlsx"):
+                flash("Csak .xlsx fájl tölthető fel.", "danger")
+                return redirect(url_for("import_export"))
+            upload_dir = os.path.join(app.instance_path, UPLOAD_SUBDIR)
+            os.makedirs(upload_dir, exist_ok=True)
+            safe_name = secure_filename(upload.filename)
+            upload_path = os.path.join(upload_dir, f"template_{uuid4().hex}_{safe_name}")
+            upload.save(upload_path)
+            preview = parse_template_workbook(upload_path, Project, Device, Location)
+            session["pending_template_import"] = {"path": upload_path, "filename": safe_name}
+            flash("Sablonimport előnézet elkészült. Az adatbázis még nem módosult.", "info")
+
+        if preview is None and pending_import and os.path.exists(pending_import["path"]):
+            preview = parse_template_workbook(
+                pending_import["path"], Project, Device, Location
+            )
+        return render_template(
+            "import_export.html",
+            preview=preview,
+            pending_import=session.get("pending_template_import"),
+        )
+
+    @app.route("/import-export/template")
+    @export_required
+    def import_template_download():
+        return send_file(
+            build_import_template_workbook(),
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name="Parkl_Infra_Manager_import_sablon.xlsx",
+        )
+
+    @app.route("/import-export/export/<export_type>")
+    @export_required
+    def data_export(export_type):
+        if export_type not in {"devices", "projects", "locations"}:
+            abort(404)
+        return send_file(
+            build_data_export_workbook(export_type, Project, Device, Location),
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name=f"Parkl_{export_type}_export.xlsx",
+        )
+
+    @app.route("/help")
+    @login_required
+    def help_page():
+        return render_template("help.html")
+
+    @app.route("/documents")
+    @export_required
+    def documents():
+        return render_template("documents.html")
+
+    @app.route("/admin")
+    @admin_required
+    def admin_tools():
+        return render_template("admin_tools.html")
+
+    @app.route("/admin/users")
+    @admin_required
+    def admin_users():
+        search = request.args.get("q", "").strip()
+        users = user_search_query(search).all()
+        return render_template(
+            "admin_users.html",
+            users=users,
+            search=search,
+            roles=USER_ROLES,
+            role_labels=USER_ROLE_LABELS,
+        )
+
+    @app.route("/admin/users/<int:user_id>/role", methods=["POST"])
+    @admin_required
+    def admin_user_role(user_id):
+        user = get_user_or_404(user_id)
+        role = validate_user_role(request.form.get("role", ""))
+        if not apply_user_management_change(user, role=role):
+            return redirect(url_for("admin_users"))
+        db.session.commit()
+        flash(f"{user.username} szerepköre módosítva.", "success")
+        return redirect(url_for("admin_users"))
+
+    @app.route("/admin/users/<int:user_id>/toggle-active", methods=["POST"])
+    @admin_required
+    def admin_user_toggle_active(user_id):
+        user = get_user_or_404(user_id)
+        new_active = not user.is_active
+        if not apply_user_management_change(user, is_active=new_active):
+            return redirect(url_for("admin_users"))
+        db.session.commit()
+        state = "aktiválva" if user.is_active else "deaktiválva"
+        flash(f"{user.username} felhasználó {state}.", "success")
+        return redirect(url_for("admin_users"))
+
+    @app.route("/legacy")
+    @admin_required
+    def legacy():
+        recent_batches = (
+            ImportBatch.query.filter(ImportBatch.archived_at.is_(None))
+            .order_by(ImportBatch.created_at.desc())
+            .limit(8)
+            .all()
+        )
+        return render_template("legacy.html", recent_batches=recent_batches)
 
     @app.route("/work-orders")
     @login_required
@@ -471,7 +835,7 @@ def create_app(config_class=Config):
         )
 
     @app.route("/work-orders/new", methods=["GET", "POST"])
-    @login_required
+    @work_order_edit_required
     def work_order_new():
         template = None
         template_id = optional_int(request.args.get("template_id"))
@@ -520,7 +884,7 @@ def create_app(config_class=Config):
         )
 
     @app.route("/work-orders/<int:work_order_id>/edit", methods=["GET", "POST"])
-    @login_required
+    @work_order_edit_required
     def work_order_edit(work_order_id):
         work_order = WorkOrder.query.get_or_404(work_order_id)
         if request.method == "POST":
@@ -555,7 +919,7 @@ def create_app(config_class=Config):
         )
 
     @app.route("/work-orders/<int:work_order_id>/copy", methods=["POST"])
-    @login_required
+    @work_order_edit_required
     def work_order_copy(work_order_id):
         source = WorkOrder.query.get_or_404(work_order_id)
         copied = copy_work_order(source, session["user_id"], WorkOrder, WorkOrderMaterial, WorkOrderMeasurement)
@@ -565,7 +929,7 @@ def create_app(config_class=Config):
         return redirect(url_for("work_order_edit", work_order_id=copied.id))
 
     @app.route("/work-orders/<int:work_order_id>/archive", methods=["POST"])
-    @login_required
+    @work_order_edit_required
     def work_order_archive(work_order_id):
         work_order = WorkOrder.query.get_or_404(work_order_id)
         work_order.archived_at = now_utc()
@@ -574,7 +938,7 @@ def create_app(config_class=Config):
         return redirect(url_for("work_orders"))
 
     @app.route("/work-orders/<int:work_order_id>/pdf")
-    @login_required
+    @export_required
     def work_order_pdf(work_order_id):
         work_order = WorkOrder.query.get_or_404(work_order_id)
         pdf_buffer = build_work_order_pdf(app, work_order)
@@ -611,7 +975,7 @@ def create_app(config_class=Config):
         )
 
     @app.route("/work-order-templates/new", methods=["GET", "POST"])
-    @login_required
+    @manager_write_required
     def work_order_template_new():
         template = WorkOrderTemplate()
         if request.method == "POST":
@@ -632,7 +996,7 @@ def create_app(config_class=Config):
         )
 
     @app.route("/work-order-templates/<int:template_id>/edit", methods=["GET", "POST"])
-    @login_required
+    @manager_write_required
     def work_order_template_edit(template_id):
         template = WorkOrderTemplate.query.get_or_404(template_id)
         if request.method == "POST":
@@ -657,7 +1021,7 @@ def create_app(config_class=Config):
         )
 
     @app.route("/work-order-templates/<int:template_id>/archive", methods=["POST"])
-    @login_required
+    @manager_write_required
     def work_order_template_archive(template_id):
         template = WorkOrderTemplate.query.get_or_404(template_id)
         template.archived_at = now_utc()
@@ -666,7 +1030,7 @@ def create_app(config_class=Config):
         return redirect(url_for("work_order_templates"))
 
     @app.route("/projects", methods=["GET", "POST"])
-    @login_required
+    @write_required
     def projects():
         if request.method == "POST":
             name = request.form.get("name", "").strip()
@@ -754,13 +1118,14 @@ def create_app(config_class=Config):
             ),
             "awaiting_arrival_count": sum(1 for device in devices if is_awaiting_arrival(device)),
         }
+        finance_visible = user_can("admin", "manager")
         attention_items = [
             {
                 "device": device,
-                "reasons": device_attention_reasons(device),
+                "reasons": device_attention_reasons(device, include_finance=finance_visible),
             }
             for device in devices
-            if device_attention_reasons(device)
+            if device_attention_reasons(device, include_finance=finance_visible)
         ]
         return render_template(
             "project_detail.html",
@@ -773,7 +1138,7 @@ def create_app(config_class=Config):
         )
 
     @app.route("/projects/<int:project_id>/pdf/<pdf_type>")
-    @login_required
+    @export_required
     def project_pdf(project_id, pdf_type):
         project = Project.query.get_or_404(project_id)
         devices = (
@@ -810,7 +1175,7 @@ def create_app(config_class=Config):
         )
 
     @app.route("/projects/<int:project_id>/drawings", methods=["POST"])
-    @login_required
+    @manager_write_required
     def project_drawing_create(project_id):
         project = Project.query.get_or_404(project_id)
         name = request.form.get("name", "").strip() or "Helyszíni rajz"
@@ -836,7 +1201,7 @@ def create_app(config_class=Config):
         )
 
     @app.route("/projects/<int:project_id>/drawings/<int:drawing_id>")
-    @login_required
+    @manager_write_required
     def project_drawing_editor(project_id, drawing_id):
         project = Project.query.get_or_404(project_id)
         drawing = ProjectDrawing.query.filter_by(
@@ -857,7 +1222,7 @@ def create_app(config_class=Config):
         )
 
     @app.route("/projects/<int:project_id>/drawings/<int:drawing_id>/save", methods=["POST"])
-    @login_required
+    @manager_write_required
     def project_drawing_save(project_id, drawing_id):
         drawing = ProjectDrawing.query.filter_by(
             id=drawing_id, project_id=project_id
@@ -878,7 +1243,7 @@ def create_app(config_class=Config):
         return send_from_directory(upload_dir, filename)
 
     @app.route("/projects/<int:project_id>/edit", methods=["GET", "POST"])
-    @login_required
+    @manager_write_required
     def project_edit(project_id):
         project = Project.query.get_or_404(project_id)
         if request.method == "POST":
@@ -908,7 +1273,7 @@ def create_app(config_class=Config):
         )
 
     @app.route("/projects/<int:project_id>/archive", methods=["POST"])
-    @login_required
+    @manager_write_required
     def project_archive(project_id):
         project = Project.query.get_or_404(project_id)
         project.archived_at = now_utc()
@@ -917,7 +1282,7 @@ def create_app(config_class=Config):
         return redirect(url_for("projects"))
 
     @app.route("/devices", methods=["GET", "POST"])
-    @login_required
+    @write_required
     def devices():
         projects = Project.query.filter(Project.archived_at.is_(None)).order_by(Project.name.asc()).all()
         locations = Location.query.filter(Location.archived_at.is_(None)).order_by(Location.name.asc()).all()
@@ -991,6 +1356,8 @@ def create_app(config_class=Config):
         device_list = device_query.order_by(Device.created_at.desc()).all()
         quick_filter = request.args.get("quick_filter", "").strip()
         workflow_filter = quick_filter or selected_view
+        if workflow_filter == "financial_open" and not user_can("admin", "manager"):
+            abort(403)
         if workflow_filter == "in_stock":
             device_list = [device for device in device_list if device.status == "IN_STOCK"]
         elif workflow_filter == "assigned":
@@ -1000,7 +1367,11 @@ def create_app(config_class=Config):
         elif workflow_filter == "installed":
             device_list = [device for device in device_list if device.status == "INSTALLED"]
         elif workflow_filter == "attention":
-            device_list = [device for device in device_list if device_attention_reasons(device)]
+            device_list = [
+                device
+                for device in device_list
+                if device_attention_reasons(device, include_finance=user_can("admin", "manager"))
+            ]
         elif workflow_filter == "financial_open":
             device_list = [device for device in device_list if is_financially_open(device)]
         elif workflow_filter == "awaiting_arrival":
@@ -1010,7 +1381,11 @@ def create_app(config_class=Config):
         visible_summary = {
             "count": len(device_list),
             **device_currency_totals(device_list),
-            "unpaid_invoice_count": sum(1 for device in device_list if is_financially_open(device)),
+            "unpaid_invoice_count": (
+                sum(1 for device in device_list if is_financially_open(device))
+                if user_can("admin", "manager")
+                else 0
+            ),
             "awaiting_arrival_count": sum(1 for device in device_list if is_awaiting_arrival(device)),
         }
         return render_template(
@@ -1059,7 +1434,7 @@ def create_app(config_class=Config):
         )
 
     @app.route("/devices/<int:device_id>/edit", methods=["GET", "POST"])
-    @login_required
+    @manager_write_required
     def device_edit(device_id):
         device = Device.query.get_or_404(device_id)
         projects = Project.query.filter(Project.archived_at.is_(None)).order_by(Project.name.asc()).all()
@@ -1127,7 +1502,7 @@ def create_app(config_class=Config):
         return render_template("device_units.html", device=device, units=units)
 
     @app.route("/devices/<int:device_id>/units/create", methods=["GET", "POST"])
-    @login_required
+    @manager_write_required
     def device_units_create(device_id):
         device = Device.query.get_or_404(device_id)
         quantity = whole_device_quantity(device)
@@ -1203,7 +1578,7 @@ def create_app(config_class=Config):
         return render_template("device_unit_detail.html", unit=unit, device=unit.device)
 
     @app.route("/device-units/<int:unit_id>/edit", methods=["GET", "POST"])
-    @login_required
+    @manager_write_required
     def device_unit_edit(unit_id):
         unit = DeviceUnit.query.get_or_404(unit_id)
         if request.method == "POST":
@@ -1246,7 +1621,7 @@ def create_app(config_class=Config):
         return render_template("device_unit_label.html", unit=unit, device=unit.device)
 
     @app.route("/device-units/<int:unit_id>/archive", methods=["POST"])
-    @login_required
+    @manager_write_required
     def device_unit_archive(unit_id):
         unit = DeviceUnit.query.get_or_404(unit_id)
         unit.archived_at = now_utc()
@@ -1255,7 +1630,7 @@ def create_app(config_class=Config):
         return redirect(url_for("device_units", device_id=unit.device_id))
 
     @app.route("/devices/<int:device_id>/archive", methods=["POST"])
-    @login_required
+    @manager_write_required
     def device_archive(device_id):
         device = Device.query.get_or_404(device_id)
         device.archived_at = now_utc()
@@ -1264,7 +1639,7 @@ def create_app(config_class=Config):
         return redirect(url_for("devices"))
 
     @app.route("/devices/<int:device_id>/actions", methods=["POST"])
-    @login_required
+    @manager_write_required
     def device_action(device_id):
         device = Device.query.get_or_404(device_id)
         movement_type = request.form.get("movement_type", "").strip()
@@ -1294,7 +1669,7 @@ def create_app(config_class=Config):
         return redirect(url_for("device_detail", device_id=device.id))
 
     @app.route("/unassigned-invoices", methods=["GET", "POST"])
-    @login_required
+    @finance_required
     def unassigned_invoices():
         projects = Project.query.filter(Project.archived_at.is_(None)).order_by(Project.name.asc()).all()
         devices = (
@@ -1386,7 +1761,7 @@ def create_app(config_class=Config):
         )
 
     @app.route("/unassigned-invoices/<int:item_id>/edit", methods=["GET", "POST"])
-    @login_required
+    @finance_required
     def unassigned_invoice_edit(item_id):
         item = UnassignedInvoiceItem.query.get_or_404(item_id)
         projects = Project.query.filter(Project.archived_at.is_(None)).order_by(Project.name.asc()).all()
@@ -1409,7 +1784,7 @@ def create_app(config_class=Config):
         )
 
     @app.route("/unassigned-invoices/<int:item_id>/archive", methods=["POST"])
-    @login_required
+    @finance_required
     def unassigned_invoice_archive(item_id):
         item = UnassignedInvoiceItem.query.get_or_404(item_id)
         item.archived_at = now_utc()
@@ -1418,8 +1793,9 @@ def create_app(config_class=Config):
         return redirect(url_for("unassigned_invoices"))
 
     @app.route("/import", methods=["GET", "POST"])
-    @login_required
-    def excel_import():
+    @app.route("/legacy/parkl-excel-import", methods=["GET", "POST"])
+    @admin_required
+    def legacy_parkl_excel_import():
         pending_import = session.get("pending_import")
         preview = None
 
@@ -1428,10 +1804,10 @@ def create_app(config_class=Config):
             if action == "confirm":
                 if request.form.get("execute_import") != "on":
                     flash("Az importálás végrehajtásához jelöld be a megerősítést.", "danger")
-                    return redirect(url_for("excel_import"))
+                    return redirect(url_for("legacy_parkl_excel_import"))
                 if not pending_import or not os.path.exists(pending_import["path"]):
                     flash("Nincs érvényes előnézeti import. Töltsd fel újra a fájlt.", "danger")
-                    return redirect(url_for("excel_import"))
+                    return redirect(url_for("legacy_parkl_excel_import"))
 
                 summary = parse_inventory_workbook(pending_import["path"])
                 batch = ImportBatch(
@@ -1459,15 +1835,15 @@ def create_app(config_class=Config):
                     f"{batch.updated_count} frissítve.",
                     "success",
                 )
-                return redirect(url_for("excel_import", batch_id=batch.id))
+                return redirect(url_for("legacy_parkl_excel_import", batch_id=batch.id))
 
             upload = request.files.get("excel_file")
             if not upload or upload.filename == "":
                 flash("Válassz ki egy .xlsx fájlt.", "danger")
-                return redirect(url_for("excel_import"))
+                return redirect(url_for("legacy_parkl_excel_import"))
             if not upload.filename.lower().endswith(".xlsx"):
                 flash("Csak .xlsx fájl tölthető fel.", "danger")
-                return redirect(url_for("excel_import"))
+                return redirect(url_for("legacy_parkl_excel_import"))
 
             upload_dir = os.path.join(app.instance_path, UPLOAD_SUBDIR)
             os.makedirs(upload_dir, exist_ok=True)
@@ -1504,7 +1880,8 @@ def create_app(config_class=Config):
         )
 
     @app.route("/import-batches/<int:batch_id>")
-    @login_required
+    @app.route("/legacy/import-batches/<int:batch_id>")
+    @admin_required
     def import_batch_detail(batch_id):
         batch = ImportBatch.query.get_or_404(batch_id)
         devices = (
@@ -1535,7 +1912,8 @@ def create_app(config_class=Config):
         )
 
     @app.route("/import-batches/<int:batch_id>/rollback", methods=["POST"])
-    @login_required
+    @app.route("/legacy/import-batches/<int:batch_id>/rollback", methods=["POST"])
+    @admin_required
     def import_batch_rollback(batch_id):
         batch = ImportBatch.query.get_or_404(batch_id)
         archived_devices = 0
@@ -1572,16 +1950,17 @@ def create_app(config_class=Config):
         return redirect(url_for("import_batch_detail", batch_id=batch.id))
 
     @app.route("/import-batches/<int:batch_id>/archive", methods=["POST"])
-    @login_required
+    @app.route("/legacy/import-batches/<int:batch_id>/archive", methods=["POST"])
+    @admin_required
     def import_batch_archive(batch_id):
         batch = ImportBatch.query.get_or_404(batch_id)
         batch.archived_at = now_utc()
         db.session.commit()
         flash("Az importcsomag archiválva.", "info")
-        return redirect(url_for("excel_import"))
+        return redirect(url_for("legacy_parkl_excel_import"))
 
     @app.route("/locations", methods=["GET", "POST"])
-    @login_required
+    @write_required
     def locations():
         if request.method == "POST":
             name = request.form.get("name", "").strip()
@@ -1648,7 +2027,7 @@ def create_app(config_class=Config):
         )
 
     @app.route("/locations/<int:location_id>/edit", methods=["GET", "POST"])
-    @login_required
+    @manager_write_required
     def location_edit(location_id):
         location = Location.query.get_or_404(location_id)
         if request.method == "POST":
@@ -1679,7 +2058,7 @@ def create_app(config_class=Config):
         )
 
     @app.route("/locations/<int:location_id>/archive", methods=["POST"])
-    @login_required
+    @manager_write_required
     def location_archive(location_id):
         location = Location.query.get_or_404(location_id)
         location.archived_at = now_utc()
@@ -1688,7 +2067,7 @@ def create_app(config_class=Config):
         return redirect(url_for("locations"))
 
     @app.route("/movements", methods=["GET", "POST"])
-    @login_required
+    @write_required
     def movements():
         devices = (
             Device.query.filter(Device.archived_at.is_(None))
@@ -2490,7 +2869,7 @@ def is_financially_open(device):
     )
 
 
-def device_attention_reasons(device):
+def device_attention_reasons(device, include_finance=True):
     reasons = []
     today = date.today()
     if (
@@ -2502,9 +2881,9 @@ def device_attention_reasons(device):
         reasons.append("Megrendelve, de a tervezett érkezési dátum lejárt.")
     if is_arrived_unassigned(device):
         reasons.append("Megérkezett, de nincs projekthez vagy készlethelyhez rendelve.")
-    if device.supplier_invoice_number and device.supplier_invoice_paid is not True:
+    if include_finance and device.supplier_invoice_number and device.supplier_invoice_paid is not True:
         reasons.append("Beszállítói számla van, de nincs fizetettként jelölve.")
-    if device.shipping_invoice_number and device.shipping_invoice_paid is not True:
+    if include_finance and device.shipping_invoice_number and device.shipping_invoice_paid is not True:
         reasons.append("Szállítmányozói számla van, de nincs fizetettként jelölve.")
     if device.project and (
         not device.project.code
@@ -2543,10 +2922,10 @@ def invoice_attention_reasons(item):
     return reasons
 
 
-def build_attention_items(devices, invoice_items):
+def build_attention_items(devices, invoice_items, include_finance=True):
     items = []
     for device in devices:
-        reasons = device_attention_reasons(device)
+        reasons = device_attention_reasons(device, include_finance=include_finance)
         if reasons:
             items.append(
                 {
@@ -2555,9 +2934,13 @@ def build_attention_items(devices, invoice_items):
                     "reasons": reasons,
                     "project": device.project.code if device.project else "-",
                     "supplier": device.supplier_manufacturer or device.manufacturer or "-",
-                    "invoice": device.supplier_invoice_number
-                    or device.shipping_invoice_number
-                    or "-",
+                    "invoice": (
+                        device.supplier_invoice_number
+                        or device.shipping_invoice_number
+                        or "-"
+                        if include_finance
+                        else "-"
+                    ),
                     "source": f"{device.source_sheet or '-'} / {device.source_row_number or '-'}",
                     "detail_url": url_for("device_detail", device_id=device.id),
                     "edit_url": url_for("device_edit", device_id=device.id),
@@ -3173,6 +3556,410 @@ def update_unassigned_invoice_from_form(item, form):
     item.notes = form.get("notes", "").strip() or None
     item.assigned_project_id = assigned_project_id
     item.assigned_device_id = assigned_device_id
+
+
+def build_import_template_workbook():
+    workbook = Workbook()
+    projects = workbook.active
+    projects.title = "Projects"
+    projects.append(TEMPLATE_PROJECT_HEADERS)
+    projects.append(["PRK-100", "Minta EV projekt", "Minta Ügyfél Kft.", "Minta helyszín", "Budapest, Minta utca 1.", "active", "Példasor, import előtt törölhető."])
+
+    devices = workbook.create_sheet("Devices")
+    devices.append(TEMPLATE_DEVICE_HEADERS)
+    devices.append(["PRK-100", "EV charger", "Schneider EVlink Pro AC", "Schneider", "EVB3S22N4", "", "EV-MINTA-001", 2, "HUF", 250000, 500000, 27, 317500, 635000, "Fő raktár", "IN_STOCK", "Példasor, import előtt törölhető."])
+
+    locations = workbook.create_sheet("Locations")
+    locations.append(TEMPLATE_LOCATION_HEADERS)
+    locations.append(["Fő raktár", "warehouse", "Budapest", "Példa készlethely."])
+
+    instructions = workbook.create_sheet("Instructions")
+    instructions.append(["Parkl Infra Manager import sablon"])
+    instructions.append(["A Projects és Devices munkalap használható. A Locations munkalap opcionális."])
+    instructions.append(["Kötelező Project mezők: project_code, project_name új projekt esetén."])
+    instructions.append(["Kötelező Device mezők: project_code, product_name, quantity, currency."])
+    instructions.append(["Elfogadott deviza: HUF, EUR. Elfogadott Device státuszok: " + ", ".join(sorted(STATUS_LABELS))])
+    instructions.append(["Elfogadott projekt státuszok: " + ", ".join(sorted(PROJECT_STATUS_LABELS))])
+    instructions.append(["A példa sorokat import előtt töröld vagy írd át."])
+
+    style_workbook_headers(workbook)
+    buffer = BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+
+def style_workbook_headers(workbook):
+    from openpyxl.styles import Font, PatternFill
+
+    for sheet in workbook.worksheets:
+        for cell in sheet[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="5B3F92")
+        sheet.freeze_panes = "A2"
+        for column in sheet.columns:
+            width = max(len(str(cell.value or "")) for cell in column) + 2
+            sheet.column_dimensions[column[0].column_letter].width = min(max(width, 14), 34)
+
+
+def build_data_export_workbook(export_type, Project, Device, Location):
+    workbook = Workbook()
+    sheet = workbook.active
+    if export_type == "projects":
+        sheet.title = "Projects"
+        sheet.append(TEMPLATE_PROJECT_HEADERS)
+        for project in Project.query.filter(Project.archived_at.is_(None)).order_by(Project.code).all():
+            sheet.append([project.code, project.name, project.customer, "", "", project.status, project.notes])
+    elif export_type == "locations":
+        sheet.title = "Locations"
+        sheet.append(TEMPLATE_LOCATION_HEADERS)
+        for location in Location.query.filter(Location.archived_at.is_(None)).order_by(Location.name).all():
+            sheet.append([location.name, location.location_type, location.address, location.notes])
+    else:
+        sheet.title = "Devices"
+        sheet.append(TEMPLATE_DEVICE_HEADERS)
+        for device in Device.query.filter(Device.archived_at.is_(None)).order_by(Device.asset_tag).all():
+            sheet.append([
+                device.project.code if device.project else "",
+                device.device_type,
+                device.product_name or "",
+                device.manufacturer,
+                device.model,
+                device.serial_number,
+                device.asset_tag,
+                device.quantity,
+                device.currency,
+                device.unit_net_price,
+                device.total_net_price,
+                device.vat_rate,
+                device.unit_gross_price,
+                device.total_gross_price,
+                device.location.name if device.location else "",
+                device.status,
+                device.subtype_note or "",
+            ])
+    style_workbook_headers(workbook)
+    buffer = BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+
+def parse_template_workbook(path, Project, Device, Location):
+    workbook = load_workbook(path, read_only=True, data_only=True)
+    summary = {
+        "projects": [],
+        "devices": [],
+        "locations": [],
+        "errors": [],
+        "new_project_count": 0,
+        "existing_project_count": 0,
+        "new_device_count": 0,
+        "new_location_count": 0,
+        "critical_error_count": 0,
+    }
+    sheets = {sheet.title.lower(): sheet for sheet in workbook.worksheets}
+    project_sheet = sheets.get("projects")
+    device_sheet = sheets.get("devices")
+    location_sheet = sheets.get("locations")
+    if project_sheet is None:
+        summary["errors"].append({"sheet": "Projects", "row": "-", "message": "Hiányzik a Projects munkalap."})
+    if device_sheet is None:
+        summary["errors"].append({"sheet": "Devices", "row": "-", "message": "Hiányzik a Devices munkalap."})
+
+    existing_projects = {project.code: project for project in Project.query.all()}
+    existing_locations = {location.name.lower(): location for location in Location.query.all()}
+    existing_asset_tags = {value for (value,) in db.session.query(Device.asset_tag).all() if value}
+    existing_serials = {value for (value,) in db.session.query(Device.serial_number).all() if value}
+    seen_project_codes, seen_asset_tags, seen_serials, seen_locations = set(), set(), set(), set()
+
+    if project_sheet:
+        rows, errors = template_sheet_rows(project_sheet, TEMPLATE_PROJECT_HEADERS)
+        summary["errors"].extend(errors)
+        for row_number, row in rows:
+            code = clean_string(row.get("project_code"))
+            name = clean_string(row.get("project_name"))
+            if not code:
+                add_template_error(summary, "Projects", row_number, "Hiányzó project_code.")
+                continue
+            if code in seen_project_codes:
+                add_template_error(summary, "Projects", row_number, f"Duplikált project_code a fájlban: {code}.")
+                continue
+            seen_project_codes.add(code)
+            if code not in existing_projects and not name:
+                add_template_error(summary, "Projects", row_number, "Hiányzó project_name új projektnél.")
+                continue
+            status = clean_string(row.get("status")) or "planned"
+            if status not in PROJECT_STATUS_LABELS:
+                add_template_error(summary, "Projects", row_number, f"Ismeretlen projekt státusz: {status}.")
+                continue
+            parsed = {key: clean_string(value) for key, value in row.items()}
+            parsed.update({"project_code": code, "project_name": name, "status": status})
+            summary["projects"].append(parsed)
+            if code in existing_projects:
+                summary["existing_project_count"] += 1
+            else:
+                summary["new_project_count"] += 1
+            site_name = parsed.get("site_name")
+            if site_name and site_name.lower() not in existing_locations and site_name.lower() not in seen_locations:
+                seen_locations.add(site_name.lower())
+                summary["new_location_count"] += 1
+
+    project_rows_by_code = {row["project_code"]: row for row in summary["projects"]}
+
+    if location_sheet:
+        rows, errors = template_sheet_rows(location_sheet, TEMPLATE_LOCATION_HEADERS)
+        summary["errors"].extend(errors)
+        for row_number, row in rows:
+            name = clean_string(row.get("location_name"))
+            if not name:
+                add_template_error(summary, "Locations", row_number, "Hiányzó location_name.")
+                continue
+            key = name.lower()
+            if key in seen_locations:
+                add_template_error(summary, "Locations", row_number, f"Duplikált location_name a fájlban: {name}.")
+                continue
+            seen_locations.add(key)
+            parsed = {field: clean_string(value) for field, value in row.items()}
+            parsed["location_name"] = name
+            parsed["location_type"] = parsed.get("location_type") or "warehouse"
+            summary["locations"].append(parsed)
+            if key not in existing_locations:
+                summary["new_location_count"] += 1
+
+    if device_sheet:
+        rows, errors = template_sheet_rows(device_sheet, TEMPLATE_DEVICE_HEADERS)
+        summary["errors"].extend(errors)
+        for row_number, row in rows:
+            parsed = parse_template_device_row(
+                row_number, row, existing_projects, project_rows_by_code,
+                existing_asset_tags, existing_serials, seen_asset_tags, seen_serials, summary
+            )
+            if parsed:
+                summary["devices"].append(parsed)
+                summary["new_device_count"] += 1
+                location_name = parsed.get("location_name")
+                if location_name and location_name.lower() not in existing_locations and location_name.lower() not in seen_locations:
+                    seen_locations.add(location_name.lower())
+                    summary["new_location_count"] += 1
+
+    used_project_codes = {
+        row["project_code"] for row in summary["projects"]
+    } | {
+        row["project_code"] for row in summary["devices"]
+    }
+    summary["existing_project_count"] = sum(
+        1 for code in used_project_codes if code in existing_projects
+    )
+    summary["new_project_count"] = sum(
+        1 for code in used_project_codes if code not in existing_projects
+    )
+    summary["critical_error_count"] = len(summary["errors"])
+    return summary
+
+
+def template_sheet_rows(sheet, expected_headers):
+    values = list(sheet.iter_rows(values_only=True))
+    if not values:
+        return [], [{"sheet": sheet.title, "row": "-", "message": "Üres munkalap."}]
+    headers = [clean_string(value) or "" for value in values[0]]
+    missing = [header for header in expected_headers if header not in headers]
+    errors = [{"sheet": sheet.title, "row": 1, "message": f"Hiányzó oszlop: {header}."} for header in missing]
+    rows = []
+    for row_number, values_row in enumerate(values[1:], start=2):
+        row = {header: values_row[index] if index < len(values_row) else None for index, header in enumerate(headers) if header}
+        if any(meaningful_value(value) for value in row.values()):
+            rows.append((row_number, row))
+    return rows, errors
+
+
+def add_template_error(summary, sheet, row, message):
+    summary["errors"].append({"sheet": sheet, "row": row, "message": message})
+
+
+def parse_template_device_row(row_number, row, existing_projects, project_rows_by_code, existing_asset_tags, existing_serials, seen_asset_tags, seen_serials, summary):
+    project_code = clean_string(row.get("project_code"))
+    product_name = clean_string(row.get("product_name"))
+    currency = (clean_string(row.get("currency")) or "").upper()
+    quantity = number_value(row.get("quantity"))
+    if not project_code:
+        add_template_error(summary, "Devices", row_number, "Hiányzó project_code.")
+    elif project_code not in existing_projects and project_code not in project_rows_by_code:
+        add_template_error(summary, "Devices", row_number, f"A projekt nem létezik és nincs a Projects lapon: {project_code}.")
+    if not product_name:
+        add_template_error(summary, "Devices", row_number, "Hiányzó product_name.")
+    if not meaningful_value(row.get("quantity")):
+        add_template_error(summary, "Devices", row_number, "Hiányzó quantity.")
+    elif quantity is None or quantity <= 0:
+        add_template_error(summary, "Devices", row_number, "Hibás quantity.")
+    if not currency:
+        add_template_error(summary, "Devices", row_number, "Hiányzó currency.")
+    elif currency not in DEVICE_CURRENCIES:
+        add_template_error(summary, "Devices", row_number, f"Ismeretlen currency érték: {currency}.")
+
+    numeric_fields = {}
+    for field in ["unit_net_price", "total_net_price", "vat_rate", "unit_gross_price", "total_gross_price"]:
+        raw = row.get(field)
+        value = number_value(raw)
+        if meaningful_value(raw) and value is None:
+            add_template_error(summary, "Devices", row_number, f"Nem numerikus ár mező: {field}.")
+        numeric_fields[field] = value
+
+    asset_tag = clean_string(row.get("asset_tag"))
+    serial_number = clean_string(row.get("serial_number"))
+    if asset_tag and (asset_tag in existing_asset_tags or asset_tag in seen_asset_tags):
+        add_template_error(summary, "Devices", row_number, f"Duplikált asset_tag: {asset_tag}.")
+    if serial_number and (serial_number in existing_serials or serial_number in seen_serials):
+        add_template_error(summary, "Devices", row_number, f"Duplikált serial_number: {serial_number}.")
+    if asset_tag:
+        seen_asset_tags.add(asset_tag)
+    if serial_number:
+        seen_serials.add(serial_number)
+
+    status = clean_string(row.get("status")) or "IN_STOCK"
+    if status not in STATUS_LABELS:
+        add_template_error(summary, "Devices", row_number, f"Ismeretlen status érték: {status}.")
+    category = clean_string(row.get("category")) or "Other"
+    if category not in CATEGORY_LABELS:
+        add_template_error(summary, "Devices", row_number, f"Ismeretlen category érték: {category}.")
+
+    unit_net = numeric_fields["unit_net_price"]
+    total_net = numeric_fields["total_net_price"]
+    if quantity and unit_net is not None and total_net is None:
+        total_net = quantity * unit_net
+    elif quantity and total_net is not None and unit_net is None:
+        unit_net = total_net / quantity
+    elif quantity and unit_net is not None and total_net is not None and abs(quantity * unit_net - total_net) > 0.01:
+        add_template_error(summary, "Devices", row_number, "A quantity × unit_net_price nem egyezik a total_net_price értékkel.")
+
+    vat_rate = numeric_fields["vat_rate"]
+    unit_gross = unit_net * (1 + vat_rate / 100) if unit_net is not None and vat_rate is not None else None
+    total_gross = total_net * (1 + vat_rate / 100) if total_net is not None and vat_rate is not None else None
+    if numeric_fields["unit_gross_price"] is not None and unit_gross is not None and abs(numeric_fields["unit_gross_price"] - unit_gross) > 0.01:
+        add_template_error(summary, "Devices", row_number, "A unit_gross_price nem egyezik a nettó érték és ÁFA alapján számolt értékkel.")
+    if numeric_fields["total_gross_price"] is not None and total_gross is not None and abs(numeric_fields["total_gross_price"] - total_gross) > 0.01:
+        add_template_error(summary, "Devices", row_number, "A total_gross_price nem egyezik a nettó érték és ÁFA alapján számolt értékkel.")
+
+    if any(error["sheet"] == "Devices" and error["row"] == row_number for error in summary["errors"]):
+        return None
+    return {
+        "project_code": project_code,
+        "category": category,
+        "product_name": product_name,
+        "manufacturer": clean_string(row.get("manufacturer")) or "",
+        "model": clean_string(row.get("model")) or "",
+        "serial_number": serial_number or "",
+        "asset_tag": asset_tag,
+        "quantity": quantity,
+        "currency": currency,
+        "unit_net_price": unit_net,
+        "total_net_price": total_net,
+        "vat_rate": vat_rate,
+        "location_name": clean_string(row.get("location_name")),
+        "status": status,
+        "notes": clean_string(row.get("notes")),
+    }
+
+
+def import_template_workbook(summary, Project, Device, Location, user_id):
+    projects = {project.code: project for project in Project.query.all()}
+    locations = {location.name.lower(): location for location in Location.query.all()}
+    result = {"projects_created": 0, "locations_created": 0, "devices_created": 0}
+    for row in summary["projects"]:
+        if row["project_code"] in projects:
+            continue
+        project = Project(
+            code=row["project_code"],
+            name=row["project_name"],
+            customer=row.get("customer_name") or "",
+            status=row.get("status") or "planned",
+            notes=row.get("notes") or "",
+        )
+        db.session.add(project)
+        db.session.flush()
+        projects[project.code] = project
+        result["projects_created"] += 1
+        site_name = row.get("site_name")
+        if site_name and site_name.lower() not in locations:
+            location = Location(name=site_name, location_type="project_site", address=row.get("address") or "", notes=f"Projekt: {project.code}")
+            db.session.add(location)
+            db.session.flush()
+            locations[site_name.lower()] = location
+            result["locations_created"] += 1
+    for row in summary["locations"]:
+        key = row["location_name"].lower()
+        if key in locations:
+            continue
+        location = Location(name=row["location_name"], location_type=row.get("location_type") or "warehouse", address=row.get("address") or "", notes=row.get("notes") or "")
+        db.session.add(location)
+        db.session.flush()
+        locations[key] = location
+        result["locations_created"] += 1
+    for row in summary["devices"]:
+        location = None
+        if row.get("location_name"):
+            key = row["location_name"].lower()
+            location = locations.get(key)
+            if location is None:
+                location = Location(name=row["location_name"], location_type="warehouse")
+                db.session.add(location)
+                db.session.flush()
+                locations[key] = location
+                result["locations_created"] += 1
+        asset_tag = row.get("asset_tag") or unique_import_asset_tag(Device)
+        device = Device(
+            asset_tag=asset_tag,
+            serial_number=row.get("serial_number") or "",
+            device_type=row.get("category") or "Other",
+            manufacturer=row.get("manufacturer") or "",
+            model=row.get("model") or "",
+            product_name=row.get("product_name"),
+            subtype_note=row.get("notes"),
+            quantity=row.get("quantity"),
+            currency=row.get("currency"),
+            unit_net_price=row.get("unit_net_price"),
+            huf_value=row.get("total_net_price") if row.get("currency") == "HUF" else None,
+            vat_rate=row.get("vat_rate"),
+            status="IN_STOCK",
+            project=projects[row["project_code"]],
+            location=location,
+        )
+        db.session.add(device)
+        db.session.flush()
+        create_movement(device=device, movement_type="INBOUND", to_location_id=device.location_id, project_id=device.project_id, notes="Sablon alapú import.", user_id=user_id)
+        apply_imported_device_status(device, row.get("status") or "IN_STOCK", user_id)
+        result["devices_created"] += 1
+    return result
+
+
+def apply_imported_device_status(device, target_status, user_id):
+    movement_path = {
+        "IN_STOCK": [],
+        "RESERVED": ["RESERVE"],
+        "ISSUED": ["ISSUE"],
+        "INSTALLED": ["ISSUE", "INSTALL"],
+        "RETURNED": ["ISSUE", "RETURN"],
+        "IN_SERVICE": ["SERVICE"],
+        "SCRAPPED": ["SCRAP"],
+    }
+    for movement_type in movement_path.get(target_status, []):
+        create_movement(
+            device=device,
+            movement_type=movement_type,
+            from_location_id=device.location_id,
+            to_location_id=device.location_id,
+            project_id=device.project_id,
+            notes="Sablon alapú import státuszbeállítás.",
+            user_id=user_id,
+        )
+        apply_device_state(device, movement_type, device.location_id, device.project_id)
+
+
+def unique_import_asset_tag(Device):
+    while True:
+        asset_tag = f"IMP-{uuid4().hex[:10].upper()}"
+        if not Device.query.filter_by(asset_tag=asset_tag).first():
+            return asset_tag
 
 
 def parse_inventory_workbook(path):

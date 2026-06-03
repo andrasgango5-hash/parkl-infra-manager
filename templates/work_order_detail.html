@@ -6,10 +6,12 @@
 <div class="page-header">
   <div><h1>{{ work_order.number }}</h1><p class="text-secondary mb-0">{{ work_order_type_label(work_order.work_type) }} · <span class="status-badge status-neutral">{{ work_order_status_label(work_order.status) }}</span></p></div>
   <div class="d-flex flex-wrap gap-2">
-    <a class="btn btn-export btn-icon" href="{{ url_for('work_order_pdf', work_order_id=work_order.id) }}"><i class="bi bi-file-earmark-pdf"></i> PDF generálás</a>
-    <form method="post" action="{{ url_for('work_order_copy', work_order_id=work_order.id) }}"><button class="btn btn-outline-secondary btn-icon" type="submit"><i class="bi bi-copy"></i> Másolás</button></form>
-    <a class="btn btn-outline-secondary btn-icon" href="{{ url_for('work_order_edit', work_order_id=work_order.id) }}"><i class="bi bi-pencil"></i> Szerkesztés</a>
-    <form method="post" action="{{ url_for('work_order_archive', work_order_id=work_order.id) }}"><button class="btn btn-outline-danger btn-icon" type="submit" data-confirm="Biztosan archiválod ezt a munkalapot?"><i class="bi bi-archive"></i> Archiválás</button></form>
+    {% if can_export %}<a class="btn btn-export btn-icon" href="{{ url_for('work_order_pdf', work_order_id=work_order.id) }}"><i class="bi bi-file-earmark-pdf"></i> PDF generálás</a>{% endif %}
+    {% if can_manage_work_orders %}
+      <form method="post" action="{{ url_for('work_order_copy', work_order_id=work_order.id) }}"><button class="btn btn-outline-secondary btn-icon" type="submit"><i class="bi bi-copy"></i> Másolás</button></form>
+      <a class="btn btn-outline-secondary btn-icon" href="{{ url_for('work_order_edit', work_order_id=work_order.id) }}"><i class="bi bi-pencil"></i> Szerkesztés</a>
+      <form method="post" action="{{ url_for('work_order_archive', work_order_id=work_order.id) }}"><button class="btn btn-outline-danger btn-icon" type="submit" data-confirm="Biztosan archiválod ezt a munkalapot?"><i class="bi bi-archive"></i> Archiválás</button></form>
+    {% endif %}
   </div>
 </div>
 

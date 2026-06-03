@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}Súgó / dokumentáció - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Súgó / dokumentáció</h1>
+    <p class="text-secondary mb-0">Rövid útmutató a Parkl Infra Manager használatához.</p>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-6"><section class="data-section h-100"><div class="section-title"><h2>Alap workflow</h2></div><div class="p-3"><ol class="mb-0"><li>Hozz létre projektet és készlethelyet.</li><li>Rögzíts vagy importálj eszközt.</li><li>Rendeld projekthez, majd mozgasd készletműveletekkel.</li><li>Többdarabos fizikai eszköznél hozz létre egyedi példányokat.</li><li>A projekt- és munkalapoldalakról készíts dokumentációt.</li></ol></div></section></div>
+  <div class="col-lg-6"><section class="data-section h-100"><div class="section-title"><h2>Gyors elérések</h2></div><div class="p-3 action-buttons"><a class="btn btn-purple btn-icon" href="{{ url_for('projects') }}"><i class="bi bi-kanban"></i> Projektek</a><a class="btn btn-purple btn-icon" href="{{ url_for('devices') }}"><i class="bi bi-boxes"></i> Eszközök</a><a class="btn btn-outline-secondary btn-icon" href="{{ url_for('work_orders') }}"><i class="bi bi-clipboard-check"></i> Munkalapok</a><a class="btn btn-outline-secondary btn-icon" href="{{ url_for('labels') }}"><i class="bi bi-qr-code"></i> QR / címkék</a></div></section></div>
+</div>
+{% endblock %}

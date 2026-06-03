@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Import / Export - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Import / Export</h1>
+    <p class="text-secondary mb-0">Napi használatú, sablon alapú adatbetöltés és Excel export.</p>
+  </div>
+</div>
+
+<div class="help-box">
+  Töltsd le a Parkl Infra Manager sablont, töltsd ki a Projects, Devices és opcionális Locations munkalapokat, majd ellenőrizd a dry-run előnézetet. A régi Parkl Excel import csak admin felhasználóknak, a Legacy funkciók alatt érhető el.
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-xl-4">
+    <section class="data-section h-100">
+      <div class="section-title"><h2>1. Sablon letöltése</h2></div>
+      <div class="p-3">
+        <p class="text-secondary">A sablon példaadatokat és kitöltési útmutatót is tartalmaz.</p>
+        <a class="btn btn-purple btn-icon" href="{{ url_for('import_template_download') }}"><i class="bi bi-download"></i> Import sablon letöltése</a>
+      </div>
+    </section>
+  </div>
+  <div class="col-xl-4">
+    <form method="post" enctype="multipart/form-data" class="form-panel h-100">
+      <h2>2. Kitöltött sablon feltöltése</h2>
+      <div class="mb-3">
+        <label class="form-label" for="template_file">Excel sablon (.xlsx)</label>
+        <input class="form-control" id="template_file" name="template_file" type="file" accept=".xlsx" required>
+      </div>
+      <button class="btn btn-purple btn-icon" type="submit" name="action" value="dry_run"><i class="bi bi-upload"></i> Dry-run előnézet</button>
+    </form>
+  </div>
+  <div class="col-xl-4">
+    <section class="data-section h-100">
+      <div class="section-title"><h2>Export</h2></div>
+      <div class="p-3">
+        <p class="text-secondary">Az aktuális adatok az új sablon oszlopaival exportálhatók.</p>
+        <div class="action-buttons">
+          <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('data_export', export_type='projects') }}"><i class="bi bi-download"></i> Projektek</a>
+          <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('data_export', export_type='devices') }}"><i class="bi bi-download"></i> Eszközök</a>
+          <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('data_export', export_type='locations') }}"><i class="bi bi-download"></i> Készlethelyek</a>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+{% if preview %}
+  <section class="data-section mb-4">
+    <div class="section-title"><h2>Dry-run eredmény</h2></div>
+    <div class="p-3">
+      <div class="row g-3">
+        <div class="col-6 col-lg-2"><div class="metric"><span>Új projekt</span><strong>{{ preview.new_project_count }}</strong></div></div>
+        <div class="col-6 col-lg-2"><div class="metric"><span>Meglévő projekt</span><strong>{{ preview.existing_project_count }}</strong></div></div>
+        <div class="col-6 col-lg-2"><div class="metric"><span>Új eszköz</span><strong>{{ preview.new_device_count }}</strong></div></div>
+        <div class="col-6 col-lg-2"><div class="metric"><span>Új készlethely</span><strong>{{ preview.new_location_count }}</strong></div></div>
+        <div class="col-6 col-lg-2"><div class="metric"><span>Hibás sor</span><strong>{{ preview.critical_error_count }}</strong></div></div>
+      </div>
+    </div>
+  </section>
+
+  {% if preview.errors %}
+    <section class="data-section mb-4">
+      <div class="section-title"><h2>Hibalista</h2></div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead><tr><th>Munkalap</th><th>Sor</th><th>Hiba</th></tr></thead>
+          <tbody>{% for error in preview.errors %}<tr><td>{{ error.sheet }}</td><td>{{ error.row }}</td><td class="text-danger">{{ error.message }}</td></tr>{% endfor %}</tbody>
+        </table>
+      </div>
+    </section>
+  {% endif %}
+
+  <section class="data-section mb-4">
+    <div class="section-title"><h2>Első feldolgozható eszközsorok</h2></div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead><tr><th>Projekt</th><th>Termék</th><th>Kategória</th><th>Mennyiség</th><th>Deviza</th><th>Egység nettó</th><th>Összes nettó</th><th>Lokáció</th></tr></thead>
+        <tbody>
+          {% for row in preview.devices[:10] %}
+            <tr><td>{{ row.project_code }}</td><td>{{ row.product_name }}</td><td>{{ category_label(row.category) }}</td><td>{{ format_number(row.quantity) }}</td><td>{{ row.currency }}</td><td>{{ format_number(row.unit_net_price) }}</td><td>{{ format_number(row.total_net_price) }}</td><td>{{ row.location_name or "-" }}</td></tr>
+          {% else %}
+            <tr><td colspan="8"><div class="empty-state"><strong>Nincs importálható eszközsor.</strong><span>Ellenőrizd a hibalistát és a sablon kötelező mezőit.</span></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <form method="post" class="form-panel">
+    <h2>3. Import megerősítése</h2>
+    <p class="text-secondary small">{{ pending_import.filename if pending_import else "" }}</p>
+    {% if preview.critical_error_count %}
+      <div class="alert alert-danger">Az import nem véglegesíthető, amíg kritikus hibák vannak.</div>
+    {% else %}
+      <div class="form-check mb-3"><input class="form-check-input" id="execute_import" name="execute_import" type="checkbox"><label class="form-check-label" for="execute_import">Importálás végrehajtása</label></div>
+      <button class="btn btn-purple btn-icon" type="submit" name="action" value="confirm"><i class="bi bi-cloud-arrow-up"></i> Adatbázisba importálás</button>
+    {% endif %}
+  </form>
+{% endif %}
+{% endblock %}

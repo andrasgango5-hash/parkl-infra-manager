@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}PDF-ek / jegyzőkönyvek - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>PDF-ek / jegyzőkönyvek</h1>
+    <p class="text-secondary mb-0">Projekt- és munkalap-dokumentációk kiindulópontja.</p>
+  </div>
+</div>
+
+<div class="help-box">
+  A PDF-ek a kapcsolódó projekt vagy munkalap adatlapjáról generálhatók. Itt gyorsan elérheted a dokumentációt előállító fő oldalakat.
+</div>
+
+<div class="row g-4">
+  <div class="col-md-6"><a class="quick-action-card h-100" href="{{ url_for('projects') }}"><span class="quick-action-icon"><i class="bi bi-kanban"></i></span><span><strong>Projekt dokumentáció</strong> Eszközlista, kiadási lista, telepítési lista és pénzügyi összesítő PDF.</span></a></div>
+  <div class="col-md-6"><a class="quick-action-card h-100" href="{{ url_for('work_orders') }}"><span class="quick-action-icon"><i class="bi bi-clipboard-check"></i></span><span><strong>Munkalap jegyzőkönyvek</strong> Hivatalos munkalap és helyszíni jegyzőkönyv PDF-ek.</span></a></div>
+</div>
+{% endblock %}

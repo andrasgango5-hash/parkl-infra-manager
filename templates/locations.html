@@ -31,6 +31,7 @@
 </form>
 
 <div class="row g-4">
+  {% if can_write %}
   <div class="col-lg-4">
     <form method="post" class="form-panel">
       <h2>Készlethely létrehozása</h2>
@@ -60,7 +61,8 @@
       <button class="btn btn-success btn-icon" type="submit" data-bs-toggle="tooltip" data-bs-title="Új készlethely mentése"><i class="bi bi-plus-circle"></i> Létrehozás</button>
     </form>
   </div>
-  <div class="col-lg-8">
+  {% endif %}
+  <div class="{% if can_write %}col-lg-8{% else %}col-12{% endif %}">
     <section class="data-section">
       <div class="section-title"><h2>Készlethelylista</h2></div>
       <div class="table-responsive">
@@ -83,10 +85,12 @@
                 <td class="mobile-hide">{{ location.devices|length }}</td>
                 <td class="text-nowrap">
                   <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('location_detail', location_id=location.id) }}" data-bs-toggle="tooltip" data-bs-title="Készlethely megnyitása"><i class="bi bi-eye"></i> Részletek</a>
-                  <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('location_edit', location_id=location.id) }}" data-bs-toggle="tooltip" data-bs-title="Készlethely szerkesztése"><i class="bi bi-pencil"></i> Szerkesztés</a>
-                  <form method="post" action="{{ url_for('location_archive', location_id=location.id) }}" class="d-inline">
-                    <button class="btn btn-outline-danger btn-sm btn-icon" type="submit" data-confirm="Biztosan archiválod ezt a készlethelyet?" data-bs-toggle="tooltip" data-bs-title="Készlethely archiválása"><i class="bi bi-trash"></i> Archiválás</button>
-                  </form>
+                  {% if can_write %}
+                    <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('location_edit', location_id=location.id) }}" data-bs-toggle="tooltip" data-bs-title="Készlethely szerkesztése"><i class="bi bi-pencil"></i> Szerkesztés</a>
+                    <form method="post" action="{{ url_for('location_archive', location_id=location.id) }}" class="d-inline">
+                      <button class="btn btn-outline-danger btn-sm btn-icon" type="submit" data-confirm="Biztosan archiválod ezt a készlethelyet?" data-bs-toggle="tooltip" data-bs-title="Készlethely archiválása"><i class="bi bi-trash"></i> Archiválás</button>
+                    </form>
+                  {% endif %}
                 </td>
               </tr>
             {% else %}
@@ -95,7 +99,7 @@
                   <div class="empty-state">
                     <strong>Még nincs készlethely.</strong>
                     <span>Hozz létre legalább egy raktárat vagy projekt helyszínt az eszközök mozgatásához.</span>
-                    <a class="btn btn-success btn-sm btn-icon" href="#name"><i class="bi bi-plus-circle"></i> Készlethely létrehozása</a>
+                    {% if can_write %}<a class="btn btn-success btn-sm btn-icon" href="#name"><i class="bi bi-plus-circle"></i> Készlethely létrehozása</a>{% endif %}
                   </div>
                 </td>
               </tr>

@@ -9,7 +9,7 @@
     <p class="text-secondary mb-0">{{ location_type_label(location.location_type) }}</p>
   </div>
   <div class="d-flex gap-2">
-    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('location_edit', location_id=location.id) }}">Szerkesztés</a>
+    {% if can_write %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('location_edit', location_id=location.id) }}">Szerkesztés</a>{% endif %}
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('locations') }}">Vissza</a>
   </div>
 </div>
@@ -30,29 +30,33 @@
 
 <div class="row g-3 mb-4">
   <div class="col-6 col-xl-3"><div class="metric"><span>Összes mennyiség</span><strong>{{ format_number(location_summary.quantity) }}</strong></div></div>
+  {% if can_view_finance %}
   <div class="col-6 col-xl-3"><div class="metric"><span>Összes nettó érték (HUF)</span><strong>{{ format_number(location_summary.net_huf) }}</strong></div></div>
   <div class="col-6 col-xl-3"><div class="metric"><span>Összes nettó érték (EUR)</span><strong>{{ format_number(location_summary.net_eur) }}</strong></div></div>
   <div class="col-6 col-xl-3"><div class="metric"><span>Összes bruttó érték (HUF)</span><strong>{{ format_number(location_summary.gross_huf) }}</strong></div></div>
   <div class="col-6 col-xl-3"><div class="metric"><span>Összes bruttó érték (EUR)</span><strong>{{ format_number(location_summary.gross_eur) }}</strong></div></div>
+  {% endif %}
 </div>
 
 <section class="data-section mb-4">
   <div class="section-title"><h2>Jelenlegi eszközök</h2></div>
   <div class="table-responsive">
     <table class="table table-hover align-middle">
-      <thead><tr><th>Azonosító</th><th>Termék</th><th>Mennyiség</th><th>Deviza</th><th>Egység nettó</th><th>Összes nettó</th><th>ÁFA</th><th>Egység bruttó</th><th>Összes bruttó</th><th>Státusz</th><th>Projekt</th><th></th></tr></thead>
+      <thead><tr><th>Azonosító</th><th>Termék</th><th>Mennyiség</th>{% if can_view_finance %}<th>Deviza</th><th>Egység nettó</th><th>Összes nettó</th><th>ÁFA</th><th>Egység bruttó</th><th>Összes bruttó</th>{% endif %}<th>Státusz</th><th>Projekt</th><th></th></tr></thead>
       <tbody>
         {% for device in devices %}
           <tr>
             <td class="fw-semibold">{{ device.asset_tag }}</td>
             <td>{{ device_display_label(device) }}</td>
             <td>{{ format_number(device.quantity) }}</td>
+            {% if can_view_finance %}
             <td>{{ device.currency or "-" }}</td>
             <td>{{ format_number(device.unit_net_price) }}</td>
             <td>{{ format_number(device.total_net_price) }}</td>
             <td>{{ format_number(device.vat_rate) }}{% if device.vat_rate is not none %}%{% endif %}</td>
             <td>{{ format_number(device.unit_gross_price) }}</td>
             <td>{{ format_number(device.total_gross_price) }}</td>
+            {% endif %}
             <td><span class="status-badge {{ status_badge_class(device.status) }}">{{ status_label(device.status) }}</span></td>
             <td>{{ device.project.code if device.project else "-" }}</td>
             <td><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_detail', device_id=device.id) }}">Részletek</a></td>

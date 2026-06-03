@@ -15,6 +15,7 @@
 </div>
 
 <div class="row g-4">
+  {% if can_write %}
   <div class="col-xl-4">
     <form method="post" class="form-panel" data-device-price-form>
       <h2>Eszköz létrehozása</h2>
@@ -210,7 +211,8 @@
       <button class="btn btn-success mt-3 btn-icon" type="submit" data-bs-toggle="tooltip" data-bs-title="Új eszköz mentése"><i class="bi bi-plus-circle"></i> Létrehozás</button>
     </form>
   </div>
-  <div class="col-xl-8">
+  {% endif %}
+  <div class="{% if can_write %}col-xl-8{% else %}col-12{% endif %}">
     <section class="data-section">
       <div class="section-title"><h2>Eszközlista</h2></div>
       <div class="p-3 border-bottom">
@@ -222,12 +224,12 @@
             ("issued", "Kiadva"),
             ("installed", "Telepítve"),
             ("awaiting_arrival", "Beérkezésre vár"),
-            ("financial_open", "Pénzügyileg nyitott"),
             ("attention", "Figyelmet igényel")
           ] %}
           {% for value, label in tabs %}
             <a class="btn btn-sm {% if selected_view == value and not quick_filter %}btn-purple{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('devices', view=value) }}">{{ label }}</a>
           {% endfor %}
+          {% if can_view_finance %}<a class="btn btn-sm {% if selected_view == 'financial_open' and not quick_filter %}btn-purple{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('devices', view='financial_open') }}">Pénzügyileg nyitott</a>{% endif %}
         </div>
       </div>
       <form method="get" class="filter-bar">
@@ -250,7 +252,7 @@
           <select class="form-select form-select-sm" id="quick_filter" name="quick_filter">
             <option value="">Nincs gyorsszűrő</option>
             <option value="attention" {% if quick_filter == "attention" %}selected{% endif %}>Csak figyelmet igényel</option>
-            <option value="financial_open" {% if quick_filter == "financial_open" %}selected{% endif %}>Pénzügyileg nyitott</option>
+            {% if can_view_finance %}<option value="financial_open" {% if quick_filter == "financial_open" %}selected{% endif %}>Pénzügyileg nyitott</option>{% endif %}
             <option value="awaiting_arrival" {% if quick_filter == "awaiting_arrival" %}selected{% endif %}>Beérkezésre vár</option>
             <option value="arrived_unassigned" {% if quick_filter == "arrived_unassigned" %}selected{% endif %}>Beérkezett, de nincs hozzárendelve</option>
           </select>
@@ -298,11 +300,13 @@
       </form>
       <div class="summary-strip">
         <span>Látható eszközök: <strong>{{ visible_summary.count }}</strong></span>
+        {% if can_view_finance %}
         <span>Összes nettó: <strong>{{ format_number(visible_summary.net_huf) }} HUF</strong></span>
         <span>Összes nettó: <strong>{{ format_number(visible_summary.net_eur) }} EUR</strong></span>
         <span>Összes bruttó: <strong>{{ format_number(visible_summary.gross_huf) }} HUF</strong></span>
         <span>Összes bruttó: <strong>{{ format_number(visible_summary.gross_eur) }} EUR</strong></span>
         <span>Nyitott számla: <strong>{{ visible_summary.unpaid_invoice_count }}</strong></span>
+        {% endif %}
         <span>Beérkezésre vár: <strong>{{ visible_summary.awaiting_arrival_count }}</strong></span>
       </div>
       <div class="table-responsive">
@@ -313,12 +317,14 @@
               <th>Termék</th>
               <th class="mobile-hide">Kategória</th>
               <th class="mobile-hide">Mennyiség</th>
+              {% if can_view_finance %}
               <th class="mobile-hide">Deviza</th>
               <th class="mobile-hide">Egység nettó</th>
               <th class="mobile-hide">Összes nettó</th>
               <th class="mobile-hide">ÁFA</th>
               <th class="mobile-hide">Egység bruttó</th>
               <th class="mobile-hide">Összes bruttó</th>
+              {% endif %}
               <th>Státusz</th>
               <th>Projekt</th>
               <th class="mobile-hide">Lokáció</th>
@@ -335,21 +341,25 @@
                 </td>
                 <td class="mobile-hide">{{ category_label(device.device_type) }}</td>
                 <td class="mobile-hide">{{ format_number(device.quantity) }}</td>
+                {% if can_view_finance %}
                 <td class="mobile-hide">{{ device.currency or "-" }}</td>
                 <td class="mobile-hide">{{ format_number(device.unit_net_price) }}</td>
                 <td class="mobile-hide">{{ format_number(device.total_net_price) }}</td>
                 <td class="mobile-hide">{{ format_number(device.vat_rate) }}{% if device.vat_rate is not none %}%{% endif %}</td>
                 <td class="mobile-hide">{{ format_number(device.unit_gross_price) }}</td>
                 <td class="mobile-hide">{{ format_number(device.total_gross_price) }}</td>
+                {% endif %}
                 <td><span class="status-badge {{ status_badge_class(device.status) }}">{{ status_label(device.status) }}</span></td>
                 <td>{{ device.project.code if device.project else "-" }}</td>
                 <td class="mobile-hide">{{ device.location.name if device.location else "-" }}</td>
                 <td class="text-nowrap">
                   <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_detail', device_id=device.id) }}" data-bs-toggle="tooltip" data-bs-title="Eszköz megnyitása"><i class="bi bi-eye"></i> Részletek</a>
-                  <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_edit', device_id=device.id) }}" data-bs-toggle="tooltip" data-bs-title="Eszköz szerkesztése"><i class="bi bi-pencil"></i> Szerkesztés</a>
-                  <form method="post" action="{{ url_for('device_archive', device_id=device.id) }}" class="d-inline">
-                    <button class="btn btn-outline-danger btn-sm btn-icon" type="submit" data-confirm="Biztosan archiválod ezt az eszközt?" data-bs-toggle="tooltip" data-bs-title="Eszköz archiválása"><i class="bi bi-trash"></i> Archiválás</button>
-                  </form>
+                  {% if can_write %}
+                    <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_edit', device_id=device.id) }}" data-bs-toggle="tooltip" data-bs-title="Eszköz szerkesztése"><i class="bi bi-pencil"></i> Szerkesztés</a>
+                    <form method="post" action="{{ url_for('device_archive', device_id=device.id) }}" class="d-inline">
+                      <button class="btn btn-outline-danger btn-sm btn-icon" type="submit" data-confirm="Biztosan archiválod ezt az eszközt?" data-bs-toggle="tooltip" data-bs-title="Eszköz archiválása"><i class="bi bi-trash"></i> Archiválás</button>
+                    </form>
+                  {% endif %}
                 </td>
               </tr>
             {% else %}
@@ -358,10 +368,15 @@
                   <div class="empty-state">
                     <strong>Nincs eszköz ebben a nézetben.</strong>
                     <span>Rögzíts új tételt, importálj Excelt, vagy állítsd vissza a szűrőket.</span>
-                    <div class="action-buttons">
+                    {% if can_write or can_export %}<div class="action-buttons">
+                      {% if can_write %}
                       <a class="btn btn-success btn-sm btn-icon" href="{{ url_for('devices') }}#asset_tag"><i class="bi bi-plus-circle"></i> Új eszköz rögzítése</a>
-                      <a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('excel_import') }}"><i class="bi bi-upload"></i> Excel import</a>
+                      {% endif %}
+                      {% if can_export %}
+                      <a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('import_export') }}"><i class="bi bi-arrow-down-up"></i> Import / Export</a>
+                      {% endif %}
                     </div>
+                    {% endif %}
                   </div>
                 </td>
               </tr>

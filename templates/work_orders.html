@@ -10,7 +10,7 @@
   </div>
   <div class="d-flex flex-wrap gap-2">
     <a class="btn btn-outline-secondary btn-icon" href="{{ url_for('work_order_templates') }}"><i class="bi bi-files"></i> Munkalap sablonok</a>
-    <a class="btn btn-purple btn-icon" href="{{ url_for('work_order_new') }}"><i class="bi bi-plus-circle"></i> Új munkalap</a>
+    {% if can_manage_work_orders %}<a class="btn btn-purple btn-icon" href="{{ url_for('work_order_new') }}"><i class="bi bi-plus-circle"></i> Új munkalap</a>{% endif %}
   </div>
 </div>
 
@@ -44,12 +44,12 @@
             <td><span class="status-badge status-neutral">{{ work_order_status_label(work_order.status) }}</span></td>
             <td class="text-nowrap">
               <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('work_order_detail', work_order_id=work_order.id) }}" data-bs-toggle="tooltip" data-bs-title="Munkalap megnyitása"><i class="bi bi-eye"></i></a>
-              <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('work_order_edit', work_order_id=work_order.id) }}" data-bs-toggle="tooltip" data-bs-title="Munkalap szerkesztése"><i class="bi bi-pencil"></i></a>
-              <a class="btn btn-export btn-sm btn-icon" href="{{ url_for('work_order_pdf', work_order_id=work_order.id) }}" data-bs-toggle="tooltip" data-bs-title="PDF generálása"><i class="bi bi-file-earmark-pdf"></i></a>
+              {% if can_manage_work_orders %}<a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('work_order_edit', work_order_id=work_order.id) }}" data-bs-toggle="tooltip" data-bs-title="Munkalap szerkesztése"><i class="bi bi-pencil"></i></a>{% endif %}
+              {% if can_export %}<a class="btn btn-export btn-sm btn-icon" href="{{ url_for('work_order_pdf', work_order_id=work_order.id) }}" data-bs-toggle="tooltip" data-bs-title="PDF generálása"><i class="bi bi-file-earmark-pdf"></i></a>{% endif %}
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="8"><div class="empty-state"><strong>Még nincs munkalap.</strong><span>Hozd létre az első helyszíni jegyzőkönyvet, vagy indulj egy sablonból.</span><div class="action-buttons"><a class="btn btn-purple btn-sm" href="{{ url_for('work_order_new') }}">Új munkalap</a><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('work_order_templates') }}">Sablonok megnyitása</a></div></div></td></tr>
+          <tr><td colspan="8"><div class="empty-state"><strong>Még nincs munkalap.</strong><span>Hozd létre az első helyszíni jegyzőkönyvet, vagy indulj egy sablonból.</span><div class="action-buttons">{% if can_manage_work_orders %}<a class="btn btn-purple btn-sm" href="{{ url_for('work_order_new') }}">Új munkalap</a>{% endif %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('work_order_templates') }}">Sablonok megnyitása</a></div></div></td></tr>
         {% endfor %}
       </tbody>
     </table>

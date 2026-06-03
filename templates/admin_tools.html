@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Admin eszközök - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Admin eszközök</h1>
+    <p class="text-secondary mb-0">Adminisztrációs és karbantartási funkciók.</p>
+  </div>
+</div>
+
+<div class="help-box">
+  Ez az oldal csak admin felhasználóknak látható. A napi operatív figyelmeztetések külön a Figyelmet igényel oldalon találhatók.
+</div>
+
+<div class="row g-4">
+  <div class="col-md-6"><a class="quick-action-card h-100" href="{{ url_for('admin_users') }}"><span class="quick-action-icon"><i class="bi bi-people"></i></span><span><strong>Felhasználók</strong> Szerepkörök és aktív felhasználói fiókok kezelése.</span></a></div>
+  <div class="col-md-6"><a class="quick-action-card h-100" href="{{ url_for('legacy') }}"><span class="quick-action-icon"><i class="bi bi-archive"></i></span><span><strong>Legacy funkciók</strong> Régi Parkl Excel importok és átmeneti admin eszközök.</span></a></div>
+  <div class="col-md-6"><a class="quick-action-card h-100" href="{{ url_for('help_page') }}"><span class="quick-action-icon"><i class="bi bi-question-circle"></i></span><span><strong>Dokumentáció</strong> Használati és üzemeltetési információk.</span></a></div>
+</div>
+{% endblock %}

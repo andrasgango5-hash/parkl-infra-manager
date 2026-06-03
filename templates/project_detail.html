@@ -9,12 +9,15 @@
     <p class="text-secondary mb-0">{{ project.customer or "Nincs ügyfél megadva" }}</p>
   </div>
   <div class="d-flex gap-2">
-    <a class="btn btn-success btn-sm" href="{{ url_for('devices', project_id=project.id) }}">Eszköz hozzárendelése</a>
-    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('project_edit', project_id=project.id) }}">Szerkesztés</a>
+    {% if can_write %}
+      <a class="btn btn-success btn-sm" href="{{ url_for('devices', project_id=project.id) }}">Eszköz hozzárendelése</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('project_edit', project_id=project.id) }}">Szerkesztés</a>
+    {% endif %}
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('projects') }}">Vissza</a>
   </div>
 </div>
 
+{% if can_export %}
 <div class="data-section mb-4">
   <div class="section-title"><h2>Projekt dokumentumok</h2></div>
   <div class="p-3 d-flex flex-wrap gap-2">
@@ -24,6 +27,7 @@
     <a class="btn btn-export btn-sm" href="{{ url_for('project_pdf', project_id=project.id, pdf_type='finance') }}">Pénzügyi összesítő PDF</a>
   </div>
 </div>
+{% endif %}
 
 {% set qr_image_url = url_for('project_qr', project_id=project.id) %}
 {% set qr_download_url = url_for('project_qr', project_id=project.id, download=1) %}
@@ -33,14 +37,16 @@
 
 <div class="row g-3 mb-4">
   <div class="col-6 col-xl-3"><div class="metric"><span>Eszközök</span><strong>{{ finance_summary.device_count }}</strong></div></div>
+  {% if can_view_finance %}
   <div class="col-6 col-xl-3"><div class="metric"><span>Összes nettó érték (HUF)</span><strong>{{ format_number(finance_summary.net_huf) }}</strong></div></div>
   <div class="col-6 col-xl-3"><div class="metric"><span>Összes nettó érték (EUR)</span><strong>{{ format_number(finance_summary.net_eur) }}</strong></div></div>
   <div class="col-6 col-xl-3"><div class="metric"><span>Összes bruttó érték (HUF)</span><strong>{{ format_number(finance_summary.gross_huf) }}</strong></div></div>
   <div class="col-6 col-xl-3"><div class="metric"><span>Összes bruttó érték (EUR)</span><strong>{{ format_number(finance_summary.gross_eur) }}</strong></div></div>
+  {% endif %}
   <div class="col-6 col-xl-3"><div class="metric"><span>Kiadott</span><strong>{{ finance_summary.issued }}</strong></div></div>
   <div class="col-6 col-xl-3"><div class="metric"><span>Telepített</span><strong>{{ finance_summary.installed }}</strong></div></div>
   <div class="col-6 col-xl-3"><div class="metric"><span>Visszavett</span><strong>{{ finance_summary.returned }}</strong></div></div>
-  <div class="col-6 col-xl-3"><div class="metric"><span>Nyitott beszállítói számla</span><strong>{{ finance_summary.unpaid_supplier_invoice_count }}</strong></div></div>
+  {% if can_view_finance %}<div class="col-6 col-xl-3"><div class="metric"><span>Nyitott beszállítói számla</span><strong>{{ finance_summary.unpaid_supplier_invoice_count }}</strong></div></div>{% endif %}
   <div class="col-6 col-xl-3"><div class="metric"><span>Beérkezésre vár</span><strong>{{ finance_summary.awaiting_arrival_count }}</strong></div></div>
   <div class="col-6 col-xl-3"><div class="metric"><span>Figyelmet igényel</span><strong>{{ attention_items|length }}</strong></div></div>
 </div>
@@ -49,9 +55,9 @@
   <li class="nav-item" role="presentation">
     <button class="nav-link active" id="project-overview-tab" data-bs-toggle="tab" data-bs-target="#project-overview" type="button" role="tab">Projekt áttekintés</button>
   </li>
-  <li class="nav-item" role="presentation">
+  {% if can_write %}<li class="nav-item" role="presentation">
     <button class="nav-link" id="drawings-tab" data-bs-toggle="tab" data-bs-target="#drawings" type="button" role="tab">Rajzok</button>
-  </li>
+  </li>{% endif %}
 </ul>
 
 <div class="tab-content">
@@ -81,7 +87,7 @@
             <td colspan="3">
               <div class="empty-state">
                 <strong>Nincs figyelmet igénylő projekt tétel.</strong>
-                <span>A projekt készlet- és pénzügyi adatai jelenleg tisztának tűnnek.</span>
+                <span>A projekt készletadatai{% if can_view_finance %} és pénzügyi adatai{% endif %} jelenleg tisztának tűnnek.</span>
               </div>
             </td>
           </tr>
@@ -95,19 +101,21 @@
   <div class="section-title"><h2>Hozzárendelt eszközök</h2></div>
   <div class="table-responsive">
     <table class="table table-hover align-middle">
-      <thead><tr><th>Azonosító</th><th>Termék</th><th>Mennyiség</th><th>Deviza</th><th>Egység nettó</th><th>Összes nettó</th><th>ÁFA</th><th>Egység bruttó</th><th>Összes bruttó</th><th>Státusz</th><th></th></tr></thead>
+      <thead><tr><th>Azonosító</th><th>Termék</th><th>Mennyiség</th>{% if can_view_finance %}<th>Deviza</th><th>Egység nettó</th><th>Összes nettó</th><th>ÁFA</th><th>Egység bruttó</th><th>Összes bruttó</th>{% endif %}<th>Státusz</th><th></th></tr></thead>
       <tbody>
         {% for device in devices %}
           <tr>
             <td class="fw-semibold">{{ device.asset_tag }}</td>
             <td>{{ device_display_label(device) }}</td>
             <td>{{ format_number(device.quantity) }}</td>
+            {% if can_view_finance %}
             <td>{{ device.currency or "-" }}</td>
             <td>{{ format_number(device.unit_net_price) }}</td>
             <td>{{ format_number(device.total_net_price) }}</td>
             <td>{{ format_number(device.vat_rate) }}{% if device.vat_rate is not none %}%{% endif %}</td>
             <td>{{ format_number(device.unit_gross_price) }}</td>
             <td>{{ format_number(device.total_gross_price) }}</td>
+            {% endif %}
             <td><span class="status-badge {{ status_badge_class(device.status) }}">{{ status_label(device.status) }}</span></td>
             <td><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_detail', device_id=device.id) }}">Részletek</a></td>
           </tr>
@@ -117,7 +125,7 @@
               <div class="empty-state">
                 <strong>Nincs hozzárendelt eszköz.</strong>
                 <span>Nyisd meg az eszközlistát, és rendelj tételeket ehhez a projekthez.</span>
-                <a class="btn btn-success btn-sm" href="{{ url_for('devices', project_id=project.id) }}">Eszköz hozzárendelése</a>
+                {% if can_write %}<a class="btn btn-success btn-sm" href="{{ url_for('devices', project_id=project.id) }}">Eszköz hozzárendelése</a>{% endif %}
               </div>
             </td>
           </tr>
@@ -156,7 +164,7 @@
 </section>
   </div>
 
-  <div class="tab-pane fade" id="drawings" role="tabpanel" aria-labelledby="drawings-tab">
+  {% if can_write %}<div class="tab-pane fade" id="drawings" role="tabpanel" aria-labelledby="drawings-tab">
     <section class="data-section mb-4">
       <div class="section-title">
         <h2>Helyszíni / implementációs rajzok</h2>
@@ -205,6 +213,6 @@
         </table>
       </div>
     </section>
-  </div>
+  </div>{% endif %}
 </div>
 {% endblock %}

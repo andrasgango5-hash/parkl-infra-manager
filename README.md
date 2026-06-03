@@ -185,6 +185,18 @@ Import használata:
 
 Az import nem használ CSV-t és nem használ pandast. A `.xlsx` fájlt `openpyxl` olvassa. Duplikált eszközsor esetén az import kihagyja a sort, ha már létezik azonos importkulcs vagy ütköző eszközazonosító. Importált eszköz létrehozásakor automatikus `INBOUND` készletmozgás is létrejön.
 
+### Normál sablon alapú import és export
+
+A napi használatú adatkezelés az `/import-export` oldalon érhető el. Innen letölthető egy egyszerű Excel sablon `Projects`, `Devices`, opcionális `Locations` és `Instructions` munkalappal.
+
+1. Töltsd le az import sablont.
+2. Töltsd ki a projekt-, eszköz- és opcionális készlethelyadatokat.
+3. Töltsd fel a kitöltött `.xlsx` fájlt.
+4. Ellenőrizd a dry-run eredményt és a soronkénti hibalistát.
+5. Kritikus hiba nélkül erősítsd meg az importot.
+
+Az oldalról a projektek, eszközök és készlethelyek Excel exportja is letölthető. A régi, több munkalapos Parkl Excel import nem része a normál folyamatnak: admin felhasználóknak a `/legacy/parkl-excel-import` oldalon marad elérhető.
+
 ## Készletszabályok
 
 A tartós készletadatok adatbázisban tárolódnak. CSV fájlokat az alkalmazás nem használ.
@@ -235,6 +247,25 @@ Státuszváltási szabályok:
 - A `TRANSFER` megtartja az aktuális státuszt, és a lokáció/projekt hozzárendelést frissíti.
 - Az `INBOUND` visszaállítja az eszközt `IN_STOCK` státuszra, kivéve ha már `SCRAPPED`.
 
+## Felhasználói szerepkörök
+
+Az alkalmazás egyszerű, központi szerepkör alapú jogosultságkezelést használ:
+
+- `admin` - teljes hozzáférés, felhasználókezelés, Legacy funkciók, import/export és pénzügyi adatok
+- `manager` - projektek, eszközök, készlethelyek, mozgások, munkalapok, PDF-ek és import/export kezelése
+- `technician` - eszközök, QR-kódok és munkalapok megtekintése; munkalap létrehozása és szerkesztése; pénzügyi adatok és import/export nélkül
+- `viewer` - csak olvasási hozzáférés, írási műveletek, import/export és pénzügyi oldalak nélkül
+
+A route-védelem az elsődleges: a tiltott műveletek akkor sem hajthatók végre, ha valaki közvetlenül próbálja megnyitni az URL-t. A sidebar és a műveleti gombok ugyanezekhez a jogokhoz igazodnak.
+
+Helyi tesztfelhasználók létrehozása:
+
+```bash
+flask --app app seed-role-users
+```
+
+Ez a fejlesztési parancs létrehozza vagy frissíti az `admin`, `manager`, `technician` és `viewer` tesztfelhasználókat, és kiírja a hozzájuk tartozó helyi jelszavakat. Production környezetben ne használd.
+
 ## MVP oldalak
 
 - `/login` - bejelentkezés
@@ -250,8 +281,18 @@ Státuszváltási szabályok:
 - `/locations` - készlethelyek listázása és létrehozása
 - `/movements` - készletmozgások listázása és létrehozása
 - `/unassigned-invoices` - gazdátlan számlasorok listázása és létrehozása
-- `/import` - Excel import előnézet és végrehajtás
+- `/import` - Legacy Parkl Excel import kompatibilitási URL, csak admin felhasználóknak
 - `/attention` - figyelmet igénylő készlet-, projekt-, beszerzési és pénzügyi tételek
+- `/labels` - QR-kódok és eszköz-/példánycímkék belépési oldala
+- `/documents` - projekt PDF-ek és munkalap-jegyzőkönyvek belépési oldala
+- `/import-export` - normál import- és exportfolyamatok belépési oldala
+- `/import-export/template` - új import sablon letöltése
+- `/import-export/export/<export_type>` - projekt-, eszköz- vagy készlethelyexport
+- `/help` - súgó és használati dokumentáció
+- `/admin` - adminisztrációs eszközök, csak admin felhasználóknak
+- `/admin/users` - felhasználói szerepkörök és aktív állapot kezelése, csak admin felhasználóknak
+- `/legacy` - régi Parkl Excel import és import batch-ek, csak admin felhasználóknak
+- `/legacy/parkl-excel-import` - régi Parkl Excel struktúra importja, csak admin felhasználóknak
 - `/projects/<id>/pdf/equipment` - projekt eszközlista PDF
 - `/projects/<id>/pdf/issue` - kiadási lista PDF
 - `/projects/<id>/pdf/installation` - telepítési lista PDF

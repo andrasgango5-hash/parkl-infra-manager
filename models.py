@@ -70,12 +70,28 @@ DEVICE_CATEGORY_LABELS = {
     "Other": "Egyéb",
 }
 
+USER_ROLES = (
+    "admin",
+    "manager",
+    "technician",
+    "viewer",
+)
+
+USER_ROLE_LABELS = {
+    "admin": "Adminisztrátor",
+    "manager": "Menedzser",
+    "technician": "Technikus",
+    "viewer": "Megtekintő",
+}
+
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
     is_admin = db.Column(db.Boolean, default=False, nullable=False)
+    role = db.Column(db.String(20), default="viewer", nullable=False, index=True)
+    is_active = db.Column(db.Boolean, default=True, nullable=False, index=True)
     created_at = db.Column(
         db.DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -85,6 +101,14 @@ class User(db.Model):
     movements = db.relationship("StockMovement", back_populates="created_by")
     import_batches = db.relationship("ImportBatch", back_populates="imported_by")
     work_orders = db.relationship("WorkOrder", back_populates="created_by")
+
+    def has_role(self, *roles):
+        effective_role = "admin" if self.is_admin else self.role
+        return effective_role in roles
+
+    @property
+    def effective_role(self):
+        return "admin" if self.is_admin else self.role
 
 
 class Project(db.Model):

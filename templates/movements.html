@@ -15,6 +15,7 @@
 </div>
 
 <div class="row g-4">
+  {% if can_write %}
   <div class="col-xl-4">
     <form method="post" class="form-panel">
       <h2>Készletmozgás létrehozása</h2>
@@ -76,7 +77,8 @@
       <button class="btn btn-success btn-icon" type="submit" data-bs-toggle="tooltip" data-bs-title="Készletmozgás mentése"><i class="bi bi-save"></i> Rögzítés</button>
     </form>
   </div>
-  <div class="col-xl-8">
+  {% endif %}
+  <div class="{% if can_write %}col-xl-8{% else %}col-12{% endif %}">
     <section class="data-section">
       <div class="section-title"><h2>Mozgástörténet</h2></div>
       <div class="table-responsive">

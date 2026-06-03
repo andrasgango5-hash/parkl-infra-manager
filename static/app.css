@@ -319,6 +319,88 @@ body {
   padding: 0.35rem;
 }
 
+.sidebar-collapse-toggle {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 9px;
+  color: rgba(255, 255, 255, 0.72);
+  height: 30px;
+  justify-content: center;
+  padding: 0;
+  width: 30px;
+}
+
+.sidebar-collapse-toggle:hover,
+.sidebar-collapse-toggle:focus {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+@media (min-width: 992px) {
+  .sidebar-collapsed .app-sidebar {
+    width: var(--sidebar-compact-width);
+  }
+
+  .sidebar-collapsed .app-shell-with-sidebar {
+    margin-left: var(--sidebar-compact-width);
+    width: calc(100% - var(--sidebar-compact-width));
+  }
+
+  .sidebar-collapsed .sidebar-brand {
+    justify-content: center;
+    padding: 1rem 0.55rem;
+  }
+
+  .sidebar-collapsed .sidebar-brand > a {
+    display: none;
+  }
+
+  .sidebar-collapsed .sidebar-brand-text,
+  .sidebar-collapsed .sidebar-group-label,
+  .sidebar-collapsed .sidebar-link span,
+  .sidebar-collapsed .sidebar-user span,
+  .sidebar-collapsed .sidebar-logout span {
+    display: none;
+  }
+
+  .sidebar-collapsed .sidebar-nav,
+  .sidebar-collapsed .sidebar-footer {
+    padding-left: 0.55rem;
+    padding-right: 0.55rem;
+  }
+
+  .sidebar-collapsed .sidebar-group + .sidebar-group {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    margin-top: 0.65rem;
+    padding-top: 0.65rem;
+  }
+
+  .sidebar-collapsed .sidebar-link,
+  .sidebar-collapsed .sidebar-logout {
+    justify-content: center;
+    padding-left: 0.4rem;
+    padding-right: 0.4rem;
+  }
+
+  .sidebar-collapsed .sidebar-link:hover,
+  .sidebar-collapsed .sidebar-link:focus,
+  .sidebar-collapsed .sidebar-logout:hover,
+  .sidebar-collapsed .sidebar-logout:focus {
+    transform: none;
+  }
+
+  .sidebar-collapsed .sidebar-user {
+    justify-content: center;
+    padding-left: 0.4rem;
+    padding-right: 0.4rem;
+  }
+
+  .sidebar-collapsed .sidebar-collapse-toggle i {
+    transform: rotate(180deg);
+  }
+}
+
 .page-header {
   align-items: flex-end;
   display: flex;
@@ -327,6 +409,10 @@ body {
 }
 
 @media (min-width: 992px) and (max-width: 1199.98px) {
+  .sidebar-collapse-toggle {
+    display: none !important;
+  }
+
   .app-sidebar {
     width: var(--sidebar-compact-width);
   }
@@ -462,6 +548,10 @@ body {
     margin-left: 0;
     min-height: calc(100vh - 64px);
     width: 100%;
+  }
+
+  .sidebar-collapsed .app-sidebar {
+    width: min(86vw, 300px);
   }
 }
 

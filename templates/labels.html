@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}QR / címkék - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>QR / címkék</h1>
+    <p class="text-secondary mb-0">Eszköz- és példánycímkék kezelési központja.</p>
+  </div>
+</div>
+
+<div class="help-box">
+  Az egyedi QR-kódok és címkék az eszközök, illetve az eszközpéldányok adatlapjáról nyomtathatók. A tömeges példánycímke PDF a csoportos eszköztétel oldalán érhető el.
+</div>
+
+<div class="row g-4">
+  <div class="col-md-6">
+    <a class="quick-action-card h-100" href="{{ url_for('devices') }}">
+      <span class="quick-action-icon"><i class="bi bi-boxes"></i></span>
+      <span><strong>Eszköz címkék</strong> Csoportos eszköztételek QR-kódjai és nyomtatható címkéi.</span>
+      <span class="status-badge status-neutral">{{ active_devices }} aktív tétel</span>
+    </a>
+  </div>
+  <div class="col-md-6">
+    <a class="quick-action-card h-100" href="{{ url_for('devices', section='qr') }}">
+      <span class="quick-action-icon"><i class="bi bi-qr-code"></i></span>
+      <span><strong>DeviceUnit címkék</strong> Egyedi fizikai példányok QR-kódjai és tömeges címke PDF-jei.</span>
+      <span class="status-badge status-neutral">{{ active_units }} aktív példány</span>
+    </a>
+  </div>
+</div>
+{% endblock %}

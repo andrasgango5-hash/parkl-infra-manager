@@ -17,6 +17,7 @@
   </div>
   <div class="p-3">
     <div class="quick-action-grid mb-3">
+      {% if can_write %}
       <a class="quick-action-card" href="{{ url_for('projects') }}#name" data-bs-toggle="tooltip" data-bs-title="Új projekt létrehozása">
         <span class="quick-action-icon"><i class="bi bi-building-add"></i></span>
         <span><strong>Új projekt</strong><span>Projektkód és ügyfél rögzítése</span></span>
@@ -29,10 +30,13 @@
         <span class="quick-action-icon"><i class="bi bi-cpu"></i></span>
         <span><strong>Új eszköz</strong><span>Töltő, kamera, router vagy anyag</span></span>
       </a>
-      <a class="quick-action-card" href="{{ url_for('excel_import') }}" data-bs-toggle="tooltip" data-bs-title="Parkl Excel importálása">
+      {% endif %}
+      {% if can_export %}
+      <a class="quick-action-card" href="{{ url_for('import_export') }}" data-bs-toggle="tooltip" data-bs-title="Import / Export megnyitása">
         <span class="quick-action-icon"><i class="bi bi-cloud-arrow-up"></i></span>
         <span><strong>Import</strong><span>Excel előnézet és betöltés</span></span>
       </a>
+      {% endif %}
       <a class="quick-action-card" href="{{ url_for('projects') }}" data-bs-toggle="tooltip" data-bs-title="Projekt rajzok és dokumentációk">
         <span class="quick-action-icon"><i class="bi bi-layers"></i></span>
         <span><strong>Rajzok / dokumentáció</strong><span>Projekt oldalon elérhető</span></span>
@@ -52,7 +56,7 @@
           <span class="workflow-step"><i class="bi bi-plug"></i></span>
           <strong>Eszközök rögzítése/importálása</strong>
           <span>Vigyél fel kézzel eszközt, vagy töltsd be az aktuális Parkl Excel fájlt dry-run előnézettel.</span>
-          <div class="mt-3"><a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('excel_import') }}"><i class="bi bi-upload"></i> Excel importálás</a></div>
+          {% if can_export %}<div class="mt-3"><a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('import_export') }}"><i class="bi bi-arrow-down-up"></i> Import / Export</a></div>{% endif %}
         </div>
       </div>
       <div class="col-md-6 col-xl-4">
@@ -76,17 +80,17 @@
           <span class="workflow-step"><i class="bi bi-file-earmark-pdf"></i></span>
           <strong>PDF projektlista generálása</strong>
           <span>A projektoldalon eszközlista, kiadási lista, telepítési lista és pénzügyi összesítő készülhet.</span>
-          <div class="mt-3"><a class="btn btn-export btn-sm btn-icon" href="{{ url_for('projects') }}"><i class="bi bi-download"></i> Projektlista</a></div>
+          {% if can_export %}<div class="mt-3"><a class="btn btn-export btn-sm btn-icon" href="{{ url_for('projects') }}"><i class="bi bi-download"></i> Projektlista</a></div>{% endif %}
         </div>
       </div>
-      <div class="col-md-6 col-xl-4">
+      {% if can_view_finance %}<div class="col-md-6 col-xl-4">
         <div class="action-card workflow-card">
           <span class="workflow-step"><i class="bi bi-check2-circle"></i></span>
           <strong>Pénzügyi lezárás ellenőrzése</strong>
           <span>Kövesd a nyitott számlákat és a gazdátlan számlasorokat, mielőtt a projekt lezárható.</span>
           <div class="mt-3"><a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('unassigned_invoices') }}"><i class="bi bi-receipt"></i> Számlasorok</a></div>
         </div>
-      </div>
+      </div>{% endif %}
     </div>
   </div>
 </section>
@@ -122,7 +126,7 @@
       <div class="metric-body"><span>Beérkezésre vár</span><strong>{{ stats.awaiting_arrival }}</strong></div>
     </div>
   </div>
-  <div class="col-6 col-xl-3">
+  {% if can_view_finance %}<div class="col-6 col-xl-3">
     <div class="metric">
       <span class="metric-icon"><i class="bi bi-receipt-cutoff"></i></span>
       <div class="metric-body"><span>Gazdátlan számlasorok</span><strong>{{ stats.unassigned_invoices }}</strong></div>
@@ -133,7 +137,7 @@
       <span class="metric-icon"><i class="bi bi-cloud-slash"></i></span>
       <div class="metric-body"><span>Pénzügyileg nyitott tételek</span><strong>{{ stats.financial_open }}</strong></div>
     </div>
-  </div>
+  </div>{% endif %}
   <div class="col-6 col-xl-3">
     <div class="metric">
       <span class="metric-icon"><i class="bi bi-exclamation-triangle"></i></span>
@@ -157,7 +161,7 @@
             <td class="fw-semibold">{{ item.name }}</td>
             <td>{{ item.reasons[0] }}</td>
             <td>{{ item.project }}</td>
-            <td>{% if item.edit_url %}<a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ item.edit_url }}" data-bs-toggle="tooltip" data-bs-title="Tétel megnyitása"><i class="bi bi-eye"></i> Megnyitás</a>{% endif %}</td>
+            <td>{% if item.detail_url %}<a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ item.detail_url }}" data-bs-toggle="tooltip" data-bs-title="Tétel megnyitása"><i class="bi bi-eye"></i> Megnyitás</a>{% endif %}</td>
           </tr>
         {% else %}
           <tr>

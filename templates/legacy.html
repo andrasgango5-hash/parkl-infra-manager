@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Legacy funkciók - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Legacy funkciók</h1>
+    <p class="text-secondary mb-0">Régi Parkl Excel importok és átmeneti adatkezelési eszközök.</p>
+  </div>
+  <a class="btn btn-purple btn-icon" href="{{ url_for('legacy_parkl_excel_import') }}"><i class="bi bi-file-earmark-excel"></i> Régi Parkl Excel import</a>
+</div>
+
+<div class="alert alert-warning">
+  A régi Excel import kompatibilitási funkció. Normál új adatkezelési folyamatokhoz az Import / Export oldalt használd.
+</div>
+
+<section class="data-section">
+  <div class="section-title"><h2>Legutóbbi import batch-ek</h2></div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Fájlnév</th><th>Státusz</th><th>Létrehozva</th><th>Kihagyva</th><th>Figyelmeztetés</th><th>Művelet</th></tr></thead>
+      <tbody>
+        {% for batch in recent_batches %}
+          <tr>
+            <td class="fw-semibold">{{ batch.filename }}</td>
+            <td>{{ import_status_label(batch.status) }}</td>
+            <td>{{ batch.created_count }}</td>
+            <td>{{ batch.skipped_count }}</td>
+            <td>{{ batch.warning_count }}</td>
+            <td><a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('import_batch_detail', batch_id=batch.id) }}"><i class="bi bi-eye"></i> Részletek</a></td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6"><div class="empty-state"><strong>Nincs korábbi import batch.</strong><span>A régi Parkl Excel import után itt jelennek meg a futások.</span></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

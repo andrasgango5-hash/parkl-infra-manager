@@ -6,7 +6,7 @@
 <div class="page-header">
   <div>
     <h1>Figyelmet igényel</h1>
-    <p class="text-secondary mb-0">Beszerzési, készlet-, projekt- és pénzügyi problémák egy helyen.</p>
+    <p class="text-secondary mb-0">Beszerzési, készlet- és projektproblémák{% if can_view_finance %}, valamint pénzügyi eltérések{% endif %} egy helyen.</p>
   </div>
 </div>
 
@@ -20,7 +20,7 @@
           <th>Tétel</th>
           <th>Probléma</th>
           <th>Projekt</th>
-          <th>Beszállító / számla</th>
+          <th>Beszállító{% if can_view_finance %} / számla{% endif %}</th>
           <th>Forrás</th>
           <th>Művelet</th>
         </tr>
@@ -36,13 +36,13 @@
               {% endfor %}
             </td>
             <td>{{ item.project }}</td>
-            <td>{{ item.supplier }} / {{ item.invoice }}</td>
+            <td>{{ item.supplier }}{% if can_view_finance %} / {{ item.invoice }}{% endif %}</td>
             <td>{{ item.source }}</td>
             <td class="text-nowrap">
               {% if item.detail_url %}
                 <a class="btn btn-outline-secondary btn-sm" href="{{ item.detail_url }}">Részletek</a>
               {% endif %}
-              {% if item.edit_url %}
+              {% if item.edit_url and can_write %}
                 <a class="btn btn-outline-secondary btn-sm" href="{{ item.edit_url }}">Szerkesztés</a>
               {% endif %}
             </td>
@@ -52,7 +52,7 @@
             <td colspan="7">
               <div class="empty-state">
                 <strong>Nincs figyelmet igénylő tétel.</strong>
-                <span>A készlet, projekt és pénzügyi adatok jelenleg rendben vannak.</span>
+                <span>A készlet- és projektadatok{% if can_view_finance %}, valamint a pénzügyi adatok{% endif %} jelenleg rendben vannak.</span>
                 <a class="btn btn-success btn-sm" href="{{ url_for('dashboard') }}">Vissza az áttekintésre</a>
               </div>
             </td>
