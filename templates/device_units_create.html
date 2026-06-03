@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Példányok létrehozása{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Példányok létrehozása</h1>
+    <p class="text-secondary mb-0">{{ device_display_label(device) }}</p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_detail', device_id=device.id) }}"><i class="bi bi-arrow-left"></i> Vissza</a>
+</div>
+
+<div class="alert alert-warning">
+  A művelet nem módosítja a csoportos tétel mennyiségét, státuszát, projektjét vagy készlethelyét. A példányok egyedi QR-kódhoz és fizikai azonosításhoz jönnek létre.
+</div>
+
+<form method="post" class="form-panel">
+  <h2>Megerősítés</h2>
+  <div class="row g-3 mb-4">
+    <div class="col-md-4"><div class="metric"><span>Csoportos mennyiség</span><strong>{{ quantity }}</strong></div></div>
+    <div class="col-md-4"><div class="metric"><span>Már létrehozva</span><strong>{{ active_units }}</strong></div></div>
+    <div class="col-md-4"><div class="metric"><span>Létrehozandó</span><strong>{{ missing_count }}</strong></div></div>
+  </div>
+  <div class="row g-3">
+    <div class="col-md-6"><label class="form-label" for="prefix">Példányazonosító előtag</label><input class="form-control" id="prefix" name="prefix" value="{{ prefix }}" required></div>
+    <div class="col-md-3"><label class="form-label" for="start_number">Kezdő sorszám</label><input class="form-control" id="start_number" name="start_number" type="number" min="1" value="{{ start_number }}" required></div>
+  </div>
+  <div class="mt-4">
+    <h3 class="form-section-title">Létrejövő példányazonosítók</h3>
+    <div class="d-flex flex-wrap gap-2">
+      {% for code in generated_codes[:20] %}<span class="badge text-bg-light border">{{ code }}</span>{% endfor %}
+      {% if generated_codes|length > 20 %}<span class="badge text-bg-light border">+ {{ generated_codes|length - 20 }} további</span>{% endif %}
+    </div>
+  </div>
+  <div class="form-check mt-4">
+    <input class="form-check-input" id="confirm" name="confirm" type="checkbox" value="1" required>
+    <label class="form-check-label" for="confirm">Megerősítem {{ missing_count }} eszközpéldány létrehozását.</label>
+  </div>
+  <div class="mt-3 d-flex gap-2">
+    <button class="btn btn-purple btn-icon" type="submit"><i class="bi bi-plus-circle"></i> Példányok létrehozása</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('device_detail', device_id=device.id) }}">Mégse</a>
+  </div>
+</form>
+{% endblock %}

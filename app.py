@@ -1,6 +1,7 @@
 from functools import wraps
 from datetime import date, datetime, timezone
 from io import BytesIO
+import base64
 import json
 import os
 import re
@@ -9,6 +10,7 @@ from uuid import uuid4
 
 import click
 import qrcode
+import reportlab
 from flask import (
     abort,
     Flask,
@@ -25,11 +27,22 @@ from flask import (
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from openpyxl import load_workbook
+from PIL import Image as PILImage, UnidentifiedImageError
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import (
+    Image,
+    PageBreak,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 from sqlalchemy import or_
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -106,6 +119,13 @@ IMPORT_STATUS_LABELS = {
     "partial_rollback": "Részben visszavonva",
 }
 
+DEVICE_CURRENCIES = {"HUF", "EUR"}
+DEVICE_QR_MODE_LABELS = {
+    "none": "Nincs QR",
+    "group": "Csoport QR",
+    "individual": "Egyedi QR példányonként",
+}
+
 INVENTORY_SHEETS = {
     "tolto",
     "toltok",
@@ -120,7 +140,35 @@ ORPHAN_INVOICE_SHEET = "gazdatlanul"
 IGNORED_IMPORT_SHEETS = {"workflow", "dashboard", "seged", "onkoltseg", "sheet1"}
 UPLOAD_SUBDIR = "uploads"
 DRAWING_UPLOAD_SUBDIR = "drawings"
+WORK_ORDER_UPLOAD_SUBDIR = "work_orders"
 ALLOWED_DRAWING_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
+ALLOWED_PHOTO_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
+
+WORK_ORDER_TYPE_LABELS = {
+    "maintenance": "Karbantartás",
+    "troubleshooting": "Hibaelhárítás",
+    "cable_replacement": "Kábelcsere",
+    "installation": "Telepítés",
+    "site_visit": "Helyszíni kiszállás",
+    "inspection": "Felülvizsgálat",
+    "other": "Egyéb",
+}
+
+WORK_ORDER_STATUS_LABELS = {
+    "draft": "Tervezet",
+    "in_progress": "Folyamatban",
+    "closed": "Lezárt",
+    "pdf_generated": "PDF generálva",
+}
+
+WORK_ORDER_PHOTO_CATEGORY_LABELS = {
+    "before": "Hiba előtti állapot",
+    "during": "Munka közbeni állapot",
+    "after": "Javítás utáni állapot",
+}
+
+PDF_FONT_REGULAR = "ParklSans"
+PDF_FONT_BOLD = "ParklSans-Bold"
 
 DRAWING_ICON_CATEGORIES = {
     "Parking/access": [
@@ -190,6 +238,7 @@ def create_app(config_class=Config):
         DEVICE_STATUSES,
         MOVEMENT_TYPES,
         Device,
+        DeviceUnit,
         ImportBatch,
         Location,
         Project,
@@ -197,6 +246,11 @@ def create_app(config_class=Config):
         StockMovement,
         UnassignedInvoiceItem,
         User,
+        WorkOrder,
+        WorkOrderMaterial,
+        WorkOrderMeasurement,
+        WorkOrderPhoto,
+        WorkOrderTemplate,
     )
 
     @app.context_processor
@@ -215,9 +269,17 @@ def create_app(config_class=Config):
             "import_status_label": import_status_label,
             "yes_no_label": yes_no_label,
             "format_number": format_number,
+            "line_net_amount": line_net_amount,
             "device_display_label": device_display_label,
+            "device_qr_mode_label": device_qr_mode_label,
             "status_badge_class": status_badge_class,
             "movement_badge_class": movement_badge_class,
+            "work_order_type_label": work_order_type_label,
+            "work_order_status_label": work_order_status_label,
+            "work_order_photo_category_label": work_order_photo_category_label,
+            "format_duration": format_duration,
+            "template_json_rows": template_json_rows,
+            "current_date": date.today().isoformat(),
         }
 
     def login_required(view):
@@ -255,6 +317,7 @@ def create_app(config_class=Config):
                 location.name = location.name.replace("Stock Room", "Raktár", 1)
             elif location.name.startswith("Site"):
                 location.name = location.name.replace("Site", "Helyszín", 1)
+        seed_work_order_templates(WorkOrderTemplate)
         db.session.commit()
         print(f"{action}: '{username}' admin felhasználó.")
 
@@ -278,10 +341,16 @@ def create_app(config_class=Config):
             Project,
             Location,
             Device,
+            DeviceUnit,
             StockMovement,
             UnassignedInvoiceItem,
             ImportBatch,
             ProjectDrawing,
+            WorkOrder,
+            WorkOrderMaterial,
+            WorkOrderMeasurement,
+            WorkOrderPhoto,
+            WorkOrderTemplate,
         )
         click.echo(
             "Demo adatbázis újraépítve: "
@@ -362,6 +431,240 @@ def create_app(config_class=Config):
         attention_items = build_attention_items(devices, invoice_items)
         return render_template("attention.html", attention_items=attention_items)
 
+    @app.route("/work-orders")
+    @login_required
+    def work_orders():
+        query = WorkOrder.query.filter(WorkOrder.archived_at.is_(None))
+        search = request.args.get("q", "").strip()
+        work_type = request.args.get("work_type", "").strip()
+        status = request.args.get("status", "").strip()
+        date_from = optional_date(request.args.get("date_from"))
+        date_to = optional_date(request.args.get("date_to"))
+        if search:
+            term = f"%{search}%"
+            query = query.filter(
+                or_(
+                    WorkOrder.number.ilike(term),
+                    WorkOrder.customer_name.ilike(term),
+                    WorkOrder.site_name.ilike(term),
+                    WorkOrder.technician_name.ilike(term),
+                )
+            )
+        if work_type in WORK_ORDER_TYPE_LABELS:
+            query = query.filter(WorkOrder.work_type == work_type)
+        if status in WORK_ORDER_STATUS_LABELS:
+            query = query.filter(WorkOrder.status == status)
+        if date_from:
+            query = query.filter(WorkOrder.work_date >= date_from)
+        if date_to:
+            query = query.filter(WorkOrder.work_date <= date_to)
+        return render_template(
+            "work_orders.html",
+            work_orders=query.order_by(WorkOrder.created_at.desc()).all(),
+            work_order_types=WORK_ORDER_TYPE_LABELS,
+            work_order_statuses=WORK_ORDER_STATUS_LABELS,
+            search=search,
+            selected_work_type=work_type,
+            selected_status=status,
+            date_from=date_from,
+            date_to=date_to,
+        )
+
+    @app.route("/work-orders/new", methods=["GET", "POST"])
+    @login_required
+    def work_order_new():
+        template = None
+        template_id = optional_int(request.args.get("template_id"))
+        if template_id:
+            template = WorkOrderTemplate.query.get_or_404(template_id)
+        if request.method == "POST":
+            work_order = WorkOrder(
+                number=request.form.get("number", "").strip(),
+                work_type=request.form.get("work_type", "").strip(),
+                created_date=optional_date(request.form.get("created_date")) or date.today(),
+                created_by_id=session["user_id"],
+            )
+            error = update_work_order_from_form(work_order, request.form)
+            if error:
+                flash(error, "danger")
+            elif WorkOrder.query.filter_by(number=work_order.number).first():
+                flash("Ezzel a munkalapszámmal már létezik munkalap.", "danger")
+            else:
+                db.session.add(work_order)
+                db.session.flush()
+                replace_work_order_rows(work_order, request.form, WorkOrderMaterial, WorkOrderMeasurement)
+                save_work_order_uploads(app, work_order, request.files, request.form, WorkOrderPhoto)
+                db.session.commit()
+                flash("A munkalap létrejött.", "success")
+                return redirect(url_for("work_order_detail", work_order_id=work_order.id))
+        return render_template(
+            "work_order_form.html",
+            work_order=None,
+            template=template,
+            template_materials=template_json_rows(template, "materials_json"),
+            template_measurements=template_json_rows(template, "measurements_json"),
+            suggested_number=next_work_order_number(WorkOrder),
+            work_order_types=WORK_ORDER_TYPE_LABELS,
+            work_order_statuses=WORK_ORDER_STATUS_LABELS,
+            photo_categories=WORK_ORDER_PHOTO_CATEGORY_LABELS,
+        )
+
+    @app.route("/work-orders/<int:work_order_id>")
+    @login_required
+    def work_order_detail(work_order_id):
+        work_order = WorkOrder.query.get_or_404(work_order_id)
+        return render_template(
+            "work_order_detail.html",
+            work_order=work_order,
+            photo_categories=WORK_ORDER_PHOTO_CATEGORY_LABELS,
+        )
+
+    @app.route("/work-orders/<int:work_order_id>/edit", methods=["GET", "POST"])
+    @login_required
+    def work_order_edit(work_order_id):
+        work_order = WorkOrder.query.get_or_404(work_order_id)
+        if request.method == "POST":
+            old_number = work_order.number
+            error = update_work_order_from_form(work_order, request.form)
+            duplicate = (
+                WorkOrder.query.filter(WorkOrder.id != work_order.id)
+                .filter(WorkOrder.number == work_order.number)
+                .first()
+            )
+            if error:
+                work_order.number = old_number
+                flash(error, "danger")
+            elif duplicate:
+                work_order.number = old_number
+                flash("Ezzel a munkalapszámmal már létezik másik munkalap.", "danger")
+            else:
+                replace_work_order_rows(work_order, request.form, WorkOrderMaterial, WorkOrderMeasurement)
+                save_work_order_uploads(app, work_order, request.files, request.form, WorkOrderPhoto)
+                db.session.commit()
+                flash("A munkalap módosítva.", "success")
+                return redirect(url_for("work_order_detail", work_order_id=work_order.id))
+        return render_template(
+            "work_order_form.html",
+            work_order=work_order,
+            template=None,
+            template_materials=[],
+            template_measurements=[],
+            work_order_types=WORK_ORDER_TYPE_LABELS,
+            work_order_statuses=WORK_ORDER_STATUS_LABELS,
+            photo_categories=WORK_ORDER_PHOTO_CATEGORY_LABELS,
+        )
+
+    @app.route("/work-orders/<int:work_order_id>/copy", methods=["POST"])
+    @login_required
+    def work_order_copy(work_order_id):
+        source = WorkOrder.query.get_or_404(work_order_id)
+        copied = copy_work_order(source, session["user_id"], WorkOrder, WorkOrderMaterial, WorkOrderMeasurement)
+        db.session.add(copied)
+        db.session.commit()
+        flash("A munkalap másolata létrejött tervezetként.", "success")
+        return redirect(url_for("work_order_edit", work_order_id=copied.id))
+
+    @app.route("/work-orders/<int:work_order_id>/archive", methods=["POST"])
+    @login_required
+    def work_order_archive(work_order_id):
+        work_order = WorkOrder.query.get_or_404(work_order_id)
+        work_order.archived_at = now_utc()
+        db.session.commit()
+        flash("A munkalap archiválva.", "info")
+        return redirect(url_for("work_orders"))
+
+    @app.route("/work-orders/<int:work_order_id>/pdf")
+    @login_required
+    def work_order_pdf(work_order_id):
+        work_order = WorkOrder.query.get_or_404(work_order_id)
+        pdf_buffer = build_work_order_pdf(app, work_order)
+        work_order.status = "pdf_generated"
+        work_order.pdf_generated_at = now_utc()
+        db.session.commit()
+        return send_file(
+            pdf_buffer,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=secure_filename(f"MUNKALAP_{work_order.number}.pdf"),
+        )
+
+    @app.route("/work-orders/files/<path:filename>")
+    @login_required
+    def work_order_file(filename):
+        return send_from_directory(
+            os.path.join(app.instance_path, WORK_ORDER_UPLOAD_SUBDIR),
+            filename,
+        )
+
+    @app.route("/work-order-templates")
+    @login_required
+    def work_order_templates():
+        templates = (
+            WorkOrderTemplate.query.filter(WorkOrderTemplate.archived_at.is_(None))
+            .order_by(WorkOrderTemplate.name.asc())
+            .all()
+        )
+        return render_template(
+            "work_order_templates.html",
+            templates=templates,
+            work_order_types=WORK_ORDER_TYPE_LABELS,
+        )
+
+    @app.route("/work-order-templates/new", methods=["GET", "POST"])
+    @login_required
+    def work_order_template_new():
+        template = WorkOrderTemplate()
+        if request.method == "POST":
+            error = update_work_order_template_from_form(template, request.form)
+            if error:
+                flash(error, "danger")
+            elif WorkOrderTemplate.query.filter_by(name=template.name).first():
+                flash("Ezzel a névvel már létezik sablon.", "danger")
+            else:
+                db.session.add(template)
+                db.session.commit()
+                flash("A munkalap sablon létrejött.", "success")
+                return redirect(url_for("work_order_templates"))
+        return render_template(
+            "work_order_template_form.html",
+            template=None,
+            work_order_types=WORK_ORDER_TYPE_LABELS,
+        )
+
+    @app.route("/work-order-templates/<int:template_id>/edit", methods=["GET", "POST"])
+    @login_required
+    def work_order_template_edit(template_id):
+        template = WorkOrderTemplate.query.get_or_404(template_id)
+        if request.method == "POST":
+            error = update_work_order_template_from_form(template, request.form)
+            duplicate = (
+                WorkOrderTemplate.query.filter(WorkOrderTemplate.id != template.id)
+                .filter(WorkOrderTemplate.name == template.name)
+                .first()
+            )
+            if error:
+                flash(error, "danger")
+            elif duplicate:
+                flash("Ezzel a névvel már létezik másik sablon.", "danger")
+            else:
+                db.session.commit()
+                flash("A munkalap sablon módosítva.", "success")
+                return redirect(url_for("work_order_templates"))
+        return render_template(
+            "work_order_template_form.html",
+            template=template,
+            work_order_types=WORK_ORDER_TYPE_LABELS,
+        )
+
+    @app.route("/work-order-templates/<int:template_id>/archive", methods=["POST"])
+    @login_required
+    def work_order_template_archive(template_id):
+        template = WorkOrderTemplate.query.get_or_404(template_id)
+        template.archived_at = now_utc()
+        db.session.commit()
+        flash("A munkalap sablon archiválva.", "info")
+        return redirect(url_for("work_order_templates"))
+
     @app.route("/projects", methods=["GET", "POST"])
     @login_required
     def projects():
@@ -437,7 +740,7 @@ def create_app(config_class=Config):
         finance_summary = {
             "device_count": len(devices),
             "quantity": sum(device.quantity or 0 for device in devices),
-            "huf_value": sum(device.huf_value or 0 for device in devices),
+            **device_currency_totals(devices),
             "invoice_value": sum(device.invoice_value or 0 for device in devices),
             "ordered": sum(1 for device in devices if device.is_ordered),
             "arrived": sum(1 for device in devices if device.has_arrived),
@@ -640,6 +943,10 @@ def create_app(config_class=Config):
                 flash("Az eszközazonosító és a kategória kötelező.", "danger")
             elif data["device_type"] not in DEVICE_CATEGORIES:
                 flash("Érvénytelen eszközkategória.", "danger")
+            elif data["currency"] and data["currency"] not in DEVICE_CURRENCIES:
+                flash("Érvénytelen deviza. Válassz HUF vagy EUR értéket.", "danger")
+            elif data["qr_mode"] not in DEVICE_QR_MODE_LABELS:
+                flash("Érvénytelen QR mód.", "danger")
             elif Device.query.filter_by(asset_tag=data["asset_tag"]).first():
                 flash("Ezzel az eszközazonosítóval már létezik eszköz.", "danger")
             else:
@@ -702,7 +1009,7 @@ def create_app(config_class=Config):
             device_list = [device for device in device_list if is_arrived_unassigned(device)]
         visible_summary = {
             "count": len(device_list),
-            "huf_value": sum(device.huf_value or 0 for device in device_list),
+            **device_currency_totals(device_list),
             "unpaid_invoice_count": sum(1 for device in device_list if is_financially_open(device)),
             "awaiting_arrival_count": sum(1 for device in device_list if is_awaiting_arrival(device)),
         }
@@ -731,6 +1038,12 @@ def create_app(config_class=Config):
         device = Device.query.get_or_404(device_id)
         projects = Project.query.filter(Project.archived_at.is_(None)).order_by(Project.name.asc()).all()
         locations = Location.query.filter(Location.archived_at.is_(None)).order_by(Location.name.asc()).all()
+        units = (
+            DeviceUnit.query.filter_by(device_id=device.id)
+            .filter(DeviceUnit.archived_at.is_(None))
+            .order_by(DeviceUnit.unit_code.asc())
+            .all()
+        )
         movements = (
             StockMovement.query.filter_by(device_id=device.id)
             .order_by(StockMovement.created_at.desc())
@@ -742,6 +1055,7 @@ def create_app(config_class=Config):
             movements=movements,
             projects=projects,
             locations=locations,
+            units=units,
         )
 
     @app.route("/devices/<int:device_id>/edit", methods=["GET", "POST"])
@@ -756,6 +1070,15 @@ def create_app(config_class=Config):
                 flash("Az eszközazonosító és a kategória kötelező.", "danger")
             elif data["device_type"] not in DEVICE_CATEGORIES:
                 flash("Érvénytelen eszközkategória.", "danger")
+            elif data["currency"] and data["currency"] not in DEVICE_CURRENCIES:
+                flash("Érvénytelen deviza. Válassz HUF vagy EUR értéket.", "danger")
+            elif data["qr_mode"] not in DEVICE_QR_MODE_LABELS:
+                flash("Érvénytelen QR mód.", "danger")
+            elif not device_quantity_supports_existing_units(device, data["quantity"]):
+                flash(
+                    "A mennyiség nem lehet kisebb a már létrehozott aktív példányok számánál.",
+                    "danger",
+                )
             elif (
                 Device.query.filter(Device.id != device.id)
                 .filter(Device.asset_tag == data["asset_tag"])
@@ -790,6 +1113,146 @@ def create_app(config_class=Config):
     def device_label(device_id):
         device = Device.query.get_or_404(device_id)
         return render_template("device_label.html", device=device)
+
+    @app.route("/devices/<int:device_id>/units")
+    @login_required
+    def device_units(device_id):
+        device = Device.query.get_or_404(device_id)
+        units = (
+            DeviceUnit.query.filter_by(device_id=device.id)
+            .filter(DeviceUnit.archived_at.is_(None))
+            .order_by(DeviceUnit.unit_code.asc())
+            .all()
+        )
+        return render_template("device_units.html", device=device, units=units)
+
+    @app.route("/devices/<int:device_id>/units/create", methods=["GET", "POST"])
+    @login_required
+    def device_units_create(device_id):
+        device = Device.query.get_or_404(device_id)
+        quantity = whole_device_quantity(device)
+        active_units = (
+            DeviceUnit.query.filter_by(device_id=device.id)
+            .filter(DeviceUnit.archived_at.is_(None))
+            .count()
+        )
+        if quantity is None:
+            flash("Példányok csak pozitív egész mennyiségű tételből hozhatók létre.", "warning")
+            return redirect(url_for("device_detail", device_id=device.id))
+        missing_count = max(quantity - active_units, 0)
+        if missing_count == 0:
+            flash("Ehhez a tételhez már minden példány létrejött.", "info")
+            return redirect(url_for("device_units", device_id=device.id))
+
+        prefix = request.form.get("prefix", "").strip() or default_unit_code_prefix(device)
+        start_number = optional_int(request.form.get("start_number")) or 1
+        generated_codes = available_unit_codes(DeviceUnit, prefix, start_number, missing_count)
+
+        if request.method == "POST":
+            if request.form.get("confirm") != "1":
+                flash("A példányok létrehozásához erősítsd meg a műveletet.", "warning")
+            else:
+                for unit_code in generated_codes:
+                    db.session.add(DeviceUnit(device=device, unit_code=unit_code))
+                if device.qr_mode != "individual":
+                    device.qr_mode = "individual"
+                db.session.commit()
+                flash(f"{len(generated_codes)} eszközpéldány létrejött.", "success")
+                return redirect(url_for("device_units", device_id=device.id))
+
+        return render_template(
+            "device_units_create.html",
+            device=device,
+            quantity=quantity,
+            active_units=active_units,
+            missing_count=missing_count,
+            prefix=prefix,
+            start_number=start_number,
+            generated_codes=generated_codes,
+        )
+
+    @app.route("/devices/<int:device_id>/unit-labels.pdf")
+    @login_required
+    def device_unit_labels_pdf(device_id):
+        device = Device.query.get_or_404(device_id)
+        units = (
+            DeviceUnit.query.filter_by(device_id=device.id)
+            .filter(DeviceUnit.archived_at.is_(None))
+            .order_by(DeviceUnit.unit_code.asc())
+            .all()
+        )
+        if not units:
+            flash("Nincs nyomtatható eszközpéldány.", "warning")
+            return redirect(url_for("device_detail", device_id=device.id))
+        unit_urls = {
+            unit.id: url_for("device_unit_detail", unit_id=unit.id, _external=True)
+            for unit in units
+        }
+        buffer = build_device_unit_labels_pdf(device, units, unit_urls)
+        return send_file(
+            buffer,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=secure_filename(f"{device.asset_tag}_QR_cimkek.pdf"),
+        )
+
+    @app.route("/device-units/<int:unit_id>")
+    @login_required
+    def device_unit_detail(unit_id):
+        unit = DeviceUnit.query.get_or_404(unit_id)
+        return render_template("device_unit_detail.html", unit=unit, device=unit.device)
+
+    @app.route("/device-units/<int:unit_id>/edit", methods=["GET", "POST"])
+    @login_required
+    def device_unit_edit(unit_id):
+        unit = DeviceUnit.query.get_or_404(unit_id)
+        if request.method == "POST":
+            unit_code = request.form.get("unit_code", "").strip()
+            asset_tag = request.form.get("asset_tag", "").strip() or None
+            serial_number = request.form.get("serial_number", "").strip() or None
+            if not unit_code:
+                flash("A példányazonosító kötelező.", "danger")
+            elif DeviceUnit.query.filter(DeviceUnit.id != unit.id, DeviceUnit.unit_code == unit_code).first():
+                flash("Ezzel a példányazonosítóval már létezik másik példány.", "danger")
+            elif asset_tag and Device.query.filter_by(asset_tag=asset_tag).first():
+                flash("Ez az eszközazonosító már egy csoportos tételhez tartozik.", "danger")
+            elif asset_tag and DeviceUnit.query.filter(
+                DeviceUnit.id != unit.id, DeviceUnit.asset_tag == asset_tag
+            ).first():
+                flash("Ez az eszközazonosító már másik példányhoz tartozik.", "danger")
+            else:
+                unit.unit_code = unit_code
+                unit.asset_tag = asset_tag
+                unit.serial_number = serial_number
+                unit.notes = request.form.get("notes", "").strip() or None
+                db.session.commit()
+                flash("Az eszközpéldány módosítva.", "success")
+                return redirect(url_for("device_unit_detail", unit_id=unit.id))
+        return render_template("device_unit_edit.html", unit=unit, device=unit.device)
+
+    @app.route("/device-units/<int:unit_id>/qr")
+    @login_required
+    def device_unit_qr(unit_id):
+        unit = DeviceUnit.query.get_or_404(unit_id)
+        return qr_png_response(
+            url_for("device_unit_detail", unit_id=unit.id, _external=True),
+            f"{unit.unit_code}-qr.png",
+        )
+
+    @app.route("/device-units/<int:unit_id>/label")
+    @login_required
+    def device_unit_label(unit_id):
+        unit = DeviceUnit.query.get_or_404(unit_id)
+        return render_template("device_unit_label.html", unit=unit, device=unit.device)
+
+    @app.route("/device-units/<int:unit_id>/archive", methods=["POST"])
+    @login_required
+    def device_unit_archive(unit_id):
+        unit = DeviceUnit.query.get_or_404(unit_id)
+        unit.archived_at = now_utc()
+        db.session.commit()
+        flash("Az eszközpéldány archiválva.", "info")
+        return redirect(url_for("device_units", device_id=unit.device_id))
 
     @app.route("/devices/<int:device_id>/archive", methods=["POST"])
     @login_required
@@ -859,6 +1322,9 @@ def create_app(config_class=Config):
             if not invoice_number and not description:
                 flash("A számlaszám vagy a megnevezés megadása kötelező.", "danger")
             else:
+                quantity = optional_float(request.form.get("quantity"))
+                unit_price_huf = optional_float(request.form.get("unit_price_huf"))
+                net_amount_huf = optional_float(request.form.get("net_amount_huf"))
                 invoice_item = UnassignedInvoiceItem(
                     invoice_number=invoice_number or None,
                     partner=partner or None,
@@ -870,9 +1336,11 @@ def create_app(config_class=Config):
                     gross_amount_huf=optional_float(request.form.get("gross_amount_huf")),
                     currency=request.form.get("currency", "").strip().upper() or None,
                     description=description or None,
-                    quantity=optional_float(request.form.get("quantity")),
-                    unit_price_huf=optional_float(request.form.get("unit_price_huf")),
-                    net_amount_huf=optional_float(request.form.get("net_amount_huf")),
+                    quantity=quantity,
+                    unit_price_huf=unit_price_huf,
+                    net_amount_huf=net_amount_huf
+                    if net_amount_huf is not None
+                    else calculate_line_net_amount(quantity, unit_price_huf),
                     vat_amount_huf=optional_float(request.form.get("vat_amount_huf")),
                     line_gross_amount_huf=optional_float(
                         request.form.get("line_gross_amount_huf")
@@ -1173,6 +1641,10 @@ def create_app(config_class=Config):
             location=location,
             devices=devices,
             movements=movements,
+            location_summary={
+                "quantity": sum(device.quantity or 0 for device in devices),
+                **device_currency_totals(devices),
+            },
         )
 
     @app.route("/locations/<int:location_id>/edit", methods=["GET", "POST"])
@@ -1279,10 +1751,16 @@ def reset_demo_dataset(
     Project,
     Location,
     Device,
+    DeviceUnit,
     StockMovement,
     UnassignedInvoiceItem,
     ImportBatch,
     ProjectDrawing,
+    WorkOrder,
+    WorkOrderMaterial,
+    WorkOrderMeasurement,
+    WorkOrderPhoto,
+    WorkOrderTemplate,
 ):
     username = app.config["ADMIN_USERNAME"]
     password = app.config["ADMIN_PASSWORD"]
@@ -1297,13 +1775,20 @@ def reset_demo_dataset(
         db.session.flush()
 
     ProjectDrawing.query.delete()
+    WorkOrderPhoto.query.delete()
+    WorkOrderMeasurement.query.delete()
+    WorkOrderMaterial.query.delete()
+    WorkOrder.query.delete()
+    WorkOrderTemplate.query.delete()
     UnassignedInvoiceItem.query.delete()
     StockMovement.query.delete()
+    DeviceUnit.query.delete()
     Device.query.delete()
     ImportBatch.query.delete()
     Project.query.delete()
     Location.query.delete()
     db.session.flush()
+    seed_work_order_templates(WorkOrderTemplate)
 
     projects = {
         "PRK-001": Project(
@@ -1550,10 +2035,331 @@ def checkbox_value(value):
     return True if value == "on" else False
 
 
+def optional_time(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%H:%M").time()
+    except ValueError:
+        return None
+
+
+def work_order_type_label(value):
+    return WORK_ORDER_TYPE_LABELS.get(value, value)
+
+
+def work_order_status_label(value):
+    return WORK_ORDER_STATUS_LABELS.get(value, value)
+
+
+def work_order_photo_category_label(value):
+    return WORK_ORDER_PHOTO_CATEGORY_LABELS.get(value, value)
+
+
+def format_duration(minutes):
+    if minutes is None:
+        return "-"
+    hours, remaining = divmod(minutes, 60)
+    if hours and remaining:
+        return f"{hours} óra {remaining} perc"
+    if hours:
+        return f"{hours} óra"
+    return f"{remaining} perc"
+
+
+def next_work_order_number(work_order_model):
+    prefix = date.today().strftime("%Y%m%d")
+    count = work_order_model.query.filter(work_order_model.number.like(f"{prefix}%")).count()
+    return f"{prefix}_{count + 1:03d}"
+
+
+def seed_work_order_templates(template_model):
+    defaults = [
+        ("AC töltő karbantartás", "maintenance"),
+        ("Schneider hibaelhárítás", "troubleshooting"),
+        ("Circontrol hibaelhárítás", "troubleshooting"),
+        ("Teltonika csere", "troubleshooting"),
+        ("Kábelcsere", "cable_replacement"),
+        ("Helyszíni felmérés", "inspection"),
+    ]
+    existing = {item.name for item in template_model.query.all()}
+    for name, work_type in defaults:
+        if name not in existing:
+            db.session.add(template_model(name=name, work_type=work_type))
+
+
+def update_work_order_from_form(work_order, form):
+    number = form.get("number", "").strip()
+    work_type = form.get("work_type", "").strip()
+    status = form.get("status", "draft").strip()
+    if not number:
+        return "A munkalap száma kötelező."
+    if work_type not in WORK_ORDER_TYPE_LABELS:
+        return "Válassz érvényes munkalap típust."
+    if status not in WORK_ORDER_STATUS_LABELS:
+        return "Válassz érvényes munkalap státuszt."
+
+    work_order.number = number
+    work_order.work_type = work_type
+    work_order.created_date = optional_date(form.get("created_date")) or date.today()
+    work_order.work_date = optional_date(form.get("work_date"))
+    work_order.status = status
+    work_order.customer_name = form.get("customer_name", "").strip() or None
+    work_order.customer_address = form.get("customer_address", "").strip() or None
+    work_order.contact_name = form.get("contact_name", "").strip() or None
+    work_order.phone = form.get("phone", "").strip() or None
+    work_order.email = form.get("email", "").strip() or None
+    work_order.site_name = form.get("site_name", "").strip() or None
+    work_order.site_address = form.get("site_address", "").strip() or None
+    work_order.site_city = form.get("site_city", "").strip() or None
+    work_order.site_notes = form.get("site_notes", "").strip() or None
+    work_order.device_manufacturer = form.get("device_manufacturer", "").strip() or None
+    work_order.device_type = form.get("device_type", "").strip() or None
+    work_order.device_serial_number = form.get("device_serial_number", "").strip() or None
+    work_order.device_purchase_date = optional_date(form.get("device_purchase_date"))
+    work_order.arrival_time = optional_time(form.get("arrival_time"))
+    work_order.departure_time = optional_time(form.get("departure_time"))
+    work_order.fault_description = form.get("fault_description", "").strip() or None
+    work_order.work_performed = form.get("work_performed", "").strip() or None
+    work_order.labor_settlement = form.get("labor_settlement", "").strip() or None
+    work_order.material_settlement = form.get("material_settlement", "").strip() or None
+    work_order.notes = form.get("notes", "").strip() or None
+    work_order.technician_name = form.get("technician_name", "").strip() or None
+    work_order.second_technician = form.get("second_technician", "").strip() or None
+    work_order.subcontractor = form.get("subcontractor", "").strip() or None
+    return None
+
+
+def replace_work_order_rows(work_order, form, material_model, measurement_model):
+    work_order.materials.clear()
+    material_names = form.getlist("material_name[]")
+    for index, name in enumerate(material_names):
+        name = name.strip()
+        if not name:
+            continue
+        work_order.materials.append(
+            material_model(
+                name=name,
+                item_number=list_value(form, "material_item_number[]", index),
+                quantity=optional_float(list_value(form, "material_quantity[]", index)),
+                unit=list_value(form, "material_unit[]", index),
+                notes=list_value(form, "material_notes[]", index),
+            )
+        )
+
+    work_order.measurements.clear()
+    measurement_names = form.getlist("measurement_name[]")
+    for index, name in enumerate(measurement_names):
+        name = name.strip()
+        if not name:
+            continue
+        work_order.measurements.append(
+            measurement_model(
+                name=name,
+                value=list_value(form, "measurement_value[]", index),
+                unit=list_value(form, "measurement_unit[]", index),
+                notes=list_value(form, "measurement_notes[]", index),
+            )
+        )
+
+
+def list_value(form, key, index):
+    values = form.getlist(key)
+    if index >= len(values):
+        return None
+    return values[index].strip() or None
+
+
+def save_work_order_uploads(app, work_order, files, form, photo_model):
+    upload_dir = os.path.join(app.instance_path, WORK_ORDER_UPLOAD_SUBDIR)
+    os.makedirs(upload_dir, exist_ok=True)
+
+    delete_ids = {optional_int(value) for value in form.getlist("delete_photo_ids[]")}
+    for photo in list(work_order.photos):
+        if photo.id in delete_ids:
+            work_order.photos.remove(photo)
+
+    for category in WORK_ORDER_PHOTO_CATEGORY_LABELS:
+        for upload in files.getlist(f"photos_{category}"):
+            if not upload or not upload.filename or not allowed_photo_file(upload.filename):
+                continue
+            extension = upload.filename.rsplit(".", 1)[1].lower()
+            filename = secure_filename(f"{work_order.number}_{category}_{uuid4().hex}.{extension}")
+            path = os.path.join(upload_dir, filename)
+            upload.save(path)
+            if valid_image_file(path):
+                work_order.photos.append(photo_model(category=category, filename=filename))
+            else:
+                os.remove(path)
+
+    for field, attribute in (
+        ("technician_signature", "technician_signature_filename"),
+        ("customer_signature", "customer_signature_filename"),
+    ):
+        data_url = form.get(field, "")
+        if data_url.startswith("data:image/png;base64,"):
+            filename = secure_filename(f"{work_order.number}_{field}_{uuid4().hex}.png")
+            path = os.path.join(upload_dir, filename)
+            with open(path, "wb") as output:
+                output.write(base64.b64decode(data_url.split(",", 1)[1]))
+            if valid_image_file(path):
+                setattr(work_order, attribute, filename)
+            else:
+                os.remove(path)
+
+
+def allowed_photo_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_PHOTO_EXTENSIONS
+
+
+def valid_image_file(path):
+    try:
+        with PILImage.open(path) as image:
+            image.verify()
+        return True
+    except (UnidentifiedImageError, OSError, ValueError):
+        return False
+
+
+def template_json_rows(template, attribute):
+    if template is None:
+        return []
+    try:
+        return json.loads(getattr(template, attribute) or "[]")
+    except json.JSONDecodeError:
+        return []
+
+
+def update_work_order_template_from_form(template, form):
+    name = form.get("name", "").strip()
+    work_type = form.get("work_type", "").strip() or None
+    if not name:
+        return "A sablon neve kötelező."
+    if work_type and work_type not in WORK_ORDER_TYPE_LABELS:
+        return "Válassz érvényes munkalap típust."
+    template.name = name
+    template.work_type = work_type
+    template.fault_description = form.get("fault_description", "").strip() or None
+    template.work_performed = form.get("work_performed", "").strip() or None
+    template.notes = form.get("notes", "").strip() or None
+    template.materials_json = json.dumps(form_rows_to_dicts(form, "material"), ensure_ascii=False)
+    template.measurements_json = json.dumps(form_rows_to_dicts(form, "measurement"), ensure_ascii=False)
+    return None
+
+
+def form_rows_to_dicts(form, prefix):
+    names = form.getlist(f"{prefix}_name[]")
+    keys = (
+        ("item_number", f"{prefix}_item_number[]"),
+        ("quantity", f"{prefix}_quantity[]"),
+        ("unit", f"{prefix}_unit[]"),
+        ("value", f"{prefix}_value[]"),
+        ("notes", f"{prefix}_notes[]"),
+    )
+    rows = []
+    for index, name in enumerate(names):
+        if not name.strip():
+            continue
+        row = {"name": name.strip()}
+        for output_key, form_key in keys:
+            value = list_value(form, form_key, index)
+            if value is not None:
+                row[output_key] = value
+        rows.append(row)
+    return rows
+
+
+def copy_work_order(source, user_id, work_order_model, material_model, measurement_model):
+    copied = work_order_model(
+        number=f"{source.number}-M-{uuid4().hex[:4].upper()}",
+        work_type=source.work_type,
+        created_date=date.today(),
+        work_date=source.work_date,
+        status="draft",
+        customer_name=source.customer_name,
+        customer_address=source.customer_address,
+        contact_name=source.contact_name,
+        phone=source.phone,
+        email=source.email,
+        site_name=source.site_name,
+        site_address=source.site_address,
+        site_city=source.site_city,
+        site_notes=source.site_notes,
+        device_manufacturer=source.device_manufacturer,
+        device_type=source.device_type,
+        device_serial_number=source.device_serial_number,
+        device_purchase_date=source.device_purchase_date,
+        fault_description=source.fault_description,
+        work_performed=source.work_performed,
+        labor_settlement=source.labor_settlement,
+        material_settlement=source.material_settlement,
+        notes=source.notes,
+        technician_name=source.technician_name,
+        second_technician=source.second_technician,
+        subcontractor=source.subcontractor,
+        created_by_id=user_id,
+    )
+    copied.materials = [
+        material_model(
+            name=item.name,
+            item_number=item.item_number,
+            quantity=item.quantity,
+            unit=item.unit,
+            notes=item.notes,
+        )
+        for item in source.materials
+    ]
+    copied.measurements = [
+        measurement_model(name=item.name, value=item.value, unit=item.unit, notes=item.notes)
+        for item in source.measurements
+    ]
+    return copied
+
+
 def calculate_huf_value(quantity, unit_net_price, currency):
     if currency == "HUF" and quantity is not None and unit_net_price is not None:
         return quantity * unit_net_price
     return None
+
+
+def calculate_imported_huf_value(quantity, unit_net_price, currency, excel_huf_value):
+    if excel_huf_value is not None:
+        if quantity is not None and unit_net_price is not None:
+            return quantity * excel_huf_value
+        return excel_huf_value
+    return calculate_huf_value(quantity, unit_net_price, currency)
+
+
+def calculate_line_net_amount(quantity, unit_price):
+    if quantity is not None and unit_price is not None:
+        return quantity * unit_price
+    return None
+
+
+def device_currency_totals(devices):
+    totals = {
+        "net_huf": 0,
+        "net_eur": 0,
+        "gross_huf": 0,
+        "gross_eur": 0,
+        "missing_currency_count": 0,
+    }
+    for device in devices:
+        if device.currency not in {"HUF", "EUR"}:
+            totals["missing_currency_count"] += 1
+            continue
+        currency_key = device.currency.lower()
+        if device.total_net_price is not None:
+            totals[f"net_{currency_key}"] += device.total_net_price
+        if device.total_gross_price is not None:
+            totals[f"gross_{currency_key}"] += device.total_gross_price
+    return totals
+
+
+def line_net_amount(item):
+    if item.net_amount_huf is not None:
+        return item.net_amount_huf
+    return calculate_line_net_amount(item.quantity, item.unit_price_huf)
 
 
 def status_label(value):
@@ -1570,6 +2376,45 @@ def category_label(value):
 
 def device_display_label(device):
     return device.human_label
+
+
+def device_qr_mode_label(value):
+    return DEVICE_QR_MODE_LABELS.get(value, value)
+
+
+def whole_device_quantity(device):
+    if device.quantity is None or device.quantity <= 0 or not float(device.quantity).is_integer():
+        return None
+    return int(device.quantity)
+
+
+def device_quantity_supports_existing_units(device, quantity):
+    active_unit_count = sum(1 for unit in device.units if unit.archived_at is None)
+    if active_unit_count == 0:
+        return True
+    return (
+        quantity is not None
+        and float(quantity).is_integer()
+        and int(quantity) >= active_unit_count
+    )
+
+
+def default_unit_code_prefix(device):
+    value = device.asset_tag or f"DEVICE-{device.id}"
+    return re.sub(r"[^A-Za-z0-9]+", "-", value).strip("-").upper()
+
+
+def available_unit_codes(device_unit_model, prefix, start_number, count):
+    clean_prefix = re.sub(r"[^A-Za-z0-9]+", "-", prefix).strip("-").upper() or "UNIT"
+    width = max(3, len(str(start_number + count - 1)))
+    codes = []
+    number = max(start_number, 1)
+    while len(codes) < count:
+        code = f"{clean_prefix}-{number:0{width}d}"
+        if not device_unit_model.query.filter_by(unit_code=code).first():
+            codes.append(code)
+        number += 1
+    return codes
 
 
 def status_badge_class(value):
@@ -1747,7 +2592,7 @@ def build_project_pdf(project, devices, pdf_type):
         topMargin=1.2 * cm,
         bottomMargin=1.2 * cm,
     )
-    styles = getSampleStyleSheet()
+    styles = unicode_pdf_styles()
     story = []
     titles = {
         "equipment": "Projekt eszközlista",
@@ -1762,16 +2607,35 @@ def build_project_pdf(project, devices, pdf_type):
     story.append(Spacer(1, 0.4 * cm))
 
     if pdf_type == "equipment":
-        rows = [["Tétel", "Mennyiség", "Státusz", "Lokáció", "Érték HUF", "Megjegyzés"]]
+        rows = [
+            [
+                "Tétel",
+                "Mennyiség",
+                "Deviza",
+                "Egység nettó",
+                "Összes nettó",
+                "ÁFA %",
+                "Egység bruttó",
+                "Összes bruttó",
+                "Státusz",
+                "Lokáció",
+                "Megjegyzés",
+            ]
+        ]
         pdf_devices = devices
         for device in pdf_devices:
             rows.append(
                 [
                     device_display_label(device),
                     format_number(device.quantity),
+                    device.currency or "-",
+                    format_number(device.unit_net_price),
+                    format_number(device.total_net_price),
+                    format_number(device.vat_rate),
+                    format_number(device.unit_gross_price),
+                    format_number(device.total_gross_price),
                     status_label(device.status),
                     device.location.name if device.location else "-",
-                    format_number(device.huf_value),
                     device.assignment_notes or device.subtype_note or "-",
                 ]
             )
@@ -1790,7 +2654,7 @@ def build_project_pdf(project, devices, pdf_type):
                 ]
             )
     else:
-        rows = [["Beszállító", "Számlaszám", "Fizetve", "Érték HUF", "Tétel"]]
+        rows = [["Beszállító", "Számlaszám", "Fizetve", "Deviza", "Egység nettó", "Összes nettó", "ÁFA %", "Egység bruttó", "Összes bruttó", "Tétel"]]
         pdf_devices = devices
         for device in pdf_devices:
             invoice_number = device.supplier_invoice_number or device.shipping_invoice_number or "-"
@@ -1800,16 +2664,24 @@ def build_project_pdf(project, devices, pdf_type):
                     device.supplier_manufacturer or device.manufacturer or "-",
                     invoice_number,
                     paid,
-                    format_number(device.huf_value or device.invoice_value),
+                    device.currency or "-",
+                    format_number(device.unit_net_price),
+                    format_number(device.total_net_price),
+                    format_number(device.vat_rate),
+                    format_number(device.unit_gross_price),
+                    format_number(device.total_gross_price),
                     device.product_name or device.model or device.asset_tag or "-",
                 ]
             )
-        total_value = sum(device.huf_value or 0 for device in devices)
+        totals = device_currency_totals(devices)
         unpaid_count = sum(1 for device in devices if is_financially_open(device))
         story.append(
             Paragraph(
                 pdf_escape(
-                    f"Összes projektérték: {format_number(total_value)} HUF, nyitott számlás tételek: {unpaid_count}"
+                    "Összes nettó projektérték: "
+                    f"{format_number(totals['net_huf'])} HUF, "
+                    f"{format_number(totals['net_eur'])} EUR; "
+                    f"nyitott számlás tételek: {unpaid_count}"
                 ),
                 styles["Normal"],
             )
@@ -1817,7 +2689,7 @@ def build_project_pdf(project, devices, pdf_type):
         story.append(Spacer(1, 0.3 * cm))
 
     if len(rows) == 1:
-        rows.append(["Nincs megjeleníthető tétel.", "", "", "", "", ""][: len(rows[0])])
+        rows.append(["Nincs megjeleníthető tétel."] + [""] * (len(rows[0]) - 1))
 
     table = Table([[pdf_cell(cell, styles) for cell in row] for row in rows], repeatRows=1)
     table.setStyle(
@@ -1825,7 +2697,7 @@ def build_project_pdf(project, devices, pdf_type):
             [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e9eef5")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#1d2733")),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTNAME", (0, 0), (-1, 0), PDF_FONT_BOLD),
                 ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cbd3df")),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f9fb")]),
@@ -1847,6 +2719,350 @@ def build_project_pdf(project, devices, pdf_type):
     doc.build(story)
     buffer.seek(0)
     return buffer
+
+
+def build_device_unit_labels_pdf(device, units, unit_urls):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=1.2 * cm,
+        leftMargin=1.2 * cm,
+        topMargin=1.2 * cm,
+        bottomMargin=1.2 * cm,
+    )
+    styles = unicode_pdf_styles()
+    rows = []
+    current_row = []
+    for unit in units:
+        qr_buffer = BytesIO()
+        qr = qrcode.QRCode(
+            version=None,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=8,
+            border=3,
+        )
+        qr.add_data(unit_urls[unit.id])
+        qr.make(fit=True)
+        qr.make_image(fill_color="#21182f", back_color="white").save(qr_buffer, format="PNG")
+        qr_buffer.seek(0)
+        qr_image = Image(qr_buffer, width=3.3 * cm, height=3.3 * cm)
+        title = unit.asset_tag or unit.unit_code
+        details = [
+            Paragraph(pdf_escape(title), styles["Heading3"]),
+            Paragraph(pdf_escape(device.product_name or device.model or device.asset_tag), styles["BodyText"]),
+            Paragraph(pdf_escape(f"Példány: {unit.unit_code}"), styles["BodyText"]),
+            Paragraph(pdf_escape(f"Sorozatszám: {unit.serial_number or '-'}"), styles["BodyText"]),
+            qr_image,
+        ]
+        current_row.append(details)
+        if len(current_row) == 2:
+            rows.append(current_row)
+            current_row = []
+    if current_row:
+        current_row.append("")
+        rows.append(current_row)
+
+    table = Table(rows, colWidths=[9.1 * cm, 9.1 * cm])
+    table.setStyle(
+        TableStyle(
+            [
+                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#6f42c1")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#d8d0e5")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("PADDING", (0, 0), (-1, -1), 8),
+            ]
+        )
+    )
+    doc.build([table])
+    buffer.seek(0)
+    return buffer
+
+
+def build_work_order_pdf(app, work_order):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=1.4 * cm,
+        leftMargin=1.4 * cm,
+        topMargin=1.6 * cm,
+        bottomMargin=1.8 * cm,
+        title=f"Munkalap {work_order.number}",
+    )
+    styles = unicode_pdf_styles()
+    styles["Title"].textColor = colors.HexColor("#5b3f92")
+    styles["Heading2"].textColor = colors.HexColor("#5b3f92")
+    story = []
+
+    logo_path = os.path.join(app.static_folder, "parkl-logo.png")
+    if os.path.exists(logo_path):
+        story.append(cropped_pdf_image(logo_path, max_width=3 * cm, max_height=1.8 * cm))
+        story.append(Spacer(1, 0.2 * cm))
+    story.append(Paragraph("Szerviz megrendelő / Munkalap / Jegyzőkönyv", styles["Title"]))
+    story.append(Paragraph("Parkl Digital Technologies Kft. · 1051 Budapest, Arany János utca 15.", styles["Normal"]))
+    story.append(Spacer(1, 0.35 * cm))
+
+    story.append(
+        work_order_pdf_key_value_table(
+            [
+                ("Munkalap száma", work_order.number),
+                ("Munkalap típusa", work_order_type_label(work_order.work_type)),
+                ("Létrehozás dátuma", work_order.created_date),
+                ("Munkavégzés dátuma", work_order.work_date),
+                ("Státusz", work_order_status_label(work_order.status)),
+            ],
+            styles,
+        )
+    )
+    story.append(Spacer(1, 0.3 * cm))
+
+    add_work_order_pdf_section(
+        story,
+        "Ügyfél adatok",
+        [
+            ("Ügyfél neve", work_order.customer_name),
+            ("Cím", work_order.customer_address),
+            ("Kapcsolattartó", work_order.contact_name),
+            ("Telefonszám", work_order.phone),
+            ("E-mail", work_order.email),
+        ],
+        styles,
+    )
+    add_work_order_pdf_section(
+        story,
+        "Helyszín",
+        [
+            ("Helyszín neve", work_order.site_name),
+            ("Cím", work_order.site_address),
+            ("Város", work_order.site_city),
+            ("Megjegyzés", work_order.site_notes),
+        ],
+        styles,
+    )
+    add_work_order_pdf_section(
+        story,
+        "Készülék adatok",
+        [
+            ("Gyártó", work_order.device_manufacturer),
+            ("Típus", work_order.device_type),
+            ("Gyári szám", work_order.device_serial_number),
+            ("Vásárlás dátuma", work_order.device_purchase_date),
+        ],
+        styles,
+    )
+    add_work_order_pdf_section(
+        story,
+        "Munkavégzés",
+        [
+            ("Érkezés időpontja", format_pdf_time(work_order.arrival_time)),
+            ("Távozás időpontja", format_pdf_time(work_order.departure_time)),
+            ("Helyszínen töltött idő", format_duration(work_order.duration_minutes)),
+            ("Munkát végezte", work_order.technician_name),
+            ("Második technikus", work_order.second_technician),
+            ("Alvállalkozó", work_order.subcontractor),
+        ],
+        styles,
+    )
+    add_work_order_pdf_text(story, "Hiba leírása", work_order.fault_description, styles)
+    add_work_order_pdf_text(story, "Elvégzett munka", work_order.work_performed, styles)
+    add_work_order_pdf_section(
+        story,
+        "Elszámolás és megjegyzés",
+        [
+            ("Munka elszámolása", work_order.labor_settlement),
+            ("Anyag elszámolása", work_order.material_settlement),
+            ("Megjegyzés", work_order.notes),
+        ],
+        styles,
+    )
+
+    story.append(Paragraph("Felhasznált anyagok", styles["Heading2"]))
+    material_rows = [["Anyag megnevezése", "Cikkszám", "Mennyiség", "Mértékegység", "Megjegyzés"]]
+    for item in work_order.materials:
+        material_rows.append(
+            [item.name, item.item_number or "-", format_number(item.quantity), item.unit or "-", item.notes or "-"]
+        )
+    if len(material_rows) == 1:
+        material_rows.append(["Nincs rögzített anyag.", "", "", "", ""])
+    story.append(work_order_pdf_table(material_rows, styles))
+    story.append(Spacer(1, 0.3 * cm))
+
+    story.append(Paragraph("Mérések", styles["Heading2"]))
+    measurement_rows = [["Mérés", "Érték", "Mértékegység", "Megjegyzés"]]
+    for item in work_order.measurements:
+        measurement_rows.append([item.name, item.value or "-", item.unit or "-", item.notes or "-"])
+    if len(measurement_rows) == 1:
+        measurement_rows.append(["Nincs rögzített mérés.", "", "", ""])
+    story.append(work_order_pdf_table(measurement_rows, styles))
+    story.append(Spacer(1, 0.4 * cm))
+
+    upload_dir = os.path.join(app.instance_path, WORK_ORDER_UPLOAD_SUBDIR)
+    signature_cells = []
+    for label, filename in (
+        ("Technikus aláírása", work_order.technician_signature_filename),
+        ("Ügyfél aláírása", work_order.customer_signature_filename),
+    ):
+        content = [Paragraph(pdf_escape(label), styles["Normal"])]
+        path = os.path.join(upload_dir, filename) if filename else None
+        if path and os.path.exists(path) and valid_image_file(path):
+            content.append(Image(path, width=6.5 * cm, height=2.4 * cm))
+        else:
+            content.append(Spacer(1, 2.4 * cm))
+        signature_cells.append(content)
+    signature_table = Table([signature_cells], colWidths=[8.5 * cm, 8.5 * cm])
+    signature_table.setStyle(
+        TableStyle(
+            [
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#cfc6df")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("PADDING", (0, 0), (-1, -1), 8),
+            ]
+        )
+    )
+    story.append(signature_table)
+
+    if work_order.photos:
+        story.append(PageBreak())
+        story.append(Paragraph("Fotódokumentáció", styles["Title"]))
+        for photo in work_order.photos:
+            path = os.path.join(upload_dir, photo.filename)
+            if not os.path.exists(path) or not valid_image_file(path):
+                continue
+            story.append(Paragraph(pdf_escape(work_order_photo_category_label(photo.category)), styles["Heading2"]))
+            story.append(Image(path, width=16 * cm, height=10 * cm, kind="proportional"))
+            story.append(Spacer(1, 0.35 * cm))
+
+    def footer(canvas, document):
+        canvas.saveState()
+        canvas.setFont(PDF_FONT_REGULAR, 8)
+        canvas.setFillColor(colors.HexColor("#6e647d"))
+        canvas.drawString(1.4 * cm, 0.8 * cm, f"Munkalap: {work_order.number}")
+        canvas.drawRightString(A4[0] - 1.4 * cm, 0.8 * cm, f"{document.page}. oldal")
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=footer, onLaterPages=footer)
+    buffer.seek(0)
+    return buffer
+
+
+def add_work_order_pdf_section(story, title, rows, styles):
+    story.append(Paragraph(pdf_escape(title), styles["Heading2"]))
+    story.append(work_order_pdf_key_value_table(rows, styles))
+    story.append(Spacer(1, 0.3 * cm))
+
+
+def add_work_order_pdf_text(story, title, text, styles):
+    story.append(Paragraph(pdf_escape(title), styles["Heading2"]))
+    story.append(Paragraph(pdf_escape(text or "-").replace("\n", "<br/>"), styles["BodyText"]))
+    story.append(Spacer(1, 0.3 * cm))
+
+
+def work_order_pdf_key_value_table(rows, styles):
+    data = [
+        [pdf_cell(label, styles), pdf_cell(value if value not in (None, "") else "-", styles)]
+        for label, value in rows
+    ]
+    table = Table(data, colWidths=[5 * cm, 12 * cm])
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f2eef8")),
+                ("FONTNAME", (0, 0), (0, -1), PDF_FONT_BOLD),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#d8d0e5")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("PADDING", (0, 0), (-1, -1), 5),
+            ]
+        )
+    )
+    return table
+
+
+def work_order_pdf_table(rows, styles):
+    table = Table([[pdf_cell(cell, styles) for cell in row] for row in rows], repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#5b3f92")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), PDF_FONT_BOLD),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#d8d0e5")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#faf8fd")]),
+                ("PADDING", (0, 0), (-1, -1), 5),
+            ]
+        )
+    )
+    return table
+
+
+def format_pdf_time(value):
+    return value.strftime("%H:%M") if value else "-"
+
+
+def unicode_pdf_styles():
+    register_pdf_fonts()
+    styles = getSampleStyleSheet()
+    for style in styles.byName.values():
+        style.fontName = PDF_FONT_REGULAR
+        if style.name in {"Title", "Heading1", "Heading2", "Heading3", "Heading4"}:
+            style.fontName = PDF_FONT_BOLD
+    return styles
+
+
+def register_pdf_fonts():
+    if PDF_FONT_REGULAR in pdfmetrics.getRegisteredFontNames():
+        return
+    font_dir = os.path.join(os.path.dirname(reportlab.__file__), "fonts")
+    regular_path = first_existing_path(
+        [
+            os.environ.get("PDF_FONT_REGULAR_PATH"),
+            "/System/Library/Fonts/Supplemental/Arial.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            os.path.join(font_dir, "Vera.ttf"),
+        ]
+    )
+    bold_path = first_existing_path(
+        [
+            os.environ.get("PDF_FONT_BOLD_PATH"),
+            "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            os.path.join(font_dir, "VeraBd.ttf"),
+        ]
+    )
+    pdfmetrics.registerFont(TTFont(PDF_FONT_REGULAR, regular_path))
+    pdfmetrics.registerFont(TTFont(PDF_FONT_BOLD, bold_path))
+    pdfmetrics.registerFontFamily(
+        PDF_FONT_REGULAR,
+        normal=PDF_FONT_REGULAR,
+        bold=PDF_FONT_BOLD,
+        italic=PDF_FONT_REGULAR,
+        boldItalic=PDF_FONT_BOLD,
+    )
+
+
+def first_existing_path(paths):
+    for path in paths:
+        if path and os.path.exists(path):
+            return path
+    raise RuntimeError("Nem található használható PDF betűkészlet.")
+
+
+def cropped_pdf_image(path, max_width, max_height):
+    with PILImage.open(path) as source:
+        source.load()
+        if source.mode in {"RGBA", "LA"}:
+            alpha = source.getchannel("A")
+            bounding_box = alpha.getbbox()
+        else:
+            bounding_box = source.getbbox()
+        cropped = source.crop(bounding_box) if bounding_box else source.copy()
+        image_buffer = BytesIO()
+        cropped.save(image_buffer, format="PNG")
+        image_buffer.seek(0)
+        width, height = cropped.size
+    scale = min(max_width / width, max_height / height)
+    return Image(image_buffer, width=width * scale, height=height * scale)
 
 
 def pdf_escape(value):
@@ -1901,6 +3117,8 @@ def device_form_data(form):
         "quantity": quantity,
         "unit_net_price": unit_net_price,
         "currency": currency,
+        "vat_rate": optional_float(form.get("vat_rate")),
+        "qr_mode": form.get("qr_mode", "group").strip() or "group",
         "huf_value": huf_value
         if huf_value is not None
         else calculate_huf_value(quantity, unit_net_price, currency),
@@ -1943,7 +3161,12 @@ def update_unassigned_invoice_from_form(item, form):
     item.description = form.get("description", "").strip() or None
     item.quantity = optional_float(form.get("quantity"))
     item.unit_price_huf = optional_float(form.get("unit_price_huf"))
-    item.net_amount_huf = optional_float(form.get("net_amount_huf"))
+    net_amount_huf = optional_float(form.get("net_amount_huf"))
+    item.net_amount_huf = (
+        net_amount_huf
+        if net_amount_huf is not None
+        else calculate_line_net_amount(item.quantity, item.unit_price_huf)
+    )
     item.vat_amount_huf = optional_float(form.get("vat_amount_huf"))
     item.line_gross_amount_huf = optional_float(form.get("line_gross_amount_huf"))
     item.assignment_status = assignment_status
@@ -2153,7 +3376,12 @@ def parse_inventory_row(sheet_name, row_number, row, header_map):
         "quantity": quantity,
         "unit_net_price": unit_net_price,
         "currency": currency.upper() if currency else None,
-        "huf_value": huf_value,
+        "huf_value": calculate_imported_huf_value(
+            quantity,
+            unit_net_price,
+            currency.upper() if currency else None,
+            huf_value,
+        ),
         "project_code": project_code,
         "notes": clean_string(row_note),
         "order_date": date_value(first_value(row, header_map, ["rendeles napja"])),
@@ -2198,6 +3426,11 @@ def parse_unassigned_invoice_row(sheet_name, row_number, row, header_map):
     line_gross_amount_huf = number_value(
         first_value(row, header_map, ["szamla sor brutto osszeg huf"])
     )
+    quantity = number_value(first_value(row, header_map, ["mennyiseg"]))
+    unit_price_huf = number_value(first_value(row, header_map, ["egysegar huf"]))
+    net_amount_huf = number_value(
+        first_value(row, header_map, ["szamla sor netto osszeg huf"])
+    )
     if not any([invoice_number, partner, description, line_gross_amount_huf]):
         return None
 
@@ -2216,11 +3449,11 @@ def parse_unassigned_invoice_row(sheet_name, row_number, row, header_map):
         ),
         "currency": clean_string(first_value(row, header_map, ["penznem", "deviza"])),
         "description": description,
-        "quantity": number_value(first_value(row, header_map, ["mennyiseg"])),
-        "unit_price_huf": number_value(first_value(row, header_map, ["egysegar huf"])),
-        "net_amount_huf": number_value(
-            first_value(row, header_map, ["szamla sor netto osszeg huf"])
-        ),
+        "quantity": quantity,
+        "unit_price_huf": unit_price_huf,
+        "net_amount_huf": net_amount_huf
+        if net_amount_huf is not None
+        else calculate_line_net_amount(quantity, unit_price_huf),
         "vat_amount_huf": number_value(
             first_value(row, header_map, ["szamla sor afa osszeg huf"])
         ),

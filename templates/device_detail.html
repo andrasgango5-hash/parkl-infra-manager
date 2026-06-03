@@ -68,6 +68,7 @@
         <div><strong>Altípus:</strong> {{ device.subtype_note or "-" }}</div>
         <div><strong>Beszállító / gyártó:</strong> {{ device.supplier_manufacturer or device.manufacturer or "-" }}</div>
         <div><strong>Verzió:</strong> {{ device.version or "-" }}</div>
+        <div><strong>QR mód:</strong> {{ device_qr_mode_label(device.qr_mode) }}</div>
         <div><strong>Projekt:</strong> {{ device.project.code if device.project else "-" }}</div>
         <div><strong>Készlethely:</strong> {{ device.location.name if device.location else "-" }}</div>
         <div><strong>Forráslap:</strong> {{ device.source_sheet or "-" }}</div>
@@ -79,8 +80,12 @@
       <div class="section-title"><h2>Beszerzés és pénzügy</h2></div>
       <div class="p-3 detail-grid">
         <div><strong>Mennyiség:</strong> {{ format_number(device.quantity) }}</div>
-        <div><strong>Nettó egységár:</strong> {{ format_number(device.unit_net_price) }} {{ device.currency or "" }}</div>
-        <div><strong>Érték (HUF):</strong> {{ format_number(device.huf_value) }}</div>
+        <div><strong>Deviza:</strong> {{ device.currency or "hiányzik" }}</div>
+        <div><strong>Egység nettó érték:</strong> {{ format_number(device.unit_net_price) }}{% if device.currency %} {{ device.currency }}{% endif %}</div>
+        <div><strong>Összes nettó érték:</strong> {{ format_number(device.total_net_price) }}{% if device.currency and device.total_net_price is not none %} {{ device.currency }}{% endif %}</div>
+        <div><strong>ÁFA:</strong> {{ format_number(device.vat_rate) }}{% if device.vat_rate is not none %}%{% endif %}</div>
+        <div><strong>Egység bruttó érték:</strong> {{ format_number(device.unit_gross_price) }}{% if device.currency and device.unit_gross_price is not none %} {{ device.currency }}{% endif %}</div>
+        <div><strong>Összes bruttó érték:</strong> {{ format_number(device.total_gross_price) }}{% if device.currency and device.total_gross_price is not none %} {{ device.currency }}{% endif %}</div>
         <div><strong>Megrendelve:</strong> {{ yes_no_label(device.is_ordered) }}</div>
         <div><strong>Megérkezett:</strong> {{ yes_no_label(device.has_arrived) }}</div>
         <div><strong>Rendelés napja:</strong> {{ device.order_date or "-" }}</div>
@@ -89,15 +94,46 @@
         <div><strong>Beszállítói számla:</strong> {{ device.supplier_invoice_number or "-" }} / {{ yes_no_label(device.supplier_invoice_paid) }}</div>
         <div><strong>Szállítmányozói számla:</strong> {{ device.shipping_invoice_number or "-" }} / {{ yes_no_label(device.shipping_invoice_paid) }}</div>
       </div>
+      {% if not device.currency %}
+        <div class="alert alert-warning mx-3 mb-3">Az összérték nem számolható, mert nincs megadva deviza.</div>
+      {% endif %}
     </section>
   </div>
 </div>
 
-{% set qr_image_url = url_for('device_qr', device_id=device.id) %}
-{% set qr_download_url = url_for('device_qr', device_id=device.id, download=1) %}
-{% set qr_alt = device_display_label(device) ~ ' QR-kódja' %}
-{% set label_url = url_for('device_label', device_id=device.id) %}
-{% include "_qr_card.html" %}
+{% if device.quantity and device.quantity > 1 %}
+  <div class="alert alert-warning">
+    Ez egy több darabos tétel. Ha egyedi QR vagy egyedi követés kell, hozz létre példányokat.
+  </div>
+{% endif %}
+
+<section class="data-section mb-4">
+  <div class="section-title">
+    <h2>Eszközpéldányok</h2>
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('device_units_create', device_id=device.id) }}"><i class="bi bi-plus-circle"></i> Példányok létrehozása</a>
+      <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_units', device_id=device.id) }}"><i class="bi bi-list-ul"></i> Példányok listázása</a>
+      {% if units %}
+        <a class="btn btn-info btn-sm btn-icon" href="{{ url_for('device_unit_labels_pdf', device_id=device.id) }}"><i class="bi bi-printer"></i> QR címkék nyomtatása</a>
+      {% endif %}
+    </div>
+  </div>
+  <div class="p-3">
+    <div class="row g-3">
+      <div class="col-md-4"><div class="metric"><span>Csoportos mennyiség</span><strong>{{ format_number(device.quantity) }}</strong></div></div>
+      <div class="col-md-4"><div class="metric"><span>Létrehozott példányok</span><strong>{{ units|length }}</strong></div></div>
+      <div class="col-md-4"><div class="metric"><span>QR stratégia</span><strong class="fs-6">{{ device_qr_mode_label(device.qr_mode) }}</strong></div></div>
+    </div>
+  </div>
+</section>
+
+{% if device.qr_mode != "none" %}
+  {% set qr_image_url = url_for('device_qr', device_id=device.id) %}
+  {% set qr_download_url = url_for('device_qr', device_id=device.id, download=1) %}
+  {% set qr_alt = device_display_label(device) ~ ' QR-kódja' %}
+  {% set label_url = url_for('device_label', device_id=device.id) %}
+  {% include "_qr_card.html" %}
+{% endif %}
 
 <section class="data-section">
   <div class="section-title"><h2>Mozgástörténet</h2></div>

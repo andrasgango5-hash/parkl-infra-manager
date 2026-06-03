@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}{{ "Munkalap szerkesztése" if work_order else "Új munkalap" }}{% endblock %}
+
+{% block content %}
+{% set source = work_order or template %}
+<div class="page-header">
+  <div><h1>{{ "Munkalap szerkesztése" if work_order else "Új munkalap" }}</h1><p class="text-secondary mb-0">{% if template %}Sablon: {{ template.name }}{% else %}Önálló helyszíni jegyzőkönyv{% endif %}</p></div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('work_order_detail', work_order_id=work_order.id) if work_order else url_for('work_orders') }}">Mégse</a>
+</div>
+
+<form method="post" enctype="multipart/form-data" class="work-order-form" data-work-order-form>
+  <section class="data-section mb-4">
+    <div class="section-title"><h2>Fejléc adatok</h2></div>
+    <div class="p-3 row g-3">
+      <div class="col-md-4"><label class="form-label" for="number">Munkalap száma</label><input class="form-control" id="number" name="number" value="{{ work_order.number if work_order else suggested_number }}" required></div>
+      <div class="col-md-4"><label class="form-label" for="work_type">Munkalap típusa</label><select class="form-select" id="work_type" name="work_type" required>{% for value, label in work_order_types.items() %}<option value="{{ value }}" {% if source and source.work_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      <div class="col-md-4"><label class="form-label" for="status">Státusz</label><select class="form-select" id="status" name="status">{% for value, label in work_order_statuses.items() %}<option value="{{ value }}" {% if work_order and work_order.status == value %}selected{% elif not work_order and value == "draft" %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      <div class="col-md-4"><label class="form-label" for="created_date">Létrehozás dátuma</label><input class="form-control" id="created_date" name="created_date" type="date" value="{{ work_order.created_date if work_order else current_date }}"></div>
+      <div class="col-md-4"><label class="form-label" for="work_date">Munkavégzés dátuma</label><input class="form-control" id="work_date" name="work_date" type="date" value="{{ work_order.work_date if work_order and work_order.work_date else '' }}"></div>
+    </div>
+  </section>
+
+  <div class="row g-4">
+    <div class="col-xl-6">
+      <section class="data-section mb-4"><div class="section-title"><h2>Ügyfél adatok</h2></div><div class="p-3 row g-3">
+        <div class="col-12"><label class="form-label" for="customer_name">Ügyfél neve</label><input class="form-control" id="customer_name" name="customer_name" value="{{ work_order.customer_name if work_order else '' }}"></div>
+        <div class="col-12"><label class="form-label" for="customer_address">Ügyfél címe</label><input class="form-control" id="customer_address" name="customer_address" value="{{ work_order.customer_address if work_order else '' }}"></div>
+        <div class="col-md-6"><label class="form-label" for="contact_name">Kapcsolattartó</label><input class="form-control" id="contact_name" name="contact_name" value="{{ work_order.contact_name if work_order else '' }}"></div>
+        <div class="col-md-6"><label class="form-label" for="phone">Telefonszám</label><input class="form-control" id="phone" name="phone" value="{{ work_order.phone if work_order else '' }}"></div>
+        <div class="col-12"><label class="form-label" for="email">E-mail</label><input class="form-control" id="email" name="email" type="email" value="{{ work_order.email if work_order else '' }}"></div>
+      </div></section>
+    </div>
+    <div class="col-xl-6">
+      <section class="data-section mb-4"><div class="section-title"><h2>Helyszín</h2></div><div class="p-3 row g-3">
+        <div class="col-12"><label class="form-label" for="site_name">Helyszín neve</label><input class="form-control" id="site_name" name="site_name" value="{{ work_order.site_name if work_order else '' }}"></div>
+        <div class="col-md-8"><label class="form-label" for="site_address">Cím</label><input class="form-control" id="site_address" name="site_address" value="{{ work_order.site_address if work_order else '' }}"></div>
+        <div class="col-md-4"><label class="form-label" for="site_city">Város</label><input class="form-control" id="site_city" name="site_city" value="{{ work_order.site_city if work_order else '' }}"></div>
+        <div class="col-12"><label class="form-label" for="site_notes">Megjegyzés</label><textarea class="form-control" id="site_notes" name="site_notes" rows="2">{{ work_order.site_notes if work_order else '' }}</textarea></div>
+      </div></section>
+    </div>
+  </div>
+
+  <section class="data-section mb-4"><div class="section-title"><h2>Készülék adatok</h2><span class="text-secondary small">A referencia Excel alapján opcionális</span></div><div class="p-3 row g-3">
+    <div class="col-md-3"><label class="form-label" for="device_manufacturer">Gyártó</label><input class="form-control" id="device_manufacturer" name="device_manufacturer" value="{{ work_order.device_manufacturer if work_order else '' }}"></div>
+    <div class="col-md-3"><label class="form-label" for="device_type">Típus</label><input class="form-control" id="device_type" name="device_type" value="{{ work_order.device_type if work_order else '' }}"></div>
+    <div class="col-md-3"><label class="form-label" for="device_serial_number">Gyári szám</label><input class="form-control" id="device_serial_number" name="device_serial_number" value="{{ work_order.device_serial_number if work_order else '' }}"></div>
+    <div class="col-md-3"><label class="form-label" for="device_purchase_date">Vásárlás dátuma</label><input class="form-control" id="device_purchase_date" name="device_purchase_date" type="date" value="{{ work_order.device_purchase_date if work_order and work_order.device_purchase_date else '' }}"></div>
+  </div></section>
+
+  <section class="data-section mb-4"><div class="section-title"><h2>Munkavégzés</h2></div><div class="p-3 row g-3">
+    <div class="col-md-3"><label class="form-label" for="arrival_time">Érkezés időpontja</label><input class="form-control" id="arrival_time" name="arrival_time" type="time" value="{{ work_order.arrival_time.strftime('%H:%M') if work_order and work_order.arrival_time else '' }}"></div>
+    <div class="col-md-3"><label class="form-label" for="departure_time">Távozás időpontja</label><input class="form-control" id="departure_time" name="departure_time" type="time" value="{{ work_order.departure_time.strftime('%H:%M') if work_order and work_order.departure_time else '' }}"></div>
+    <div class="col-md-3"><label class="form-label">Helyszínen töltött idő</label><input class="form-control" data-duration-output readonly value="{{ format_duration(work_order.duration_minutes) if work_order else '-' }}"></div>
+    <div class="col-md-3"><label class="form-label" for="labor_settlement">Munka elszámolása</label><input class="form-control" id="labor_settlement" name="labor_settlement" value="{{ work_order.labor_settlement if work_order else '' }}" placeholder="pl. garanciális / térítéses"></div>
+    <div class="col-md-3"><label class="form-label" for="material_settlement">Anyag elszámolása</label><input class="form-control" id="material_settlement" name="material_settlement" value="{{ work_order.material_settlement if work_order else '' }}" placeholder="pl. garanciális / térítéses"></div>
+    <div class="col-md-3"><label class="form-label" for="technician_name">Technikus neve</label><input class="form-control" id="technician_name" name="technician_name" value="{{ work_order.technician_name if work_order else '' }}"></div>
+    <div class="col-md-3"><label class="form-label" for="second_technician">Második technikus</label><input class="form-control" id="second_technician" name="second_technician" value="{{ work_order.second_technician if work_order else '' }}"></div>
+    <div class="col-md-3"><label class="form-label" for="subcontractor">Alvállalkozó</label><input class="form-control" id="subcontractor" name="subcontractor" value="{{ work_order.subcontractor if work_order else '' }}"></div>
+  </div></section>
+
+  <section class="data-section mb-4"><div class="section-title"><h2>Hiba leírása</h2></div><div class="p-3"><textarea class="form-control" id="fault_description" name="fault_description" rows="6">{{ work_order.fault_description if work_order else (template.fault_description if template else '') }}</textarea></div></section>
+  <section class="data-section mb-4"><div class="section-title"><h2>Elvégzett munka</h2></div><div class="p-3"><textarea class="form-control" id="work_performed" name="work_performed" rows="8">{{ work_order.work_performed if work_order else (template.work_performed if template else '') }}</textarea></div></section>
+
+  {% include "_work_order_rows.html" %}
+
+  <section class="data-section mb-4"><div class="section-title"><h2>Fotók</h2></div><div class="p-3 row g-3">
+    {% for value, label in photo_categories.items() %}<div class="col-md-4"><label class="form-label" for="photos_{{ value }}">{{ label }}</label><input class="form-control" id="photos_{{ value }}" name="photos_{{ value }}" type="file" accept="image/png,image/jpeg,image/webp" multiple></div>{% endfor %}
+    {% if work_order and work_order.photos %}<div class="col-12"><div class="row g-3">{% for photo in work_order.photos %}<div class="col-md-3"><div class="photo-tile"><img src="{{ url_for('work_order_file', filename=photo.filename) }}" alt="{{ work_order_photo_category_label(photo.category) }}"><label class="form-check mt-2"><input class="form-check-input" type="checkbox" name="delete_photo_ids[]" value="{{ photo.id }}"> Fotó törlése</label></div></div>{% endfor %}</div></div>{% endif %}
+  </div></section>
+
+  <section class="data-section mb-4"><div class="section-title"><h2>Digitális aláírás</h2></div><div class="p-3 row g-4">
+    <div class="col-lg-6"><label class="form-label">Technikus</label><canvas class="signature-canvas" data-signature-canvas="technician_signature"></canvas><input type="hidden" name="technician_signature"><button class="btn btn-outline-secondary btn-sm mt-2" type="button" data-clear-signature="technician_signature">Törlés</button></div>
+    <div class="col-lg-6"><label class="form-label">Ügyfél</label><canvas class="signature-canvas" data-signature-canvas="customer_signature"></canvas><input type="hidden" name="customer_signature"><button class="btn btn-outline-secondary btn-sm mt-2" type="button" data-clear-signature="customer_signature">Törlés</button></div>
+  </div></section>
+
+  <section class="data-section mb-4"><div class="section-title"><h2>Megjegyzés</h2></div><div class="p-3"><textarea class="form-control" id="notes" name="notes" rows="3">{{ work_order.notes if work_order else (template.notes if template else '') }}</textarea></div></section>
+
+  <div class="d-flex gap-2 justify-content-end"><a class="btn btn-outline-secondary" href="{{ url_for('work_orders') }}">Mégse</a><button class="btn btn-purple btn-icon" type="submit"><i class="bi bi-save"></i> Mentés</button></div>
+</form>
+
+<script src="{{ url_for('static', filename='work_orders.js') }}"></script>
+{% endblock %}

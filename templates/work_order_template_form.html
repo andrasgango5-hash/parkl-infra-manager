@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}{{ "Sablon szerkesztése" if template else "Új munkalap sablon" }}{% endblock %}
+
+{% block content %}
+<div class="page-header"><div><h1>{{ "Sablon szerkesztése" if template else "Új munkalap sablon" }}</h1><p class="text-secondary mb-0">A sablon gyakori szövegeket, anyagokat és méréseket tölthet elő.</p></div><a class="btn btn-outline-secondary" href="{{ url_for('work_order_templates') }}">Mégse</a></div>
+<form method="post" class="work-order-form" data-work-order-form>
+  <section class="data-section mb-4"><div class="section-title"><h2>Sablon adatok</h2></div><div class="p-3 row g-3">
+    <div class="col-md-6"><label class="form-label" for="name">Sablon neve</label><input class="form-control" id="name" name="name" value="{{ template.name if template else '' }}" required placeholder="pl. AC töltő karbantartás"></div>
+    <div class="col-md-6"><label class="form-label" for="work_type">Munkalap típusa</label><select class="form-select" id="work_type" name="work_type"><option value="">Nincs előre kitöltve</option>{% for value, label in work_order_types.items() %}<option value="{{ value }}" {% if template and template.work_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="col-12"><label class="form-label" for="fault_description">Hiba leírása / alap szöveg</label><textarea class="form-control" id="fault_description" name="fault_description" rows="4">{{ template.fault_description if template else '' }}</textarea></div>
+    <div class="col-12"><label class="form-label" for="work_performed">Elvégzett munka / alap szöveg</label><textarea class="form-control" id="work_performed" name="work_performed" rows="6">{{ template.work_performed if template else '' }}</textarea></div>
+    <div class="col-12"><label class="form-label" for="notes">Megjegyzés</label><textarea class="form-control" id="notes" name="notes" rows="2">{{ template.notes if template else '' }}</textarea></div>
+  </div></section>
+  {% set work_order = none %}
+  {% set template_materials = [] if not template else template_json_rows(template, "materials_json") %}
+  {% set template_measurements = [] if not template else template_json_rows(template, "measurements_json") %}
+  {% include "_work_order_rows.html" %}
+  <div class="d-flex justify-content-end gap-2"><a class="btn btn-outline-secondary" href="{{ url_for('work_order_templates') }}">Mégse</a><button class="btn btn-purple btn-icon" type="submit"><i class="bi bi-save"></i> Mentés</button></div>
+</form>
+<script src="{{ url_for('static', filename='work_orders.js') }}"></script>
+{% endblock %}

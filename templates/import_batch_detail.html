@@ -42,7 +42,7 @@
   <div class="section-title"><h2>Importált eszközök</h2></div>
   <div class="table-responsive">
     <table class="table table-hover align-middle">
-      <thead><tr><th>Forrás</th><th>Sor</th><th>Azonosító</th><th>Termék</th><th>Státusz</th><th></th></tr></thead>
+      <thead><tr><th>Forrás</th><th>Sor</th><th>Azonosító</th><th>Termék</th><th>Mennyiség</th><th>Deviza</th><th>Egység nettó</th><th>Összes nettó</th><th>ÁFA</th><th>Egység bruttó</th><th>Összes bruttó</th><th>Státusz</th><th></th></tr></thead>
       <tbody>
         {% for device in devices %}
           <tr>
@@ -50,12 +50,19 @@
             <td>{{ device.source_row_number or "-" }}</td>
             <td class="fw-semibold">{{ device.asset_tag }}</td>
             <td>{{ device_display_label(device) }}</td>
+            <td>{{ format_number(device.quantity) }}</td>
+            <td>{{ device.currency or "-" }}</td>
+            <td>{{ format_number(device.unit_net_price) }}</td>
+            <td>{{ format_number(device.total_net_price) }}</td>
+            <td>{{ format_number(device.vat_rate) }}{% if device.vat_rate is not none %}%{% endif %}</td>
+            <td>{{ format_number(device.unit_gross_price) }}</td>
+            <td>{{ format_number(device.total_gross_price) }}</td>
             <td><span class="status-badge {{ 'status-neutral' if device.archived_at else status_badge_class(device.status) }}">{{ "Archiválva" if device.archived_at else status_label(device.status) }}</span></td>
             <td><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_detail', device_id=device.id) }}">Részletek</a></td>
           </tr>
         {% else %}
           <tr>
-            <td colspan="6">
+            <td colspan="13">
               <div class="empty-state">
                 <strong>Nincs importált eszköz.</strong>
                 <span>Ebben az importcsomagban nem jött létre eszközrekord.</span>
@@ -72,7 +79,7 @@
   <div class="section-title"><h2>Importált gazdátlan számlasorok</h2></div>
   <div class="table-responsive">
     <table class="table table-hover align-middle">
-      <thead><tr><th>Forrás</th><th>Sor</th><th>Számlaszám</th><th>Partner</th><th>Megnevezés</th><th>Státusz</th></tr></thead>
+      <thead><tr><th>Forrás</th><th>Sor</th><th>Számlaszám</th><th>Partner</th><th>Megnevezés</th><th>Mennyiség</th><th>Egység nettó HUF</th><th>Összes nettó HUF</th><th>Összes bruttó HUF</th><th>Státusz</th></tr></thead>
       <tbody>
         {% for item in invoice_items %}
           <tr>
@@ -81,11 +88,15 @@
             <td class="fw-semibold">{{ item.invoice_number or "-" }}</td>
             <td>{{ item.partner or "-" }}</td>
             <td>{{ item.description or "-" }}</td>
+            <td>{{ format_number(item.quantity) }}</td>
+            <td>{{ format_number(item.unit_price_huf) }}</td>
+            <td>{{ format_number(line_net_amount(item)) }}</td>
+            <td>{{ format_number(item.line_gross_amount_huf) }}</td>
             <td><span class="status-badge status-reserved">{{ "Archiválva" if item.archived_at else assignment_status_label(item.assignment_status) }}</span></td>
           </tr>
         {% else %}
           <tr>
-            <td colspan="6">
+            <td colspan="10">
               <div class="empty-state">
                 <strong>Nincs importált számlasor.</strong>
                 <span>Ebben az importcsomagban nem jött létre gazdátlan számlasor.</span>

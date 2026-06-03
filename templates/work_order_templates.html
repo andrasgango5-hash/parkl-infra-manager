@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}Munkalap sablonok{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div><h1>Munkalap sablonok</h1><p class="text-secondary mb-0">Gyakori karbantartási és hibaelhárítási szövegek gyors újrafelhasználása.</p></div>
+  <div class="d-flex gap-2"><a class="btn btn-outline-secondary" href="{{ url_for('work_orders') }}">Munkalapok</a><a class="btn btn-purple btn-icon" href="{{ url_for('work_order_template_new') }}"><i class="bi bi-plus-circle"></i> Új sablon</a></div>
+</div>
+
+<section class="data-section"><div class="section-title"><h2>Aktív sablonok</h2></div><div class="table-responsive"><table class="table table-hover align-middle">
+  <thead><tr><th>Név</th><th>Típus</th><th>Hiba leírás</th><th>Elvégzett munka</th><th>Műveletek</th></tr></thead>
+  <tbody>
+    {% for template in templates %}<tr>
+      <td class="fw-semibold">{{ template.name }}</td><td>{{ work_order_type_label(template.work_type) if template.work_type else "-" }}</td>
+      <td>{{ (template.fault_description or "-")|truncate(80) }}</td><td>{{ (template.work_performed or "-")|truncate(80) }}</td>
+      <td class="text-nowrap"><a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('work_order_new', template_id=template.id) }}"><i class="bi bi-copy"></i> Munkalap készítése</a> <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('work_order_template_edit', template_id=template.id) }}">Szerkesztés</a> <form method="post" action="{{ url_for('work_order_template_archive', template_id=template.id) }}" class="d-inline"><button class="btn btn-outline-danger btn-sm" type="submit" data-confirm="Biztosan archiválod ezt a sablont?">Archiválás</button></form></td>
+    </tr>{% else %}<tr><td colspan="5"><div class="empty-state"><strong>Még nincs munkalap sablon.</strong><span>Hozz létre sablont például AC töltő karbantartáshoz vagy kábelcseréhez.</span><a class="btn btn-purple btn-sm" href="{{ url_for('work_order_template_new') }}">Új sablon</a></div></td></tr>{% endfor %}
+  </tbody>
+</table></div></section>
+{% endblock %}

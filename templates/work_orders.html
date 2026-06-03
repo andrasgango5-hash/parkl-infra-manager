@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Munkalapok{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Munkalapok</h1>
+    <p class="text-secondary mb-0">Karbantartások, hibajavítások, kiszállások és egyéb helyszíni munkák önálló jegyzőkönyvei.</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-outline-secondary btn-icon" href="{{ url_for('work_order_templates') }}"><i class="bi bi-files"></i> Munkalap sablonok</a>
+    <a class="btn btn-purple btn-icon" href="{{ url_for('work_order_new') }}"><i class="bi bi-plus-circle"></i> Új munkalap</a>
+  </div>
+</div>
+
+<div class="help-box mb-4">
+  <i class="bi bi-clipboard2-check"></i>
+  <div><strong>Itt válthatók ki a korábbi Excel munkalapok.</strong> A munkalap nem igényel projektkapcsolatot: önállóan dokumentálhat régi munkát, karbantartást, kábelcserét vagy hibajavítást.</div>
+</div>
+
+<section class="data-section">
+  <div class="section-title"><h2>Keresés és szűrés</h2></div>
+  <form method="get" class="filter-bar">
+    <div><label class="form-label" for="q">Keresés</label><input class="form-control form-control-sm" id="q" name="q" value="{{ search }}" placeholder="Munkalapszám, ügyfél, helyszín, technikus"></div>
+    <div><label class="form-label" for="date_from">Dátumtól</label><input class="form-control form-control-sm" id="date_from" name="date_from" type="date" value="{{ date_from or '' }}"></div>
+    <div><label class="form-label" for="date_to">Dátumig</label><input class="form-control form-control-sm" id="date_to" name="date_to" type="date" value="{{ date_to or '' }}"></div>
+    <div><label class="form-label" for="work_type">Típus</label><select class="form-select form-select-sm" id="work_type" name="work_type"><option value="">Minden típus</option>{% for value, label in work_order_types.items() %}<option value="{{ value }}" {% if selected_work_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div><label class="form-label" for="status">Státusz</label><select class="form-select form-select-sm" id="status" name="status"><option value="">Minden státusz</option>{% for value, label in work_order_statuses.items() %}<option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="filter-actions"><button class="btn btn-purple btn-sm btn-icon" type="submit"><i class="bi bi-funnel"></i> Szűrés</button><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('work_orders') }}">Alaphelyzet</a></div>
+  </form>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Munkalap</th><th>Típus</th><th>Munkavégzés</th><th>Ügyfél</th><th>Helyszín</th><th>Technikus</th><th>Státusz</th><th>Műveletek</th></tr></thead>
+      <tbody>
+        {% for work_order in work_orders %}
+          <tr>
+            <td class="fw-semibold">{{ work_order.number }}</td>
+            <td>{{ work_order_type_label(work_order.work_type) }}</td>
+            <td>{{ work_order.work_date or "-" }}</td>
+            <td>{{ work_order.customer_name or "-" }}</td>
+            <td>{{ work_order.site_name or work_order.site_address or "-" }}</td>
+            <td>{{ work_order.technician_name or "-" }}</td>
+            <td><span class="status-badge status-neutral">{{ work_order_status_label(work_order.status) }}</span></td>
+            <td class="text-nowrap">
+              <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('work_order_detail', work_order_id=work_order.id) }}" data-bs-toggle="tooltip" data-bs-title="Munkalap megnyitása"><i class="bi bi-eye"></i></a>
+              <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('work_order_edit', work_order_id=work_order.id) }}" data-bs-toggle="tooltip" data-bs-title="Munkalap szerkesztése"><i class="bi bi-pencil"></i></a>
+              <a class="btn btn-export btn-sm btn-icon" href="{{ url_for('work_order_pdf', work_order_id=work_order.id) }}" data-bs-toggle="tooltip" data-bs-title="PDF generálása"><i class="bi bi-file-earmark-pdf"></i></a>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="8"><div class="empty-state"><strong>Még nincs munkalap.</strong><span>Hozd létre az első helyszíni jegyzőkönyvet, vagy indulj egy sablonból.</span><div class="action-buttons"><a class="btn btn-purple btn-sm" href="{{ url_for('work_order_new') }}">Új munkalap</a><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('work_order_templates') }}">Sablonok megnyitása</a></div></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

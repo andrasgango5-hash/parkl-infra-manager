@@ -84,6 +84,7 @@ class User(db.Model):
 
     movements = db.relationship("StockMovement", back_populates="created_by")
     import_batches = db.relationship("ImportBatch", back_populates="imported_by")
+    work_orders = db.relationship("WorkOrder", back_populates="created_by")
 
 
 class Project(db.Model):
@@ -151,6 +152,8 @@ class Device(db.Model):
     unit_net_price = db.Column(db.Float, nullable=True)
     currency = db.Column(db.String(12), nullable=True)
     huf_value = db.Column(db.Float, nullable=True)
+    vat_rate = db.Column(db.Float, nullable=True)
+    qr_mode = db.Column(db.String(20), default="group", nullable=False)
     assignment_quantity = db.Column(db.Float, nullable=True)
     assignment_notes = db.Column(db.Text, nullable=True)
     order_date = db.Column(db.Date, nullable=True)
@@ -194,6 +197,12 @@ class Device(db.Model):
         "UnassignedInvoiceItem", back_populates="assigned_device"
     )
     import_batch = db.relationship("ImportBatch", back_populates="devices")
+    units = db.relationship(
+        "DeviceUnit",
+        back_populates="device",
+        cascade="all, delete-orphan",
+        order_by="DeviceUnit.unit_code",
+    )
 
     @property
     def human_label(self):
@@ -216,6 +225,67 @@ class Device(db.Model):
     @property
     def display_name(self):
         return self.human_label
+
+    @property
+    def total_net_price(self):
+        if self.currency not in {"HUF", "EUR"}:
+            return None
+        if self.quantity is not None and self.unit_net_price is not None:
+            return self.quantity * self.unit_net_price
+        if self.currency == "HUF" and self.huf_value is not None:
+            return self.huf_value
+        return None
+
+    @property
+    def unit_gross_price(self):
+        if (
+            self.currency not in {"HUF", "EUR"}
+            or self.unit_net_price is None
+            or self.vat_rate is None
+        ):
+            return None
+        return self.unit_net_price * (1 + self.vat_rate / 100)
+
+    @property
+    def total_gross_price(self):
+        if self.total_net_price is None or self.vat_rate is None:
+            return None
+        return self.total_net_price * (1 + self.vat_rate / 100)
+
+
+class DeviceUnit(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    device_id = db.Column(db.Integer, db.ForeignKey("device.id"), nullable=False, index=True)
+    unit_code = db.Column(db.String(120), unique=True, nullable=False, index=True)
+    serial_number = db.Column(db.String(120), nullable=True, index=True)
+    asset_tag = db.Column(db.String(80), nullable=True, index=True)
+    notes = db.Column(db.Text, nullable=True)
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    archived_at = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    device = db.relationship("Device", back_populates="units")
+
+    @property
+    def human_label(self):
+        parts = [self.unit_code]
+        for value in (
+            self.asset_tag,
+            self.serial_number,
+            self.device.product_name if self.device else None,
+        ):
+            if value and value not in parts:
+                parts.append(value)
+        return " – ".join(parts)
 
 
 class StockMovement(db.Model):
@@ -340,6 +410,150 @@ class ImportBatch(db.Model):
     unassigned_invoice_items = db.relationship(
         "UnassignedInvoiceItem", back_populates="import_batch"
     )
+
+
+class WorkOrder(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    number = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    work_type = db.Column(db.String(40), nullable=False, index=True)
+    created_date = db.Column(db.Date, nullable=False)
+    work_date = db.Column(db.Date, nullable=True, index=True)
+    status = db.Column(db.String(40), default="draft", nullable=False, index=True)
+
+    customer_name = db.Column(db.String(160), nullable=True, index=True)
+    customer_address = db.Column(db.String(255), nullable=True)
+    contact_name = db.Column(db.String(160), nullable=True)
+    phone = db.Column(db.String(80), nullable=True)
+    email = db.Column(db.String(160), nullable=True)
+
+    site_name = db.Column(db.String(160), nullable=True, index=True)
+    site_address = db.Column(db.String(255), nullable=True)
+    site_city = db.Column(db.String(120), nullable=True)
+    site_notes = db.Column(db.Text, nullable=True)
+
+    device_manufacturer = db.Column(db.String(160), nullable=True)
+    device_type = db.Column(db.String(160), nullable=True)
+    device_serial_number = db.Column(db.String(160), nullable=True)
+    device_purchase_date = db.Column(db.Date, nullable=True)
+
+    arrival_time = db.Column(db.Time, nullable=True)
+    departure_time = db.Column(db.Time, nullable=True)
+    fault_description = db.Column(db.Text, nullable=True)
+    work_performed = db.Column(db.Text, nullable=True)
+    labor_settlement = db.Column(db.String(80), nullable=True)
+    material_settlement = db.Column(db.String(80), nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+
+    technician_name = db.Column(db.String(160), nullable=True, index=True)
+    second_technician = db.Column(db.String(160), nullable=True)
+    subcontractor = db.Column(db.String(160), nullable=True)
+    technician_signature_filename = db.Column(db.String(255), nullable=True)
+    customer_signature_filename = db.Column(db.String(255), nullable=True)
+    pdf_generated_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    archived_at = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    created_by = db.relationship("User", back_populates="work_orders")
+    materials = db.relationship(
+        "WorkOrderMaterial",
+        back_populates="work_order",
+        cascade="all, delete-orphan",
+        order_by="WorkOrderMaterial.id",
+    )
+    measurements = db.relationship(
+        "WorkOrderMeasurement",
+        back_populates="work_order",
+        cascade="all, delete-orphan",
+        order_by="WorkOrderMeasurement.id",
+    )
+    photos = db.relationship(
+        "WorkOrderPhoto",
+        back_populates="work_order",
+        cascade="all, delete-orphan",
+        order_by="WorkOrderPhoto.id",
+    )
+
+    @property
+    def duration_minutes(self):
+        if self.arrival_time is None or self.departure_time is None:
+            return None
+        start = datetime.combine(datetime.today(), self.arrival_time)
+        end = datetime.combine(datetime.today(), self.departure_time)
+        if end < start:
+            return None
+        return int((end - start).total_seconds() // 60)
+
+
+class WorkOrderMaterial(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    work_order_id = db.Column(db.Integer, db.ForeignKey("work_order.id"), nullable=False)
+    name = db.Column(db.String(255), nullable=False)
+    item_number = db.Column(db.String(120), nullable=True)
+    quantity = db.Column(db.Float, nullable=True)
+    unit = db.Column(db.String(40), nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+
+    work_order = db.relationship("WorkOrder", back_populates="materials")
+
+
+class WorkOrderMeasurement(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    work_order_id = db.Column(db.Integer, db.ForeignKey("work_order.id"), nullable=False)
+    name = db.Column(db.String(160), nullable=False)
+    value = db.Column(db.String(120), nullable=True)
+    unit = db.Column(db.String(40), nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+
+    work_order = db.relationship("WorkOrder", back_populates="measurements")
+
+
+class WorkOrderPhoto(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    work_order_id = db.Column(db.Integer, db.ForeignKey("work_order.id"), nullable=False)
+    category = db.Column(db.String(40), nullable=False)
+    filename = db.Column(db.String(255), nullable=False)
+    caption = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    work_order = db.relationship("WorkOrder", back_populates="photos")
+
+
+class WorkOrderTemplate(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(160), unique=True, nullable=False, index=True)
+    work_type = db.Column(db.String(40), nullable=True)
+    fault_description = db.Column(db.Text, nullable=True)
+    work_performed = db.Column(db.Text, nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+    materials_json = db.Column(db.Text, nullable=True)
+    measurements_json = db.Column(db.Text, nullable=True)
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    archived_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
 
 @event.listens_for(StockMovement, "before_update")

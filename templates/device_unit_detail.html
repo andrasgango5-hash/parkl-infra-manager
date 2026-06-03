@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Eszközpéldány - {{ unit.unit_code }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ unit.unit_code }}</h1>
+    <p class="text-secondary mb-0">{{ device.product_name or device.model or device.asset_tag }}</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_unit_edit', unit_id=unit.id) }}"><i class="bi bi-pencil"></i> Szerkesztés</a>
+    <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_units', device_id=device.id) }}"><i class="bi bi-arrow-left"></i> Példánylista</a>
+  </div>
+</div>
+
+<div class="help-box">
+  Ez az adatlap az egyedi fizikai példányt azonosítja. A készletstátusz, projekt és készlethely a szülő csoportos tételből származik.
+</div>
+
+<div class="row g-4">
+  <div class="col-xl-7">
+    <section class="data-section">
+      <div class="section-title"><h2>Példány adatai</h2></div>
+      <div class="p-3 detail-grid">
+        <div><strong>Példányazonosító:</strong> {{ unit.unit_code }}</div>
+        <div><strong>Eszközazonosító:</strong> {{ unit.asset_tag or "-" }}</div>
+        <div><strong>Sorozatszám:</strong> {{ unit.serial_number or "-" }}</div>
+        <div><strong>Szülő tétel:</strong> <a href="{{ url_for('device_detail', device_id=device.id) }}">{{ device_display_label(device) }}</a></div>
+        <div><strong>Csoport státusza:</strong> <span class="status-badge {{ status_badge_class(device.status) }}">{{ status_label(device.status) }}</span></div>
+        <div><strong>Csoport projektje:</strong> {{ device.project.code if device.project else "-" }}</div>
+        <div><strong>Csoport készlethelye:</strong> {{ device.location.name if device.location else "-" }}</div>
+        <div><strong>Megjegyzés:</strong> {{ unit.notes or "-" }}</div>
+      </div>
+    </section>
+  </div>
+  <div class="col-xl-5">
+    {% set qr_image_url = url_for('device_unit_qr', unit_id=unit.id) %}
+    {% set qr_download_url = url_for('device_unit_qr', unit_id=unit.id, download=1) %}
+    {% set qr_alt = unit.unit_code ~ ' QR-kódja' %}
+    {% set label_url = url_for('device_unit_label', unit_id=unit.id) %}
+    {% include "_qr_card.html" %}
+  </div>
+</div>
+{% endblock %}

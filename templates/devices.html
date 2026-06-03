@@ -16,7 +16,7 @@
 
 <div class="row g-4">
   <div class="col-xl-4">
-    <form method="post" class="form-panel">
+    <form method="post" class="form-panel" data-device-price-form>
       <h2>Eszköz létrehozása</h2>
       <h3 class="form-section-title">Alapadatok</h3>
       <div class="row g-3">
@@ -61,6 +61,14 @@
           <label class="form-label" for="version">Verzió</label>
           <input class="form-control" id="version" name="version">
         </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="qr_mode">QR mód</label>
+          <select class="form-select" id="qr_mode" name="qr_mode">
+            <option value="none">Nincs QR</option>
+            <option value="group" selected>Csoport QR</option>
+            <option value="individual">Egyedi QR példányonként</option>
+          </select>
+        </div>
       </div>
 
       <h3 class="form-section-title">Mennyiség és érték</h3>
@@ -70,17 +78,40 @@
           <input class="form-control" id="quantity" name="quantity" type="number" step="0.01" min="0">
         </div>
         <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="unit_net_price">Nettó egységár</label>
+          <label class="form-label" for="unit_net_price">Egység nettó érték</label>
           <input class="form-control" id="unit_net_price" name="unit_net_price" type="number" step="0.01" min="0">
         </div>
         <div class="col-md-6 col-xl-12">
           <label class="form-label" for="currency">Deviza</label>
-          <input class="form-control" id="currency" name="currency" placeholder="HUF">
+          <select class="form-select" id="currency" name="currency">
+            <option value="">Nincs megadva</option>
+            <option value="HUF">HUF</option>
+            <option value="EUR">EUR</option>
+          </select>
         </div>
         <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="huf_value">Érték (HUF)</label>
-          <input class="form-control" id="huf_value" name="huf_value" type="number" step="0.01" min="0">
+          <label class="form-label" for="vat_rate">ÁFA %</label>
+          <select class="form-select" id="vat_rate" name="vat_rate">
+            <option value="">Nincs megadva</option>
+            <option value="0">0%</option>
+            <option value="5">5%</option>
+            <option value="18">18%</option>
+            <option value="27">27%</option>
+          </select>
         </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="total_net_price_preview">Összes nettó érték</label>
+          <input class="form-control" id="total_net_price_preview" data-price-output="total-net" readonly>
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="unit_gross_price_preview">Egység bruttó érték</label>
+          <input class="form-control" id="unit_gross_price_preview" data-price-output="unit-gross" readonly>
+        </div>
+        <div class="col-md-6 col-xl-12">
+          <label class="form-label" for="total_gross_price_preview">Összes bruttó érték</label>
+          <input class="form-control" id="total_gross_price_preview" data-price-output="total-gross" readonly>
+        </div>
+        <div class="col-12"><div class="form-text">Az összes nettó és bruttó értéket a rendszer a mennyiség, az egységár, a deviza és az ÁFA alapján számolja.</div></div>
       </div>
 
       <h3 class="form-section-title">Projekt hozzárendelés</h3>
@@ -267,7 +298,10 @@
       </form>
       <div class="summary-strip">
         <span>Látható eszközök: <strong>{{ visible_summary.count }}</strong></span>
-        <span>Összérték: <strong>{{ format_number(visible_summary.huf_value) }} HUF</strong></span>
+        <span>Összes nettó: <strong>{{ format_number(visible_summary.net_huf) }} HUF</strong></span>
+        <span>Összes nettó: <strong>{{ format_number(visible_summary.net_eur) }} EUR</strong></span>
+        <span>Összes bruttó: <strong>{{ format_number(visible_summary.gross_huf) }} HUF</strong></span>
+        <span>Összes bruttó: <strong>{{ format_number(visible_summary.gross_eur) }} EUR</strong></span>
         <span>Nyitott számla: <strong>{{ visible_summary.unpaid_invoice_count }}</strong></span>
         <span>Beérkezésre vár: <strong>{{ visible_summary.awaiting_arrival_count }}</strong></span>
       </div>
@@ -279,6 +313,12 @@
               <th>Termék</th>
               <th class="mobile-hide">Kategória</th>
               <th class="mobile-hide">Mennyiség</th>
+              <th class="mobile-hide">Deviza</th>
+              <th class="mobile-hide">Egység nettó</th>
+              <th class="mobile-hide">Összes nettó</th>
+              <th class="mobile-hide">ÁFA</th>
+              <th class="mobile-hide">Egység bruttó</th>
+              <th class="mobile-hide">Összes bruttó</th>
               <th>Státusz</th>
               <th>Projekt</th>
               <th class="mobile-hide">Lokáció</th>
@@ -295,6 +335,12 @@
                 </td>
                 <td class="mobile-hide">{{ category_label(device.device_type) }}</td>
                 <td class="mobile-hide">{{ format_number(device.quantity) }}</td>
+                <td class="mobile-hide">{{ device.currency or "-" }}</td>
+                <td class="mobile-hide">{{ format_number(device.unit_net_price) }}</td>
+                <td class="mobile-hide">{{ format_number(device.total_net_price) }}</td>
+                <td class="mobile-hide">{{ format_number(device.vat_rate) }}{% if device.vat_rate is not none %}%{% endif %}</td>
+                <td class="mobile-hide">{{ format_number(device.unit_gross_price) }}</td>
+                <td class="mobile-hide">{{ format_number(device.total_gross_price) }}</td>
                 <td><span class="status-badge {{ status_badge_class(device.status) }}">{{ status_label(device.status) }}</span></td>
                 <td>{{ device.project.code if device.project else "-" }}</td>
                 <td class="mobile-hide">{{ device.location.name if device.location else "-" }}</td>
@@ -308,7 +354,7 @@
               </tr>
             {% else %}
               <tr>
-                <td colspan="8">
+                <td colspan="14">
                   <div class="empty-state">
                     <strong>Nincs eszköz ebben a nézetben.</strong>
                     <span>Rögzíts új tételt, importálj Excelt, vagy állítsd vissza a szűrőket.</span>

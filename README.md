@@ -46,7 +46,7 @@ Tiszta helyi demóadatok létrehozása:
 flask --app app reset-demo-data --yes
 ```
 
-Ez a parancs csak akkor fut, ha `FLASK_ENV` nem `production`. A meglévő projekt-, eszköz-, készlethely-, készletmozgás-, import- és gazdátlan számlasor adatokat törli, az admin felhasználót viszont megtartja vagy létrehozza. `--yes` nélkül megerősítést kér.
+Ez a parancs csak akkor fut, ha `FLASK_ENV` nem `production`. A meglévő projekt-, eszköz-, készlethely-, készletmozgás-, import-, munkalap- és gazdátlan számlasor adatokat törli, az admin felhasználót viszont megtartja vagy létrehozza. `--yes` nélkül megerősítést kér.
 
 Alkalmazás indítása:
 
@@ -90,6 +90,7 @@ Az alkalmazás böngészőben látható felülete magyar nyelvű. A fő menüpon
 - `Eszközök` - eszközök, bulk anyagok és importált készletsorok keresése, workflow nézetekkel
 - `Készlethelyek` - raktárak, helyszínek és egyéb készlethelyek kezelése
 - `Mozgások` - készletmozgások rögzítése és megtekintése
+- `Munkalapok` - önálló karbantartási, hibaelhárítási, kábelcsere- és helyszíni jegyzőkönyvek
 - `Gazdátlan számlasorok` - projekthez vagy eszközhöz még nem rendelt számlasorok nyilvántartása
 - `Excel import` - Parkl készletkezelő `.xlsx` feltöltése, dry-run előnézet és megerősített import
 
@@ -107,6 +108,28 @@ Javasolt Parkl munkafolyamat:
 6. Generálj PDF projektlistát, kiadási listát, telepítési listát vagy pénzügyi összesítőt.
 7. A `Gazdátlan számlasorok` és `Figyelmet igényel` oldalakkal zárd le a tisztázatlan pénzügyi és beszerzési tételeket.
 8. Téves vagy tesztimport esetén az importcsomag részletein használd az `Import visszavonása` gombot.
+
+## Munkalapok és jegyzőkönyvek
+
+A `Munkalapok` modul a korábbi Excel alapú szerviz megrendelő / munkalap / jegyzőkönyv fájlokat váltja ki. A munkalap önálló entitás, nem szükséges projekthez kapcsolni, ezért régi munkák, karbantartások, kiszállások, kábelcserék és hibajavítások dokumentálására is használható.
+
+A munkalapon rögzíthető:
+
+- munkalapszám, típus, dátum és státusz
+- ügyfél, kapcsolattartó és helyszín
+- opcionális készülékadatok: gyártó, típus, gyári szám, vásárlás dátuma
+- érkezés, távozás és automatikusan számított helyszíni idő
+- hiba leírása, elvégzett munka, elszámolási mód és megjegyzés
+- szabad szöveges anyaglista és dinamikus mérési sorok
+- technikusok, alvállalkozó, fotódokumentáció és digitális aláírások
+
+Használat:
+
+1. Nyisd meg a `Munkalapok` menüpontot.
+2. Hozz létre új munkalapot, vagy indulj a `Munkalap sablonok` egyikéből.
+3. Töltsd ki a helyszíni adatokat, anyagokat, méréseket, fotókat és aláírásokat.
+4. A munkalap részletein generáld a `MUNKALAP_<azonosító>.pdf` hivatalos jegyzőkönyvet.
+5. A lezárt vagy régi munkalapokat archiváld; ezek nem törlődnek fizikailag.
 
 Helyi kipróbáláshoz érdemes a `reset-demo-data` paranccsal indulni. A demo két projektet hoz létre (`PRK-001 - Arena EV Upgrade`, `PRK-002 - Office Park Sorompó projekt`), öt hasznos készlethelyet, hat érthető eszközt, hozzájuk tartozó bevételezési/készletmozgási naplót és két gazdátlan számlasort.
 
@@ -168,6 +191,17 @@ A tartós készletadatok adatbázisban tárolódnak. CSV fájlokat az alkalmazá
 
 Minden eszközrögzítés létrehoz egy `INBOUND` típusú `StockMovement` rekordot, és minden kézi készletművelet a Mozgások oldalon újabb `StockMovement` rekordot hoz létre. Az eszköz státusza csak készletmozgás létrehozásával változhat. A `StockMovement` rekordok nem módosíthatók, auditnaplóként kezelendők.
 
+### Csoportos eszköztételek és egyedi példányok
+
+A `Device` a beszerzési és készletnyilvántartási csoportos tétel. Több darabos fizikai eszköznél az eszköz adatlapján a **Példányok létrehozása** művelettel külön `DeviceUnit` példányok hozhatók létre.
+
+- A csoportos tétel mennyisége nem változik a példányok létrehozásakor.
+- Minden példány saját példányazonosítót, sorozatszámot, eszközazonosítót, QR-kódot és címkét kaphat.
+- A példányok státusza, projektje és készlethelye jelenleg a szülő eszköztételből származik.
+- A csoportos QR-kódok és a korábbi `/devices/<id>/qr` linkek továbbra is működnek.
+- A QR mód lehet: nincs QR, csoport QR vagy egyedi QR példányonként.
+- A példánylistából az összes egyedi QR-címke egy PDF-ben nyomtatható.
+
 Eszközstátuszok:
 
 - `IN_STOCK` - Raktáron
@@ -207,6 +241,12 @@ Státuszváltási szabályok:
 - `/dashboard` - workflow indítópult, gyors műveletek, figyelmet igénylő tételek és legutóbbi készletmozgások
 - `/projects` - projektek listázása és létrehozása
 - `/devices` - eszközök listázása, szűrése és létrehozása
+- `/devices/<id>/units` - egy csoportos eszköztétel egyedi fizikai példányai
+- `/devices/<id>/units/create` - példányok előnézete és megerősített létrehozása
+- `/devices/<id>/unit-labels.pdf` - az összes aktív példány QR-címkéje PDF-ben
+- `/device-units/<id>` - egyedi eszközpéldány adatlapja
+- `/device-units/<id>/qr` - egyedi eszközpéldány QR-kódja
+- `/device-units/<id>/label` - egyedi eszközpéldány nyomtatható címkéje
 - `/locations` - készlethelyek listázása és létrehozása
 - `/movements` - készletmozgások listázása és létrehozása
 - `/unassigned-invoices` - gazdátlan számlasorok listázása és létrehozása

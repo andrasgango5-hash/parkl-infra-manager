@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Munkalap - {{ work_order.number }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div><h1>{{ work_order.number }}</h1><p class="text-secondary mb-0">{{ work_order_type_label(work_order.work_type) }} · <span class="status-badge status-neutral">{{ work_order_status_label(work_order.status) }}</span></p></div>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-export btn-icon" href="{{ url_for('work_order_pdf', work_order_id=work_order.id) }}"><i class="bi bi-file-earmark-pdf"></i> PDF generálás</a>
+    <form method="post" action="{{ url_for('work_order_copy', work_order_id=work_order.id) }}"><button class="btn btn-outline-secondary btn-icon" type="submit"><i class="bi bi-copy"></i> Másolás</button></form>
+    <a class="btn btn-outline-secondary btn-icon" href="{{ url_for('work_order_edit', work_order_id=work_order.id) }}"><i class="bi bi-pencil"></i> Szerkesztés</a>
+    <form method="post" action="{{ url_for('work_order_archive', work_order_id=work_order.id) }}"><button class="btn btn-outline-danger btn-icon" type="submit" data-confirm="Biztosan archiválod ezt a munkalapot?"><i class="bi bi-archive"></i> Archiválás</button></form>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-xl-3"><div class="metric"><span>Munkavégzés dátuma</span><strong>{{ work_order.work_date or "-" }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="metric"><span>Helyszínen töltött idő</span><strong>{{ format_duration(work_order.duration_minutes) }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="metric"><span>Felhasznált anyagok</span><strong>{{ work_order.materials|length }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="metric"><span>Fotók</span><strong>{{ work_order.photos|length }}</strong></div></div>
+</div>
+
+<div class="row g-4">
+  <div class="col-xl-6"><section class="data-section mb-4"><div class="section-title"><h2>Ügyfél és helyszín</h2></div><div class="p-3 detail-grid">
+    <div><strong>Ügyfél:</strong> {{ work_order.customer_name or "-" }}</div><div><strong>Ügyfél címe:</strong> {{ work_order.customer_address or "-" }}</div>
+    <div><strong>Kapcsolattartó:</strong> {{ work_order.contact_name or "-" }}</div><div><strong>Telefonszám:</strong> {{ work_order.phone or "-" }}</div>
+    <div><strong>E-mail:</strong> {{ work_order.email or "-" }}</div><div><strong>Helyszín:</strong> {{ work_order.site_name or "-" }}</div>
+    <div><strong>Cím:</strong> {{ work_order.site_address or "-" }}</div><div><strong>Város:</strong> {{ work_order.site_city or "-" }}</div>
+  </div></section></div>
+  <div class="col-xl-6"><section class="data-section mb-4"><div class="section-title"><h2>Munkavégzés és készülék</h2></div><div class="p-3 detail-grid">
+    <div><strong>Érkezés:</strong> {{ work_order.arrival_time.strftime('%H:%M') if work_order.arrival_time else "-" }}</div><div><strong>Távozás:</strong> {{ work_order.departure_time.strftime('%H:%M') if work_order.departure_time else "-" }}</div>
+    <div><strong>Technikus:</strong> {{ work_order.technician_name or "-" }}</div><div><strong>Második technikus:</strong> {{ work_order.second_technician or "-" }}</div>
+    <div><strong>Alvállalkozó:</strong> {{ work_order.subcontractor or "-" }}</div><div><strong>Gyártó:</strong> {{ work_order.device_manufacturer or "-" }}</div>
+    <div><strong>Típus:</strong> {{ work_order.device_type or "-" }}</div><div><strong>Gyári szám:</strong> {{ work_order.device_serial_number or "-" }}</div>
+  </div></section></div>
+</div>
+
+<section class="data-section mb-4"><div class="section-title"><h2>Hiba leírása</h2></div><div class="p-3 text-preline">{{ work_order.fault_description or "-" }}</div></section>
+<section class="data-section mb-4"><div class="section-title"><h2>Elvégzett munka</h2></div><div class="p-3 text-preline">{{ work_order.work_performed or "-" }}</div></section>
+
+<section class="data-section mb-4"><div class="section-title"><h2>Felhasznált anyagok</h2></div><div class="table-responsive"><table class="table table-hover align-middle"><thead><tr><th>Megnevezés</th><th>Cikkszám</th><th>Mennyiség</th><th>Mértékegység</th><th>Megjegyzés</th></tr></thead><tbody>{% for item in work_order.materials %}<tr><td>{{ item.name }}</td><td>{{ item.item_number or "-" }}</td><td>{{ format_number(item.quantity) }}</td><td>{{ item.unit or "-" }}</td><td>{{ item.notes or "-" }}</td></tr>{% else %}<tr><td colspan="5">Nincs rögzített anyag.</td></tr>{% endfor %}</tbody></table></div></section>
+<section class="data-section mb-4"><div class="section-title"><h2>Mérések</h2></div><div class="table-responsive"><table class="table table-hover align-middle"><thead><tr><th>Mérés</th><th>Érték</th><th>Mértékegység</th><th>Megjegyzés</th></tr></thead><tbody>{% for item in work_order.measurements %}<tr><td>{{ item.name }}</td><td>{{ item.value or "-" }}</td><td>{{ item.unit or "-" }}</td><td>{{ item.notes or "-" }}</td></tr>{% else %}<tr><td colspan="4">Nincs rögzített mérés.</td></tr>{% endfor %}</tbody></table></div></section>
+
+{% if work_order.photos %}<section class="data-section mb-4"><div class="section-title"><h2>Fotódokumentáció</h2></div><div class="p-3 row g-3">{% for photo in work_order.photos %}<div class="col-md-4"><div class="photo-tile"><img src="{{ url_for('work_order_file', filename=photo.filename) }}" alt="{{ work_order_photo_category_label(photo.category) }}"><strong>{{ work_order_photo_category_label(photo.category) }}</strong></div></div>{% endfor %}</div></section>{% endif %}
+
+<section class="data-section"><div class="section-title"><h2>Elszámolás és megjegyzés</h2></div><div class="p-3 detail-grid"><div><strong>Munka:</strong> {{ work_order.labor_settlement or "-" }}</div><div><strong>Anyag:</strong> {{ work_order.material_settlement or "-" }}</div><div><strong>Megjegyzés:</strong> {{ work_order.notes or "-" }}</div><div><strong>PDF generálva:</strong> {{ work_order.pdf_generated_at.strftime('%Y-%m-%d %H:%M') if work_order.pdf_generated_at else "-" }}</div></div></section>
+{% endblock %}

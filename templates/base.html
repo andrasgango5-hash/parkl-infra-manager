@@ -9,41 +9,128 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
   </head>
   <body>
-    <nav class="navbar navbar-expand-lg navbar-dark app-navbar">
-      <div class="container-fluid">
-        <a class="navbar-brand fw-semibold" href="{{ url_for('dashboard') }}">
+    {% if current_user %}
+      {% set endpoint = request.endpoint or '' %}
+      {% set requested_section = request.args.get('section', '') %}
+      {% set dashboard_active = endpoint == 'dashboard' %}
+      {% set projects_active = endpoint in ['projects', 'project_detail', 'project_edit'] and requested_section != 'drawings' %}
+      {% set drawings_active = requested_section == 'drawings' or endpoint in ['project_drawing_create', 'project_drawing_editor', 'project_drawing_save', 'drawing_background'] %}
+      {% set devices_active = endpoint in ['devices', 'device_detail', 'device_edit', 'device_action'] and requested_section != 'qr' %}
+      {% set qr_active = requested_section == 'qr' or endpoint in ['device_qr', 'device_label', 'device_units', 'device_units_create', 'device_unit_detail', 'device_unit_edit', 'device_unit_qr', 'device_unit_label', 'device_unit_labels_pdf', 'location_qr', 'project_qr'] %}
+      {% set locations_active = endpoint in ['locations', 'location_detail', 'location_edit', 'location_archive'] %}
+      {% set movements_active = endpoint == 'movements' %}
+      {% set imports_active = endpoint in ['excel_import', 'import_batch_detail', 'import_batch_rollback', 'import_batch_archive'] %}
+      {% set work_orders_active = endpoint.startswith('work_order') and endpoint != 'work_order_pdf' and requested_section != 'pdf' %}
+      {% set attention_active = endpoint == 'attention' %}
+      {% set invoices_active = endpoint in ['unassigned_invoices', 'unassigned_invoice_edit', 'unassigned_invoice_archive'] %}
+
+      <header class="app-mobile-header">
+        <button class="btn sidebar-mobile-toggle" type="button" data-sidebar-toggle aria-controls="appSidebar" aria-expanded="false" aria-label="Navigáció megnyitása">
+          <i class="bi bi-list"></i>
+        </button>
+        <a class="app-mobile-brand" href="{{ url_for('dashboard') }}">
           <span class="brand-logo-frame">
             <img class="brand-logo" src="{{ url_for('static', filename='parkl-logo.png') }}" alt="Parkl" onerror="this.closest('.brand-logo-frame').classList.add('is-missing')">
             <span class="brand-mark">P</span>
           </span>
-          <span class="brand-text brand-text-logo">Infra Manager</span>
-          <span class="brand-text brand-text-fallback">Parkl Infra Manager</span>
+          <span>Infra Manager</span>
         </a>
-        {% if current_user %}
-          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Navigáció megnyitása">
-            <span class="navbar-toggler-icon"></span>
-          </button>
-          <div class="collapse navbar-collapse" id="mainNav">
-            <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-              <li class="nav-item"><a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">Áttekintés</a></li>
-              <li class="nav-item"><a class="nav-link {% if request.endpoint in ['projects', 'project_detail', 'project_edit', 'project_drawing_editor'] %}active{% endif %}" href="{{ url_for('projects') }}">Projektek</a></li>
-              <li class="nav-item"><a class="nav-link {% if request.endpoint in ['devices', 'device_detail', 'device_edit'] %}active{% endif %}" href="{{ url_for('devices') }}">Eszközök</a></li>
-              <li class="nav-item"><a class="nav-link {% if request.endpoint in ['locations', 'location_detail', 'location_edit'] %}active{% endif %}" href="{{ url_for('locations') }}">Készlethelyek</a></li>
-              <li class="nav-item"><a class="nav-link {% if request.endpoint == 'movements' %}active{% endif %}" href="{{ url_for('movements') }}">Mozgások</a></li>
-              <li class="nav-item"><a class="nav-link {% if request.endpoint in ['unassigned_invoices', 'unassigned_invoice_edit'] %}active{% endif %}" href="{{ url_for('unassigned_invoices') }}">Gazdátlan számlasorok</a></li>
-              <li class="nav-item"><a class="nav-link {% if request.endpoint in ['excel_import', 'import_batch_detail'] %}active{% endif %}" href="{{ url_for('excel_import') }}">Excel import</a></li>
-              <li class="nav-item"><a class="nav-link {% if request.endpoint == 'attention' %}active{% endif %}" href="{{ url_for('attention') }}">Figyelmet igényel</a></li>
-            </ul>
-            <form method="post" action="{{ url_for('logout') }}" class="d-flex align-items-center gap-2">
-              <span class="navbar-text small">{{ current_user.username }}</span>
-              <button class="btn btn-outline-light btn-sm" type="submit">Kijelentkezés</button>
-            </form>
-          </div>
-        {% endif %}
-      </div>
-    </nav>
+      </header>
 
-    <main class="container-fluid py-4 app-shell">
+      <div class="sidebar-backdrop" data-sidebar-close></div>
+      <aside class="app-sidebar" id="appSidebar">
+        <div class="sidebar-brand">
+          <a href="{{ url_for('dashboard') }}" aria-label="Parkl Infra Manager">
+            <span class="brand-logo-frame">
+              <img class="brand-logo" src="{{ url_for('static', filename='parkl-logo.png') }}" alt="Parkl" onerror="this.closest('.brand-logo-frame').classList.add('is-missing')">
+              <span class="brand-mark">P</span>
+            </span>
+            <span class="sidebar-brand-text"><strong>Infra Manager</strong><small>Parkl operations</small></span>
+          </a>
+          <button class="sidebar-close d-lg-none" type="button" data-sidebar-close aria-label="Navigáció bezárása"><i class="bi bi-x-lg"></i></button>
+        </div>
+
+        <nav class="sidebar-nav" aria-label="Fő navigáció">
+          <div class="sidebar-group">
+            <div class="sidebar-group-label">Áttekintés</div>
+            <a class="sidebar-link {% if dashboard_active %}active{% endif %}" href="{{ url_for('dashboard') }}" title="Dashboard">
+              <i class="bi bi-speedometer2"></i><span>Dashboard</span>
+            </a>
+          </div>
+
+          <div class="sidebar-group">
+            <div class="sidebar-group-label">Készlet</div>
+            <a class="sidebar-link {% if devices_active %}active{% endif %}" href="{{ url_for('devices') }}" title="Eszközök">
+              <i class="bi bi-boxes"></i><span>Eszközök</span>
+            </a>
+            <a class="sidebar-link {% if locations_active %}active{% endif %}" href="{{ url_for('locations') }}" title="Készlethelyek">
+              <i class="bi bi-buildings"></i><span>Készlethelyek</span>
+            </a>
+            <a class="sidebar-link {% if movements_active %}active{% endif %}" href="{{ url_for('movements') }}" title="Mozgások">
+              <i class="bi bi-arrow-left-right"></i><span>Mozgások</span>
+            </a>
+            <a class="sidebar-link {% if qr_active %}active{% endif %}" href="{{ url_for('devices', section='qr') }}" title="QR / címkék">
+              <i class="bi bi-qr-code"></i><span>QR / címkék</span>
+            </a>
+          </div>
+
+          <div class="sidebar-group">
+            <div class="sidebar-group-label">Projekt</div>
+            <a class="sidebar-link {% if projects_active %}active{% endif %}" href="{{ url_for('projects') }}" title="Projektek">
+              <i class="bi bi-kanban"></i><span>Projektek</span>
+            </a>
+            <a class="sidebar-link {% if drawings_active %}active{% endif %}" href="{{ url_for('projects', section='drawings') }}" title="Rajzok / tervező">
+              <i class="bi bi-map"></i><span>Rajzok / tervező</span>
+            </a>
+          </div>
+
+          <div class="sidebar-group">
+            <div class="sidebar-group-label">Dokumentáció</div>
+            <a class="sidebar-link {% if work_orders_active %}active{% endif %}" href="{{ url_for('work_orders') }}" title="Munkalapok">
+              <i class="bi bi-clipboard-check"></i><span>Munkalapok</span>
+            </a>
+            <a class="sidebar-link {% if requested_section == 'pdf' or endpoint in ['work_order_pdf', 'project_pdf'] %}active{% endif %}" href="{{ url_for('work_orders', section='pdf') }}" title="PDF-ek / jegyzőkönyvek">
+              <i class="bi bi-file-earmark-pdf"></i><span>PDF-ek / jegyzőkönyvek</span>
+            </a>
+          </div>
+
+          <div class="sidebar-group">
+            <div class="sidebar-group-label">Adatkezelés</div>
+            <a class="sidebar-link {% if imports_active %}active{% endif %}" href="{{ url_for('excel_import') }}" title="Importok">
+              <i class="bi bi-file-earmark-excel"></i><span>Importok</span>
+            </a>
+          </div>
+
+          {% if current_user.is_admin %}
+            <div class="sidebar-group">
+              <div class="sidebar-group-label">Admin</div>
+              <a class="sidebar-link {% if attention_active %}active{% endif %}" href="{{ url_for('attention') }}" title="Admin eszközök">
+                <i class="bi bi-gear"></i><span>Admin eszközök</span>
+              </a>
+              <a class="sidebar-link {% if invoices_active %}active{% endif %}" href="{{ url_for('unassigned_invoices') }}" title="Legacy funkciók">
+                <i class="bi bi-archive"></i><span>Legacy funkciók</span>
+              </a>
+            </div>
+          {% endif %}
+
+          <div class="sidebar-group">
+            <div class="sidebar-group-label">Támogatás</div>
+            <a class="sidebar-link" href="{{ url_for('dashboard') }}#workflow" title="Súgó / dokumentáció">
+              <i class="bi bi-question-circle"></i><span>Súgó / dokumentáció</span>
+            </a>
+          </div>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="sidebar-user"><i class="bi bi-person-circle"></i><span>{{ current_user.username }}</span></div>
+          <form method="post" action="{{ url_for('logout') }}">
+            <button class="sidebar-logout" type="submit" title="Kijelentkezés"><i class="bi bi-box-arrow-right"></i><span>Kijelentkezés</span></button>
+          </form>
+        </div>
+      </aside>
+    {% endif %}
+
+    <main class="container-fluid py-4 app-shell {% if current_user %}app-shell-with-sidebar{% endif %}">
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
           <div class="mb-3">
@@ -71,6 +158,61 @@
 
       document.querySelectorAll("[data-bs-toggle='tooltip']").forEach((element) => {
         new bootstrap.Tooltip(element);
+      });
+
+      const sidebar = document.querySelector("#appSidebar");
+      const sidebarToggle = document.querySelector("[data-sidebar-toggle]");
+      const closeSidebar = () => {
+        document.body.classList.remove("sidebar-open");
+        if (sidebarToggle) sidebarToggle.setAttribute("aria-expanded", "false");
+      };
+      if (sidebar && sidebarToggle) {
+        sidebarToggle.addEventListener("click", () => {
+          const willOpen = !document.body.classList.contains("sidebar-open");
+          document.body.classList.toggle("sidebar-open", willOpen);
+          sidebarToggle.setAttribute("aria-expanded", String(willOpen));
+        });
+        document.querySelectorAll("[data-sidebar-close]").forEach((element) => {
+          element.addEventListener("click", closeSidebar);
+        });
+        sidebar.querySelectorAll("a").forEach((link) => {
+          link.addEventListener("click", closeSidebar);
+        });
+      }
+
+      document.querySelectorAll("[data-device-price-form]").forEach((form) => {
+        const quantity = form.querySelector("[name='quantity']");
+        const unitNet = form.querySelector("[name='unit_net_price']");
+        const currency = form.querySelector("[name='currency']");
+        const vatRate = form.querySelector("[name='vat_rate']");
+        const totalNet = form.querySelector("[data-price-output='total-net']");
+        const unitGross = form.querySelector("[data-price-output='unit-gross']");
+        const totalGross = form.querySelector("[data-price-output='total-gross']");
+
+        const numberValue = (input) => input && input.value !== "" ? Number(input.value) : null;
+        const formatPrice = (value, selectedCurrency) => {
+          if (value === null || !Number.isFinite(value) || !selectedCurrency) return "";
+          return `${new Intl.NumberFormat("hu-HU", { maximumFractionDigits: 2 }).format(value)} ${selectedCurrency}`;
+        };
+        const updatePricePreview = () => {
+          const qty = numberValue(quantity);
+          const net = numberValue(unitNet);
+          const vat = numberValue(vatRate);
+          const selectedCurrency = currency ? currency.value : "";
+          const canCalculateNet = selectedCurrency && qty !== null && net !== null;
+          const calculatedTotalNet = canCalculateNet ? qty * net : null;
+          const calculatedUnitGross = selectedCurrency && net !== null && vat !== null ? net * (1 + vat / 100) : null;
+          const calculatedTotalGross = calculatedTotalNet !== null && vat !== null ? calculatedTotalNet * (1 + vat / 100) : null;
+
+          if (totalNet) totalNet.value = formatPrice(calculatedTotalNet, selectedCurrency);
+          if (unitGross) unitGross.value = formatPrice(calculatedUnitGross, selectedCurrency);
+          if (totalGross) totalGross.value = formatPrice(calculatedTotalGross, selectedCurrency);
+        };
+
+        [quantity, unitNet, currency, vatRate].forEach((input) => {
+          if (input) input.addEventListener("input", updatePricePreview);
+        });
+        updatePricePreview();
       });
     </script>
   </body>

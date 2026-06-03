@@ -1,0 +1,60 @@
+{% set material_rows = work_order.materials if work_order else template_materials %}
+{% set measurement_rows = work_order.measurements if work_order else template_measurements %}
+
+<section class="data-section mb-4">
+  <div class="section-title"><h2>Felhasznált anyagok</h2><button class="btn btn-outline-secondary btn-sm btn-icon" type="button" data-add-row="materials"><i class="bi bi-plus-circle"></i> Anyagsor</button></div>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead><tr><th>Anyag megnevezése</th><th>Cikkszám</th><th>Mennyiség</th><th>Mértékegység</th><th>Megjegyzés</th><th></th></tr></thead>
+      <tbody data-row-container="materials">
+        {% for item in material_rows %}
+          <tr>
+            <td><input class="form-control form-control-sm" name="material_name[]" value="{{ item.name if item.name is defined else item['name'] }}"></td>
+            <td><input class="form-control form-control-sm" name="material_item_number[]" value="{{ (item.item_number if item.item_number is defined else item.get('item_number', '')) or '' }}"></td>
+            <td><input class="form-control form-control-sm" name="material_quantity[]" type="number" step="0.01" value="{{ (item.quantity if item.quantity is defined else item.get('quantity', '')) or '' }}"></td>
+            <td><input class="form-control form-control-sm" name="material_unit[]" value="{{ (item.unit if item.unit is defined else item.get('unit', '')) or '' }}"></td>
+            <td><input class="form-control form-control-sm" name="material_notes[]" value="{{ (item.notes if item.notes is defined else item.get('notes', '')) or '' }}"></td>
+            <td><button class="btn btn-outline-danger btn-sm" type="button" data-remove-row><i class="bi bi-trash"></i></button></td>
+          </tr>
+        {% else %}
+          <tr>
+            <td><input class="form-control form-control-sm" name="material_name[]" placeholder="pl. UTP kábel"></td>
+            <td><input class="form-control form-control-sm" name="material_item_number[]"></td>
+            <td><input class="form-control form-control-sm" name="material_quantity[]" type="number" step="0.01"></td>
+            <td><input class="form-control form-control-sm" name="material_unit[]" placeholder="db / m"></td>
+            <td><input class="form-control form-control-sm" name="material_notes[]"></td>
+            <td><button class="btn btn-outline-danger btn-sm" type="button" data-remove-row><i class="bi bi-trash"></i></button></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="data-section mb-4">
+  <div class="section-title"><h2>Mérések</h2><button class="btn btn-outline-secondary btn-sm btn-icon" type="button" data-add-row="measurements"><i class="bi bi-plus-circle"></i> Mérési sor</button></div>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead><tr><th>Mérés</th><th>Érték</th><th>Mértékegység</th><th>Megjegyzés</th><th></th></tr></thead>
+      <tbody data-row-container="measurements">
+        {% for item in measurement_rows %}
+          <tr>
+            <td><input class="form-control form-control-sm" name="measurement_name[]" value="{{ item.name if item.name is defined else item['name'] }}"></td>
+            <td><input class="form-control form-control-sm" name="measurement_value[]" value="{{ (item.value if item.value is defined else item.get('value', '')) or '' }}"></td>
+            <td><input class="form-control form-control-sm" name="measurement_unit[]" value="{{ (item.unit if item.unit is defined else item.get('unit', '')) or '' }}"></td>
+            <td><input class="form-control form-control-sm" name="measurement_notes[]" value="{{ (item.notes if item.notes is defined else item.get('notes', '')) or '' }}"></td>
+            <td><button class="btn btn-outline-danger btn-sm" type="button" data-remove-row><i class="bi bi-trash"></i></button></td>
+          </tr>
+        {% else %}
+          <tr>
+            <td><input class="form-control form-control-sm" name="measurement_name[]" placeholder="pl. feszültség"></td>
+            <td><input class="form-control form-control-sm" name="measurement_value[]"></td>
+            <td><input class="form-control form-control-sm" name="measurement_unit[]" placeholder="V / A / Ω"></td>
+            <td><input class="form-control form-control-sm" name="measurement_notes[]"></td>
+            <td><button class="btn btn-outline-danger btn-sm" type="button" data-remove-row><i class="bi bi-trash"></i></button></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>

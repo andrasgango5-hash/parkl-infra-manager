@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Eszközpéldányok - {{ device_display_label(device) }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Eszközpéldányok</h1>
+    <p class="text-secondary mb-0">{{ device_display_label(device) }}</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('device_units_create', device_id=device.id) }}"><i class="bi bi-plus-circle"></i> Példányok létrehozása</a>
+    {% if units %}
+      <a class="btn btn-info btn-sm btn-icon" href="{{ url_for('device_unit_labels_pdf', device_id=device.id) }}"><i class="bi bi-printer"></i> QR címkék nyomtatása</a>
+    {% endif %}
+    <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_detail', device_id=device.id) }}"><i class="bi bi-arrow-left"></i> Vissza a tételhez</a>
+  </div>
+</div>
+
+<div class="help-box">
+  Ezek az egyedi fizikai példányok a csoportos eszköztételhez tartoznak. A státuszt, projektet és készlethelyet jelenleg a szülő tétel alapján mutatjuk.
+</div>
+
+<section class="data-section">
+  <div class="section-title"><h2>Példánylista</h2></div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Példányazonosító</th><th>Sorozatszám</th><th>Eszközazonosító</th><th>Státusz</th><th>Projekt</th><th>Készlethely</th><th>Műveletek</th></tr></thead>
+      <tbody>
+        {% for unit in units %}
+          <tr>
+            <td class="fw-semibold">{{ unit.unit_code }}</td>
+            <td>{{ unit.serial_number or "-" }}</td>
+            <td>{{ unit.asset_tag or "-" }}</td>
+            <td><span class="status-badge {{ status_badge_class(device.status) }}">{{ status_label(device.status) }}</span></td>
+            <td>{{ device.project.code if device.project else "-" }}</td>
+            <td>{{ device.location.name if device.location else "-" }}</td>
+            <td class="text-nowrap">
+              <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_unit_detail', unit_id=unit.id) }}" data-bs-toggle="tooltip" data-bs-title="Példány megnyitása"><i class="bi bi-eye"></i> Részletek</a>
+              <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_unit_edit', unit_id=unit.id) }}" data-bs-toggle="tooltip" data-bs-title="Példány szerkesztése"><i class="bi bi-pencil"></i> Szerkesztés</a>
+              <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_unit_qr', unit_id=unit.id, download=1) }}" data-bs-toggle="tooltip" data-bs-title="QR letöltése"><i class="bi bi-qr-code"></i> QR</a>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7"><div class="empty-state"><strong>Még nincs létrehozott példány.</strong><span>Hozd létre az egyedi példányokat, ha saját QR-kódra vagy címkére van szükség.</span><a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('device_units_create', device_id=device.id) }}"><i class="bi bi-plus-circle"></i> Példányok létrehozása</a></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Eszközpéldány szerkesztése{% endblock %}
+
+{% block content %}
+<div class="page-header"><div><h1>Eszközpéldány szerkesztése</h1><p class="text-secondary mb-0">{{ device_display_label(device) }}</p></div></div>
+<form method="post" class="form-panel">
+  <div class="row g-3">
+    <div class="col-md-4"><label class="form-label" for="unit_code">Példányazonosító</label><input class="form-control" id="unit_code" name="unit_code" value="{{ unit.unit_code }}" required></div>
+    <div class="col-md-4"><label class="form-label" for="asset_tag">Eszközazonosító</label><input class="form-control" id="asset_tag" name="asset_tag" value="{{ unit.asset_tag or '' }}"></div>
+    <div class="col-md-4"><label class="form-label" for="serial_number">Sorozatszám</label><input class="form-control" id="serial_number" name="serial_number" value="{{ unit.serial_number or '' }}"></div>
+    <div class="col-12"><label class="form-label" for="notes">Megjegyzés</label><textarea class="form-control" id="notes" name="notes" rows="4">{{ unit.notes or '' }}</textarea></div>
+  </div>
+  <div class="mt-3 d-flex flex-wrap gap-2">
+    <button class="btn btn-purple btn-icon" type="submit"><i class="bi bi-save"></i> Mentés</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('device_unit_detail', unit_id=unit.id) }}">Mégse</a>
+  </div>
+</form>
+<form method="post" action="{{ url_for('device_unit_archive', unit_id=unit.id) }}" class="mt-3">
+  <button class="btn btn-outline-danger btn-sm btn-icon" type="submit" data-confirm="Biztosan archiválod ezt az eszközpéldányt?"><i class="bi bi-trash"></i> Archiválás</button>
+</form>
+{% endblock %}
