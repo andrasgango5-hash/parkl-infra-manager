@@ -8,6 +8,7 @@ import unicodedata
 from uuid import uuid4
 
 import click
+import qrcode
 from flask import (
     abort,
     Flask,
@@ -496,6 +497,15 @@ def create_app(config_class=Config):
             download_name=filename,
         )
 
+    @app.route("/projects/<int:project_id>/qr")
+    @login_required
+    def project_qr(project_id):
+        project = Project.query.get_or_404(project_id)
+        return qr_png_response(
+            url_for("project_detail", project_id=project.id, _external=True),
+            f"{project.code}-qr.png",
+        )
+
     @app.route("/projects/<int:project_id>/drawings", methods=["POST"])
     @login_required
     def project_drawing_create(project_id):
@@ -765,6 +775,21 @@ def create_app(config_class=Config):
             locations=locations,
             categories=DEVICE_CATEGORIES,
         )
+
+    @app.route("/devices/<int:device_id>/qr")
+    @login_required
+    def device_qr(device_id):
+        device = Device.query.get_or_404(device_id)
+        return qr_png_response(
+            url_for("device_detail", device_id=device.id, _external=True),
+            f"{device.asset_tag}-qr.png",
+        )
+
+    @app.route("/devices/<int:device_id>/label")
+    @login_required
+    def device_label(device_id):
+        device = Device.query.get_or_404(device_id)
+        return render_template("device_label.html", device=device)
 
     @app.route("/devices/<int:device_id>/archive", methods=["POST"])
     @login_required
@@ -1170,6 +1195,15 @@ def create_app(config_class=Config):
             "location_edit.html",
             location=location,
             location_types=LOCATION_TYPE_LABELS,
+        )
+
+    @app.route("/locations/<int:location_id>/qr")
+    @login_required
+    def location_qr(location_id):
+        location = Location.query.get_or_404(location_id)
+        return qr_png_response(
+            url_for("location_detail", location_id=location.id, _external=True),
+            f"keszlethely-{location.id}-qr.png",
         )
 
     @app.route("/locations/<int:location_id>/archive", methods=["POST"])
@@ -1826,6 +1860,27 @@ def pdf_cell(value, styles):
 
 def now_utc():
     return datetime.now(timezone.utc)
+
+
+def qr_png_response(target_url, filename):
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(target_url)
+    qr.make(fit=True)
+    image = qr.make_image(fill_color="#21182f", back_color="white")
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    buffer.seek(0)
+    return send_file(
+        buffer,
+        mimetype="image/png",
+        as_attachment=request.args.get("download") == "1",
+        download_name=secure_filename(filename),
+    )
 
 
 def device_form_data(form):

@@ -939,6 +939,134 @@ tr:hover .table-item-icon {
   grid-template-columns: 1fr 1fr;
 }
 
+.qr-card-body {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.qr-code-image {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow-soft);
+  height: 156px;
+  padding: 0.45rem;
+  width: 156px;
+}
+
+.label-page {
+  background: var(--page);
+}
+
+.label-shell {
+  margin: 2rem auto;
+  max-width: 820px;
+  padding: 0 1rem;
+}
+
+.label-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-bottom: 1rem;
+}
+
+.device-label {
+  background: #fff;
+  border: 2px solid var(--purple);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.device-label-brand {
+  align-items: center;
+  background: linear-gradient(135deg, #160d24, #321958);
+  color: #fff;
+  display: flex;
+  font-weight: 800;
+  gap: 0.65rem;
+  padding: 0.7rem 1rem;
+}
+
+.device-label-brand img {
+  border-radius: 9px;
+  height: 38px;
+  object-fit: cover;
+  width: 46px;
+}
+
+.device-label-content {
+  align-items: center;
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: 1fr auto;
+  padding: 1.35rem;
+}
+
+.device-label-kicker {
+  color: var(--purple);
+  font-size: 0.75rem;
+  font-weight: 800;
+  margin-bottom: 0.25rem;
+  text-transform: uppercase;
+}
+
+.device-label h1 {
+  font-size: 1.55rem;
+  margin-bottom: 1rem;
+}
+
+.device-label dl {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.device-label dl div {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: 130px 1fr;
+}
+
+.device-label dt {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.device-label dd {
+  font-weight: 700;
+  margin: 0;
+}
+
+.device-label-qr {
+  height: 190px;
+  width: 190px;
+}
+
+@media print {
+  .label-page {
+    background: #fff;
+  }
+
+  .label-shell {
+    margin: 0;
+    max-width: none;
+    padding: 0;
+  }
+
+  .label-toolbar {
+    display: none;
+  }
+
+  .device-label {
+    box-shadow: none;
+    break-inside: avoid;
+  }
+}
+
 @media (max-width: 768px) {
   .page-header {
     align-items: flex-start;
@@ -961,6 +1089,15 @@ tr:hover .table-item-icon {
   .table td,
   .table th {
     padding: 0.75rem;
+  }
+
+  .device-label-content {
+    grid-template-columns: 1fr;
+  }
+
+  .device-label-qr {
+    height: 156px;
+    width: 156px;
   }
 }
 

@@ -1,0 +1,21 @@
+<section class="data-section qr-card mb-4">
+  <div class="section-title">
+    <h2><i class="bi bi-qr-code me-2"></i>QR-kód</h2>
+  </div>
+  <div class="p-3 qr-card-body">
+    <img class="qr-code-image" src="{{ qr_image_url }}" alt="{{ qr_alt }}">
+    <div>
+      <p class="text-secondary small mb-3">A kód beolvasásával közvetlenül megnyitható ez az adatlap.</p>
+      <div class="action-buttons">
+        <a class="btn btn-purple btn-sm btn-icon" href="{{ qr_download_url }}" download>
+          <i class="bi bi-download"></i> QR letöltése
+        </a>
+        {% if label_url %}
+          <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ label_url }}">
+            <i class="bi bi-printer"></i> Címke nyomtatása
+          </a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</section>

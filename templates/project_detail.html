@@ -25,6 +25,12 @@
   </div>
 </div>
 
+{% set qr_image_url = url_for('project_qr', project_id=project.id) %}
+{% set qr_download_url = url_for('project_qr', project_id=project.id, download=1) %}
+{% set qr_alt = project.code ~ ' projekt QR-kódja' %}
+{% set label_url = none %}
+{% include "_qr_card.html" %}
+
 <div class="row g-3 mb-4">
   <div class="col-6 col-xl-3"><div class="metric"><span>Eszközök</span><strong>{{ finance_summary.device_count }}</strong></div></div>
   <div class="col-6 col-xl-3"><div class="metric"><span>Érték (HUF)</span><strong>{{ format_number(finance_summary.huf_value) }}</strong></div></div>

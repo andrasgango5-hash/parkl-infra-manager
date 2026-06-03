@@ -93,6 +93,12 @@
   </div>
 </div>
 
+{% set qr_image_url = url_for('device_qr', device_id=device.id) %}
+{% set qr_download_url = url_for('device_qr', device_id=device.id, download=1) %}
+{% set qr_alt = device_display_label(device) ~ ' QR-kódja' %}
+{% set label_url = url_for('device_label', device_id=device.id) %}
+{% include "_qr_card.html" %}
+
 <section class="data-section">
   <div class="section-title"><h2>Mozgástörténet</h2></div>
   <div class="table-responsive">

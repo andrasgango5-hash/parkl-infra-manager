@@ -22,6 +22,12 @@
   </div>
 </section>
 
+{% set qr_image_url = url_for('location_qr', location_id=location.id) %}
+{% set qr_download_url = url_for('location_qr', location_id=location.id, download=1) %}
+{% set qr_alt = location.name ~ ' készlethely QR-kódja' %}
+{% set label_url = none %}
+{% include "_qr_card.html" %}
+
 <section class="data-section mb-4">
   <div class="section-title"><h2>Jelenlegi eszközök</h2></div>
   <div class="table-responsive">
