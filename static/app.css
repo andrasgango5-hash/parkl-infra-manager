@@ -1030,6 +1030,7 @@ body {
   border-radius: 999px;
 }
 
+.btn-move-inbound { border-color: #0f9f7a; color: #04785a; }
 .btn-move-reserve { border-color: #c79000; color: #7a5600; }
 .btn-move-issue { border-color: #2364d2; color: #174ea6; }
 .btn-move-install { border-color: #0b7285; color: #0b7285; }
@@ -1037,6 +1038,7 @@ body {
 .btn-move-service { border-color: #6f42c1; color: #6f42c1; }
 .btn-move-transfer { border-color: #25566b; color: #25566b; }
 
+.btn-move-inbound:hover { background: #dff9f1; }
 .btn-move-reserve:hover { background: #fff1d6; }
 .btn-move-issue:hover { background: #e8efff; }
 .btn-move-install:hover { background: #defaf8; }

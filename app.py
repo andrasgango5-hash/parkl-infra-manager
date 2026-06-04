@@ -295,8 +295,11 @@ def create_app(config_class=Config):
             "import_status_label": import_status_label,
             "yes_no_label": yes_no_label,
             "format_number": format_number,
+            "format_vat_rate": format_vat_rate,
             "line_net_amount": line_net_amount,
             "device_display_label": device_display_label,
+            "device_primary_label": device_primary_label,
+            "device_money_text": device_money_text,
             "device_qr_mode_label": device_qr_mode_label,
             "status_badge_class": status_badge_class,
             "movement_badge_class": movement_badge_class,
@@ -305,6 +308,7 @@ def create_app(config_class=Config):
             "work_order_photo_category_label": work_order_photo_category_label,
             "format_duration": format_duration,
             "template_json_rows": template_json_rows,
+            "available_device_movements": available_device_movements,
             "current_date": date.today().isoformat(),
         }
 
@@ -1650,7 +1654,7 @@ def create_app(config_class=Config):
         if movement_type not in MOVEMENT_TYPES:
             flash("Érvénytelen készletművelet.", "danger")
             return redirect(url_for("device_detail", device_id=device.id))
-        error = validate_movement(device, movement_type)
+        error = validate_movement(device, movement_type, to_location_id, project_id)
         if error:
             flash(error, "danger")
             return redirect(url_for("device_detail", device_id=device.id))
@@ -2089,7 +2093,7 @@ def create_app(config_class=Config):
             if device is None or not movement_type:
                 flash("Az eszköz és a mozgástípus kötelező.", "danger")
             else:
-                error = validate_movement(device, movement_type)
+                error = validate_movement(device, movement_type, to_location_id, project_id)
                 if error:
                     flash(error, "danger")
                 else:
@@ -2757,8 +2761,25 @@ def device_display_label(device):
     return device.human_label
 
 
+def device_primary_label(device):
+    return device.primary_label
+
+
 def device_qr_mode_label(value):
     return DEVICE_QR_MODE_LABELS.get(value, value)
+
+
+def available_device_movements(device):
+    transitions = {
+        "IN_STOCK": ["RESERVE", "ISSUE", "TRANSFER", "SERVICE", "SCRAP"],
+        "RESERVED": ["ISSUE", "RETURN", "SCRAP"],
+        "ISSUED": ["INSTALL", "RETURN", "TRANSFER"],
+        "INSTALLED": ["RETURN", "SERVICE", "SCRAP"],
+        "RETURNED": ["INBOUND", "TRANSFER", "ISSUE", "INSTALL"],
+        "IN_SERVICE": ["RETURN", "SCRAP"],
+        "SCRAPPED": [],
+    }
+    return transitions.get(device.status, [])
 
 
 def whole_device_quantity(device):
@@ -2853,6 +2874,44 @@ def format_number(value):
     return f"{value:,.2f}".replace(",", " ").replace(".", ",")
 
 
+def format_vat_rate(value):
+    if value is None:
+        return "Nincs megadva"
+    return f"{format_number(value)}%"
+
+
+def device_money_text(device, field):
+    value_map = {
+        "unit_net": device.unit_net_price,
+        "total_net": device.total_net_price,
+        "unit_gross": device.unit_gross_price,
+        "total_gross": device.total_gross_price,
+    }
+    value = value_map.get(field)
+    if value is not None:
+        currency = f" {device.currency}" if device.currency in DEVICE_CURRENCIES else ""
+        suffix = "" if currency else " (deviza hiányzik)"
+        return f"{format_number(value)}{currency}{suffix}"
+
+    if device.currency not in DEVICE_CURRENCIES:
+        return "Nem számolható: hiányzik a deviza"
+    if field == "total_net":
+        if device.quantity is None:
+            return "Nem számolható: hiányzik a mennyiség"
+        if device.unit_net_price is None and device.huf_value is None:
+            return "Nem számolható: hiányzik az egységár"
+    if field in {"unit_gross", "total_gross"}:
+        if device.vat_rate is None:
+            return "Nem számolható: hiányzik az ÁFA"
+        if device.unit_net_price is None:
+            return "Nem számolható: hiányzik az egységár"
+        if field == "total_gross" and device.quantity is None and device.huf_value is None:
+            return "Nem számolható: hiányzik a mennyiség"
+    if field == "unit_net":
+        return "Nincs megadva"
+    return "Nem számolható"
+
+
 def is_awaiting_arrival(device):
     return device.is_ordered is True and device.has_arrived is not True
 
@@ -2930,7 +2989,7 @@ def build_attention_items(devices, invoice_items, include_finance=True):
             items.append(
                 {
                     "type": "Eszköz",
-                    "name": device_display_label(device),
+                    "name": device_primary_label(device),
                     "reasons": reasons,
                     "project": device.project.code if device.project else "-",
                     "supplier": device.supplier_manufacturer or device.manufacturer or "-",
@@ -3009,14 +3068,14 @@ def build_project_pdf(project, devices, pdf_type):
         for device in pdf_devices:
             rows.append(
                 [
-                    device_display_label(device),
+                    device_primary_label(device),
                     format_number(device.quantity),
-                    device.currency or "-",
-                    format_number(device.unit_net_price),
-                    format_number(device.total_net_price),
-                    format_number(device.vat_rate),
-                    format_number(device.unit_gross_price),
-                    format_number(device.total_gross_price),
+                    device.currency or "hiányzik",
+                    device_money_text(device, "unit_net"),
+                    device_money_text(device, "total_net"),
+                    format_vat_rate(device.vat_rate),
+                    device_money_text(device, "unit_gross"),
+                    device_money_text(device, "total_gross"),
                     status_label(device.status),
                     device.location.name if device.location else "-",
                     device.assignment_notes or device.subtype_note or "-",
@@ -3047,12 +3106,12 @@ def build_project_pdf(project, devices, pdf_type):
                     device.supplier_manufacturer or device.manufacturer or "-",
                     invoice_number,
                     paid,
-                    device.currency or "-",
-                    format_number(device.unit_net_price),
-                    format_number(device.total_net_price),
-                    format_number(device.vat_rate),
-                    format_number(device.unit_gross_price),
-                    format_number(device.total_gross_price),
+                    device.currency or "hiányzik",
+                    device_money_text(device, "unit_net"),
+                    device_money_text(device, "total_net"),
+                    format_vat_rate(device.vat_rate),
+                    device_money_text(device, "unit_gross"),
+                    device_money_text(device, "total_gross"),
                     device.product_name or device.model or device.asset_tag or "-",
                 ]
             )
@@ -4544,7 +4603,7 @@ def create_movement(
     return movement
 
 
-def validate_movement(device, movement_type):
+def validate_movement(device, movement_type, to_location_id=None, project_id=None):
     from models import MOVEMENT_TYPES
 
     if movement_type not in MOVEMENT_TYPES:
@@ -4554,14 +4613,14 @@ def validate_movement(device, movement_type):
         return "Selejtezett eszköz nem mozgatható tovább."
 
     allowed_statuses = {
-        "INBOUND": None,
+        "INBOUND": {"RETURNED", "IN_SERVICE"},
         "RESERVE": {"IN_STOCK"},
-        "ISSUE": {"IN_STOCK", "RESERVED"},
-        "INSTALL": {"ISSUED"},
-        "RETURN": {"ISSUED", "INSTALLED"},
+        "ISSUE": {"IN_STOCK", "RESERVED", "RETURNED"},
+        "INSTALL": {"ISSUED", "RETURNED"},
+        "RETURN": {"RESERVED", "ISSUED", "INSTALLED", "IN_SERVICE"},
         "SERVICE": {"IN_STOCK", "RETURNED", "ISSUED", "INSTALLED"},
         "SCRAP": None,
-        "TRANSFER": None,
+        "TRANSFER": {"IN_STOCK", "RETURNED", "ISSUED"},
     }
     allowed = allowed_statuses[movement_type]
     if allowed is not None and device.status not in allowed:
@@ -4572,12 +4631,19 @@ def validate_movement(device, movement_type):
             f"{status_label(device.status)}. Engedélyezett aktuális státusz: "
             f"{readable}."
         )
+    if movement_type in {"RETURN", "INBOUND", "TRANSFER"} and not to_location_id:
+        return f"A(z) {movement_type_label(movement_type)} művelethez cél készlethely megadása kötelező."
+    if movement_type == "ISSUE" and not (project_id or device.project_id):
+        return "Kiadáshoz projekt megadása kötelező."
+    if movement_type == "INSTALL":
+        if not (project_id or device.project_id):
+            return "Telepítéshez projekt megadása kötelező."
+        if not to_location_id:
+            return "Telepítéshez cél helyszín / készlethely megadása kötelező."
     return None
 
 
 def apply_device_state(device, movement_type, to_location_id=None, project_id=None):
-    device.location_id = to_location_id
-    device.project_id = project_id
     device.updated_at = datetime.now(timezone.utc)
 
     status_by_movement = {
@@ -4591,6 +4657,42 @@ def apply_device_state(device, movement_type, to_location_id=None, project_id=No
     }
     if movement_type in status_by_movement:
         device.status = status_by_movement[movement_type]
+
+    if movement_type == "RESERVE":
+        if project_id is not None:
+            device.project_id = project_id
+        return
+
+    if movement_type == "ISSUE":
+        if project_id is not None:
+            device.project_id = project_id
+        if to_location_id is not None:
+            device.location_id = to_location_id
+        return
+
+    if movement_type == "INSTALL":
+        device.project_id = project_id if project_id is not None else device.project_id
+        device.location_id = to_location_id
+        return
+
+    if movement_type in {"RETURN", "INBOUND"}:
+        device.location_id = to_location_id
+        device.project_id = None
+        return
+
+    if movement_type == "TRANSFER":
+        device.location_id = to_location_id
+        if project_id is not None:
+            device.project_id = project_id
+        return
+
+    if movement_type == "SERVICE":
+        if to_location_id is not None:
+            device.location_id = to_location_id
+        return
+
+    if movement_type == "SCRAP":
+        return
 
 
 app = create_app()

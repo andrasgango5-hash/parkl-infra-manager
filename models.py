@@ -247,6 +247,19 @@ class Device(db.Model):
         return " – ".join(parts) if parts else f"Eszköz #{self.id}"
 
     @property
+    def primary_label(self):
+        product = self.product_name or self.model or self.name
+        identifier = self.asset_tag or self.serial_number
+
+        if identifier and product and identifier not in product:
+            return f"{identifier} – {product}"
+        if product:
+            return product
+        if identifier:
+            return identifier
+        return f"Eszköz #{self.id}"
+
+    @property
     def display_name(self):
         return self.human_label
 

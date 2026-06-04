@@ -336,18 +336,18 @@
               <tr>
                 <td class="fw-semibold"><span class="table-item-with-icon"><span class="table-item-icon"><i class="bi bi-cpu"></i></span>{{ device.asset_tag }}</span></td>
                 <td>
-                  <div class="fw-semibold">{{ device_display_label(device) }}</div>
+                  <div class="fw-semibold">{{ device_primary_label(device) }}</div>
                   {% if device.subtype_note %}<div class="text-secondary small">{{ device.subtype_note }}</div>{% endif %}
                 </td>
                 <td class="mobile-hide">{{ category_label(device.device_type) }}</td>
                 <td class="mobile-hide">{{ format_number(device.quantity) }}</td>
                 {% if can_view_finance %}
-                <td class="mobile-hide">{{ device.currency or "-" }}</td>
-                <td class="mobile-hide">{{ format_number(device.unit_net_price) }}</td>
-                <td class="mobile-hide">{{ format_number(device.total_net_price) }}</td>
-                <td class="mobile-hide">{{ format_number(device.vat_rate) }}{% if device.vat_rate is not none %}%{% endif %}</td>
-                <td class="mobile-hide">{{ format_number(device.unit_gross_price) }}</td>
-                <td class="mobile-hide">{{ format_number(device.total_gross_price) }}</td>
+                <td class="mobile-hide">{{ device.currency or "hiányzik" }}</td>
+                <td class="mobile-hide">{{ device_money_text(device, "unit_net") }}</td>
+                <td class="mobile-hide">{{ device_money_text(device, "total_net") }}</td>
+                <td class="mobile-hide">{{ format_vat_rate(device.vat_rate) }}</td>
+                <td class="mobile-hide">{{ device_money_text(device, "unit_gross") }}</td>
+                <td class="mobile-hide">{{ device_money_text(device, "total_gross") }}</td>
                 {% endif %}
                 <td><span class="status-badge {{ status_badge_class(device.status) }}">{{ status_label(device.status) }}</span></td>
                 <td>{{ device.project.code if device.project else "-" }}</td>

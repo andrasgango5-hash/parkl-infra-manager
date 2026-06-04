@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Eszközpéldányok - {{ device_display_label(device) }}{% endblock %}
+{% block title %}Eszközpéldányok - {{ device_primary_label(device) }}{% endblock %}
 
 {% block content %}
 <div class="page-header">
   <div>
     <h1>Eszközpéldányok</h1>
-    <p class="text-secondary mb-0">{{ device_display_label(device) }}</p>
+    <p class="text-secondary mb-0">{{ device_primary_label(device) }}</p>
   </div>
   <div class="d-flex flex-wrap gap-2">
     {% if can_write %}<a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('device_units_create', device_id=device.id) }}"><i class="bi bi-plus-circle"></i> Példányok létrehozása</a>{% endif %}

@@ -49,14 +49,14 @@
             <td>{{ device.source_sheet or "-" }}</td>
             <td>{{ device.source_row_number or "-" }}</td>
             <td class="fw-semibold">{{ device.asset_tag }}</td>
-            <td>{{ device_display_label(device) }}</td>
+            <td>{{ device_primary_label(device) }}</td>
             <td>{{ format_number(device.quantity) }}</td>
-            <td>{{ device.currency or "-" }}</td>
-            <td>{{ format_number(device.unit_net_price) }}</td>
-            <td>{{ format_number(device.total_net_price) }}</td>
-            <td>{{ format_number(device.vat_rate) }}{% if device.vat_rate is not none %}%{% endif %}</td>
-            <td>{{ format_number(device.unit_gross_price) }}</td>
-            <td>{{ format_number(device.total_gross_price) }}</td>
+            <td>{{ device.currency or "hiányzik" }}</td>
+            <td>{{ device_money_text(device, "unit_net") }}</td>
+            <td>{{ device_money_text(device, "total_net") }}</td>
+            <td>{{ format_vat_rate(device.vat_rate) }}</td>
+            <td>{{ device_money_text(device, "unit_gross") }}</td>
+            <td>{{ device_money_text(device, "total_gross") }}</td>
             <td><span class="status-badge {{ 'status-neutral' if device.archived_at else status_badge_class(device.status) }}">{{ "Archiválva" if device.archived_at else status_label(device.status) }}</span></td>
             <td><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_detail', device_id=device.id) }}">Részletek</a></td>
           </tr>

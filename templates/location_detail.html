@@ -47,15 +47,15 @@
         {% for device in devices %}
           <tr>
             <td class="fw-semibold">{{ device.asset_tag }}</td>
-            <td>{{ device_display_label(device) }}</td>
+            <td>{{ device_primary_label(device) }}</td>
             <td>{{ format_number(device.quantity) }}</td>
             {% if can_view_finance %}
-            <td>{{ device.currency or "-" }}</td>
-            <td>{{ format_number(device.unit_net_price) }}</td>
-            <td>{{ format_number(device.total_net_price) }}</td>
-            <td>{{ format_number(device.vat_rate) }}{% if device.vat_rate is not none %}%{% endif %}</td>
-            <td>{{ format_number(device.unit_gross_price) }}</td>
-            <td>{{ format_number(device.total_gross_price) }}</td>
+            <td>{{ device.currency or "hiányzik" }}</td>
+            <td>{{ device_money_text(device, "unit_net") }}</td>
+            <td>{{ device_money_text(device, "total_net") }}</td>
+            <td>{{ format_vat_rate(device.vat_rate) }}</td>
+            <td>{{ device_money_text(device, "unit_gross") }}</td>
+            <td>{{ device_money_text(device, "total_gross") }}</td>
             {% endif %}
             <td><span class="status-badge {{ status_badge_class(device.status) }}">{{ status_label(device.status) }}</span></td>
             <td>{{ device.project.code if device.project else "-" }}</td>
@@ -86,7 +86,7 @@
         {% for movement in movements %}
           <tr>
             <td>{{ movement.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
-            <td>{{ device_display_label(movement.device) }}</td>
+            <td>{{ device_primary_label(movement.device) }}</td>
             <td><span class="movement-badge {{ movement_badge_class(movement.movement_type) }}">{{ movement_type_label(movement.movement_type) }}</span></td>
             <td>{{ movement.from_location.name if movement.from_location else "-" }}</td>
             <td>{{ movement.to_location.name if movement.to_location else "-" }}</td>

@@ -199,7 +199,7 @@
         {% for movement in recent_movements %}
           <tr>
             <td>{{ movement.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
-            <td>{{ device_display_label(movement.device) }}</td>
+            <td>{{ device_primary_label(movement.device) }}</td>
             <td><span class="movement-badge {{ movement_badge_class(movement.movement_type) }}">{{ movement_type_label(movement.movement_type) }}</span></td>
             <td>{{ movement.from_location.name if movement.from_location else "-" }}</td>
             <td>{{ movement.to_location.name if movement.to_location else "-" }}</td>

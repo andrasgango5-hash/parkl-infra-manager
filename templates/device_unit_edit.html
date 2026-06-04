@@ -3,7 +3,7 @@
 {% block title %}Eszközpéldány szerkesztése{% endblock %}
 
 {% block content %}
-<div class="page-header"><div><h1>Eszközpéldány szerkesztése</h1><p class="text-secondary mb-0">{{ device_display_label(device) }}</p></div></div>
+<div class="page-header"><div><h1>Eszközpéldány szerkesztése</h1><p class="text-secondary mb-0">{{ device_primary_label(device) }}</p></div></div>
 <form method="post" class="form-panel">
   <div class="row g-3">
     <div class="col-md-4"><label class="form-label" for="unit_code">Példányazonosító</label><input class="form-control" id="unit_code" name="unit_code" value="{{ unit.unit_code }}" required></div>

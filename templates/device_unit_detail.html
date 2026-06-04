@@ -26,7 +26,7 @@
         <div><strong>Példányazonosító:</strong> {{ unit.unit_code }}</div>
         <div><strong>Eszközazonosító:</strong> {{ unit.asset_tag or "-" }}</div>
         <div><strong>Sorozatszám:</strong> {{ unit.serial_number or "-" }}</div>
-        <div><strong>Szülő tétel:</strong> <a href="{{ url_for('device_detail', device_id=device.id) }}">{{ device_display_label(device) }}</a></div>
+        <div><strong>Szülő tétel:</strong> <a href="{{ url_for('device_detail', device_id=device.id) }}">{{ device_primary_label(device) }}</a></div>
         <div><strong>Csoport státusza:</strong> <span class="status-badge {{ status_badge_class(device.status) }}">{{ status_label(device.status) }}</span></div>
         <div><strong>Csoport projektje:</strong> {{ device.project.code if device.project else "-" }}</div>
         <div><strong>Csoport készlethelye:</strong> {{ device.location.name if device.location else "-" }}</div>

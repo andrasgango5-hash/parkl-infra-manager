@@ -1,14 +1,17 @@
 {% extends "base.html" %}
 
-{% block title %}Eszköz - {{ device_display_label(device) }}{% endblock %}
+{% block title %}Eszköz - {{ device_primary_label(device) }}{% endblock %}
 
 {% block content %}
 <div class="page-header">
   <div>
-    <h1>{{ device_display_label(device) }}</h1>
+    <h1>{{ device_primary_label(device) }}</h1>
     <p class="text-secondary mb-0">
       <span class="status-badge {{ status_badge_class(device.status) }}">{{ status_label(device.status) }}</span>
-      <span class="ms-2">{{ category_label(device.device_type) }}{% if device.source_sheet %} · Forráslap: {{ device.source_sheet }}{% endif %}</span>
+      <span class="ms-2">{{ category_label(device.device_type) }}</span>
+      {% if device.project %}<span class="ms-2">Projekt: {{ device.project.code or device.project.name }}</span>{% endif %}
+      {% if device.location %}<span class="ms-2">Készlethely: {{ device.location.name }}</span>{% endif %}
+      {% if device.source_sheet %}<span class="ms-2">Forráslap: {{ device.source_sheet }}</span>{% endif %}
     </p>
   </div>
   <div class="d-flex gap-2">
@@ -21,6 +24,16 @@
 <section class="data-section mb-4">
   <div class="section-title"><h2>Készletműveletek</h2></div>
   <form method="post" action="{{ url_for('device_action', device_id=device.id) }}" class="p-3">
+    {% set allowed_movements = available_device_movements(device) %}
+    <div class="alert alert-light border mb-3">
+      {% if device.status == "RETURNED" %}
+        A visszavett eszközt raktárra vétellel lehet újra raktárkészletté tenni, vagy közvetlenül új projektre kiadni / telepíteni.
+      {% elif device.status == "SCRAPPED" %}
+        Selejtezett eszköz nem mozgatható tovább.
+      {% else %}
+        Csak az aktuális státuszból engedélyezett készletműveletek látszanak.
+      {% endif %}
+    </div>
     <div class="row g-3 align-items-end">
       <div class="col-md-4">
         <label class="form-label" for="to_location_id">Cél készlethely</label>
@@ -45,13 +58,14 @@
         <input class="form-control" id="notes" name="notes">
       </div>
       <div class="col-12 d-flex flex-wrap gap-2">
-        <button class="btn btn-outline-secondary btn-move-reserve btn-sm" name="movement_type" value="RESERVE" type="submit">Előjegyzés</button>
-        <button class="btn btn-outline-secondary btn-move-issue btn-sm" name="movement_type" value="ISSUE" type="submit">Kiadás</button>
-        <button class="btn btn-outline-secondary btn-move-install btn-sm" name="movement_type" value="INSTALL" type="submit">Telepítés</button>
-        <button class="btn btn-outline-secondary btn-move-return btn-sm" name="movement_type" value="RETURN" type="submit">Visszavétel</button>
-        <button class="btn btn-outline-secondary btn-move-service btn-sm" name="movement_type" value="SERVICE" type="submit">Szervizbe küldés</button>
-        <button class="btn btn-outline-secondary btn-move-transfer btn-sm" name="movement_type" value="TRANSFER" type="submit">Áthelyezés</button>
-        <button class="btn btn-outline-danger btn-sm" name="movement_type" value="SCRAP" type="submit" data-confirm="Biztosan selejtezed ezt az eszközt?">Selejtezés</button>
+        {% if "INBOUND" in allowed_movements %}<button class="btn btn-outline-secondary btn-move-inbound btn-sm" name="movement_type" value="INBOUND" type="submit">Raktárra vétel</button>{% endif %}
+        {% if "RESERVE" in allowed_movements %}<button class="btn btn-outline-secondary btn-move-reserve btn-sm" name="movement_type" value="RESERVE" type="submit">Előjegyzés</button>{% endif %}
+        {% if "ISSUE" in allowed_movements %}<button class="btn btn-outline-secondary btn-move-issue btn-sm" name="movement_type" value="ISSUE" type="submit">Kiadás</button>{% endif %}
+        {% if "INSTALL" in allowed_movements %}<button class="btn btn-outline-secondary btn-move-install btn-sm" name="movement_type" value="INSTALL" type="submit">Telepítés</button>{% endif %}
+        {% if "RETURN" in allowed_movements %}<button class="btn btn-outline-secondary btn-move-return btn-sm" name="movement_type" value="RETURN" type="submit">Visszavétel</button>{% endif %}
+        {% if "SERVICE" in allowed_movements %}<button class="btn btn-outline-secondary btn-move-service btn-sm" name="movement_type" value="SERVICE" type="submit">Szervizbe küldés</button>{% endif %}
+        {% if "TRANSFER" in allowed_movements %}<button class="btn btn-outline-secondary btn-move-transfer btn-sm" name="movement_type" value="TRANSFER" type="submit">Áthelyezés</button>{% endif %}
+        {% if "SCRAP" in allowed_movements %}<button class="btn btn-outline-danger btn-sm" name="movement_type" value="SCRAP" type="submit" data-confirm="Biztosan selejtezed ezt az eszközt?">Selejtezés</button>{% endif %}
       </div>
     </div>
   </form>
@@ -83,11 +97,11 @@
       <div class="p-3 detail-grid">
         <div><strong>Mennyiség:</strong> {{ format_number(device.quantity) }}</div>
         <div><strong>Deviza:</strong> {{ device.currency or "hiányzik" }}</div>
-        <div><strong>Egység nettó érték:</strong> {{ format_number(device.unit_net_price) }}{% if device.currency %} {{ device.currency }}{% endif %}</div>
-        <div><strong>Összes nettó érték:</strong> {{ format_number(device.total_net_price) }}{% if device.currency and device.total_net_price is not none %} {{ device.currency }}{% endif %}</div>
-        <div><strong>ÁFA:</strong> {{ format_number(device.vat_rate) }}{% if device.vat_rate is not none %}%{% endif %}</div>
-        <div><strong>Egység bruttó érték:</strong> {{ format_number(device.unit_gross_price) }}{% if device.currency and device.unit_gross_price is not none %} {{ device.currency }}{% endif %}</div>
-        <div><strong>Összes bruttó érték:</strong> {{ format_number(device.total_gross_price) }}{% if device.currency and device.total_gross_price is not none %} {{ device.currency }}{% endif %}</div>
+        <div><strong>Egység nettó érték:</strong> {{ device_money_text(device, "unit_net") }}</div>
+        <div><strong>Összes nettó érték:</strong> {{ device_money_text(device, "total_net") }}</div>
+        <div><strong>ÁFA:</strong> {{ format_vat_rate(device.vat_rate) }}</div>
+        <div><strong>Egység bruttó érték:</strong> {{ device_money_text(device, "unit_gross") }}</div>
+        <div><strong>Összes bruttó érték:</strong> {{ device_money_text(device, "total_gross") }}</div>
         <div><strong>Megrendelve:</strong> {{ yes_no_label(device.is_ordered) }}</div>
         <div><strong>Megérkezett:</strong> {{ yes_no_label(device.has_arrived) }}</div>
         <div><strong>Rendelés napja:</strong> {{ device.order_date or "-" }}</div>
@@ -132,7 +146,7 @@
 {% if device.qr_mode != "none" %}
   {% set qr_image_url = url_for('device_qr', device_id=device.id) %}
   {% set qr_download_url = url_for('device_qr', device_id=device.id, download=1) %}
-  {% set qr_alt = device_display_label(device) ~ ' QR-kódja' %}
+  {% set qr_alt = device_primary_label(device) ~ ' QR-kódja' %}
   {% set label_url = url_for('device_label', device_id=device.id) %}
   {% include "_qr_card.html" %}
 {% endif %}
