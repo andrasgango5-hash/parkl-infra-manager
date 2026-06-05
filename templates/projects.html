@@ -34,42 +34,13 @@
   </div>
 </form>
 
-<div class="row g-4">
+<div class="page-actions mb-4">
   {% if can_write %}
-  <div class="col-lg-4">
-    <form method="post" class="form-panel">
-      <h2>Projekt létrehozása</h2>
-      <div class="mb-3">
-        <label class="form-label" for="name">Név</label>
-        <input class="form-control" id="name" name="name" required>
-      </div>
-      <div class="mb-3">
-        <label class="form-label" for="code">Kód</label>
-        <input class="form-control" id="code" name="code" required>
-      </div>
-      <div class="mb-3">
-        <label class="form-label" for="customer">Ügyfél</label>
-        <input class="form-control" id="customer" name="customer">
-      </div>
-      <div class="mb-3">
-        <label class="form-label" for="status">Státusz</label>
-        <select class="form-select" id="status" name="status">
-          <option value="planned">Tervezett</option>
-          <option value="active">Aktív</option>
-          <option value="handover">Átadás alatt</option>
-          <option value="completed">Lezárt</option>
-        </select>
-      </div>
-      <div class="mb-3">
-        <label class="form-label" for="notes">Megjegyzés</label>
-        <textarea class="form-control" id="notes" name="notes" rows="3"></textarea>
-      </div>
-      <button class="btn btn-success btn-icon" type="submit" data-bs-toggle="tooltip" data-bs-title="Új projekt mentése"><i class="bi bi-plus-circle"></i> Létrehozás</button>
-    </form>
-  </div>
+    <a class="btn btn-purple btn-icon" href="{{ url_for('project_new') }}" data-bs-toggle="tooltip" data-bs-title="Új projekt létrehozása"><i class="bi bi-plus-circle"></i> Új projekt</a>
   {% endif %}
-  <div class="{% if can_write %}col-lg-8{% else %}col-12{% endif %}">
-    <section class="data-section">
+</div>
+
+<section class="data-section">
       <div class="section-title"><h2>Projektlista</h2></div>
       <div class="table-responsive">
         <table class="table table-hover align-middle">
@@ -107,7 +78,7 @@
                   <div class="empty-state">
                     <strong>Még nincs projekt.</strong>
                     <span>Hozd létre az első projektet, majd rendelj hozzá eszközöket.</span>
-                    {% if can_write %}<a class="btn btn-success btn-sm btn-icon" href="#name"><i class="bi bi-plus-circle"></i> Projekt létrehozása</a>{% endif %}
+                    {% if can_write %}<a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('project_new') }}"><i class="bi bi-plus-circle"></i> Projekt létrehozása</a>{% endif %}
                   </div>
                 </td>
               </tr>
@@ -115,7 +86,5 @@
           </tbody>
         </table>
       </div>
-    </section>
-  </div>
-</div>
+</section>
 {% endblock %}

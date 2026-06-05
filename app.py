@@ -655,6 +655,25 @@ def create_app(config_class=Config):
             active_units=active_units,
         )
 
+    @app.route("/drawings")
+    @login_required
+    def drawings():
+        drawing_list = (
+            ProjectDrawing.query.join(Project)
+            .filter(Project.archived_at.is_(None))
+            .order_by(ProjectDrawing.updated_at.desc())
+            .all()
+        )
+        projects_with_drawings = Project.query.filter(
+            Project.archived_at.is_(None),
+            Project.drawings.any(),
+        ).order_by(Project.name.asc()).all()
+        return render_template(
+            "drawings.html",
+            drawings=drawing_list,
+            projects=projects_with_drawings,
+        )
+
     @app.route("/import-export", methods=["GET", "POST"])
     @export_required
     def import_export():
@@ -1033,33 +1052,9 @@ def create_app(config_class=Config):
         flash("A munkalap sablon archiválva.", "info")
         return redirect(url_for("work_order_templates"))
 
-    @app.route("/projects", methods=["GET", "POST"])
+    @app.route("/projects")
     @write_required
     def projects():
-        if request.method == "POST":
-            name = request.form.get("name", "").strip()
-            code = request.form.get("code", "").strip()
-            customer = request.form.get("customer", "").strip()
-            status = request.form.get("status", "planned").strip() or "planned"
-            notes = request.form.get("notes", "").strip()
-            if not name or not code:
-                flash("A projekt neve és kódja kötelező.", "danger")
-            elif Project.query.filter_by(code=code).first():
-                flash("Ezzel a kóddal már létezik projekt.", "danger")
-            else:
-                db.session.add(
-                    Project(
-                        name=name,
-                        code=code,
-                        customer=customer,
-                        status=status,
-                        notes=notes,
-                    )
-                )
-                db.session.commit()
-                flash("A projekt létrejött.", "success")
-                return redirect(url_for("projects"))
-
         search = request.args.get("q", "").strip()
         selected_status = request.args.get("status", "").strip()
         project_query = Project.query.filter(Project.archived_at.is_(None))
@@ -1082,6 +1077,40 @@ def create_app(config_class=Config):
             project_statuses=PROJECT_STATUS_LABELS,
             search=search,
             selected_status=selected_status,
+        )
+
+    @app.route("/projects/new", methods=["GET", "POST"])
+    @manager_write_required
+    def project_new():
+        if request.method == "POST":
+            name = request.form.get("name", "").strip()
+            code = request.form.get("code", "").strip()
+            customer = request.form.get("customer", "").strip()
+            status = request.form.get("status", "planned").strip() or "planned"
+            notes = request.form.get("notes", "").strip()
+            if not name or not code:
+                flash("A projekt neve és kódja kötelező.", "danger")
+            elif Project.query.filter_by(code=code).first():
+                flash("Ezzel a kóddal már létezik projekt.", "danger")
+            else:
+                project = Project(
+                    name=name,
+                    code=code,
+                    customer=customer,
+                    status=status,
+                    notes=notes,
+                )
+                db.session.add(project)
+                db.session.commit()
+                flash("A projekt létrejött.", "success")
+                return redirect(url_for("project_detail", project_id=project.id))
+        return render_template(
+            "project_form.html",
+            project=None,
+            project_statuses=PROJECT_STATUS_LABELS,
+            form_title="Új projekt",
+            submit_label="Projekt létrehozása",
+            cancel_url=url_for("projects"),
         )
 
     @app.route("/projects/<int:project_id>")
@@ -1271,9 +1300,12 @@ def create_app(config_class=Config):
                 flash("A projekt módosítva.", "success")
                 return redirect(url_for("project_detail", project_id=project.id))
         return render_template(
-            "project_edit.html",
+            "project_form.html",
             project=project,
             project_statuses=PROJECT_STATUS_LABELS,
+            form_title="Projekt szerkesztése",
+            submit_label="Mentés",
+            cancel_url=url_for("project_detail", project_id=project.id),
         )
 
     @app.route("/projects/<int:project_id>/archive", methods=["POST"])
@@ -1285,7 +1317,7 @@ def create_app(config_class=Config):
         flash("A projekt archiválva.", "info")
         return redirect(url_for("projects"))
 
-    @app.route("/devices", methods=["GET", "POST"])
+    @app.route("/devices")
     @write_required
     def devices():
         projects = Project.query.filter(Project.archived_at.is_(None)).order_by(Project.name.asc()).all()
@@ -1305,34 +1337,6 @@ def create_app(config_class=Config):
         selected_location_id = optional_int(request.args.get("location_id"))
         search = request.args.get("q", "").strip()
         selected_view = request.args.get("view", "all").strip() or "all"
-        if request.method == "POST":
-            data = device_form_data(request.form)
-
-            if not data["asset_tag"] or not data["device_type"]:
-                flash("Az eszközazonosító és a kategória kötelező.", "danger")
-            elif data["device_type"] not in DEVICE_CATEGORIES:
-                flash("Érvénytelen eszközkategória.", "danger")
-            elif data["currency"] and data["currency"] not in DEVICE_CURRENCIES:
-                flash("Érvénytelen deviza. Válassz HUF vagy EUR értéket.", "danger")
-            elif data["qr_mode"] not in DEVICE_QR_MODE_LABELS:
-                flash("Érvénytelen QR mód.", "danger")
-            elif Device.query.filter_by(asset_tag=data["asset_tag"]).first():
-                flash("Ezzel az eszközazonosítóval már létezik eszköz.", "danger")
-            else:
-                device = Device(**data, status="IN_STOCK")
-                db.session.add(device)
-                db.session.flush()
-                create_movement(
-                    device=device,
-                    movement_type="INBOUND",
-                    to_location_id=device.location_id,
-                    project_id=device.project_id,
-                    notes="Kezdeti eszközrögzítés.",
-                    user_id=session["user_id"],
-                )
-                db.session.commit()
-                flash("Az eszköz létrejött, a készletmozgás rögzítve.", "success")
-                return redirect(url_for("devices"))
 
         device_query = Device.query.filter(Device.archived_at.is_(None))
         if search:
@@ -1409,6 +1413,46 @@ def create_app(config_class=Config):
             quick_filter=quick_filter,
             selected_view=selected_view,
             visible_summary=visible_summary,
+        )
+
+    @app.route("/devices/new", methods=["GET", "POST"])
+    @manager_write_required
+    def device_new():
+        projects = Project.query.filter(Project.archived_at.is_(None)).order_by(Project.name.asc()).all()
+        locations = Location.query.filter(Location.archived_at.is_(None)).order_by(Location.name.asc()).all()
+        if request.method == "POST":
+            data = device_form_data(request.form)
+
+            if not data["asset_tag"] or not data["device_type"]:
+                flash("Az eszközazonosító és a kategória kötelező.", "danger")
+            elif data["device_type"] not in DEVICE_CATEGORIES:
+                flash("Érvénytelen eszközkategória.", "danger")
+            elif data["currency"] and data["currency"] not in DEVICE_CURRENCIES:
+                flash("Érvénytelen deviza. Válassz HUF vagy EUR értéket.", "danger")
+            elif data["qr_mode"] not in DEVICE_QR_MODE_LABELS:
+                flash("Érvénytelen QR mód.", "danger")
+            elif Device.query.filter_by(asset_tag=data["asset_tag"]).first():
+                flash("Ezzel az eszközazonosítóval már létezik eszköz.", "danger")
+            else:
+                device = Device(**data, status="IN_STOCK")
+                db.session.add(device)
+                db.session.flush()
+                create_movement(
+                    device=device,
+                    movement_type="INBOUND",
+                    to_location_id=device.location_id,
+                    project_id=device.project_id,
+                    notes="Kezdeti eszközrögzítés.",
+                    user_id=session["user_id"],
+                )
+                db.session.commit()
+                flash("Az eszköz létrejött, a készletmozgás rögzítve.", "success")
+                return redirect(url_for("device_detail", device_id=device.id))
+        return render_template(
+            "device_new.html",
+            projects=projects,
+            locations=locations,
+            categories=DEVICE_CATEGORIES,
         )
 
     @app.route("/devices/<int:device_id>")
@@ -1963,29 +2007,9 @@ def create_app(config_class=Config):
         flash("Az importcsomag archiválva.", "info")
         return redirect(url_for("legacy_parkl_excel_import"))
 
-    @app.route("/locations", methods=["GET", "POST"])
+    @app.route("/locations")
     @write_required
     def locations():
-        if request.method == "POST":
-            name = request.form.get("name", "").strip()
-            location_type = request.form.get("location_type", "warehouse").strip()
-            address = request.form.get("address", "").strip()
-            notes = request.form.get("notes", "").strip()
-            if not name:
-                flash("A készlethely neve kötelező.", "danger")
-            else:
-                db.session.add(
-                    Location(
-                        name=name,
-                        location_type=location_type,
-                        address=address,
-                        notes=notes,
-                    )
-                )
-                db.session.commit()
-                flash("A készlethely létrejött.", "success")
-                return redirect(url_for("locations"))
-
         selected_type = request.args.get("location_type", "").strip()
         location_query = Location.query.filter(Location.archived_at.is_(None))
         if selected_type in LOCATION_TYPE_LABELS:
@@ -1996,6 +2020,36 @@ def create_app(config_class=Config):
             locations=location_list,
             location_types=LOCATION_TYPE_LABELS,
             selected_type=selected_type,
+        )
+
+    @app.route("/locations/new", methods=["GET", "POST"])
+    @manager_write_required
+    def location_new():
+        if request.method == "POST":
+            name = request.form.get("name", "").strip()
+            location_type = request.form.get("location_type", "warehouse").strip()
+            address = request.form.get("address", "").strip()
+            notes = request.form.get("notes", "").strip()
+            if not name:
+                flash("A készlethely neve kötelező.", "danger")
+            else:
+                location = Location(
+                    name=name,
+                    location_type=location_type,
+                    address=address,
+                    notes=notes,
+                )
+                db.session.add(location)
+                db.session.commit()
+                flash("A készlethely létrejött.", "success")
+                return redirect(url_for("location_detail", location_id=location.id))
+        return render_template(
+            "location_form.html",
+            location=None,
+            location_types=LOCATION_TYPE_LABELS,
+            form_title="Új készlethely",
+            submit_label="Készlethely létrehozása",
+            cancel_url=url_for("locations"),
         )
 
     @app.route("/locations/<int:location_id>")
@@ -2047,9 +2101,12 @@ def create_app(config_class=Config):
                 flash("A készlethely módosítva.", "success")
                 return redirect(url_for("location_detail", location_id=location.id))
         return render_template(
-            "location_edit.html",
+            "location_form.html",
             location=location,
             location_types=LOCATION_TYPE_LABELS,
+            form_title="Készlethely szerkesztése",
+            submit_label="Mentés",
+            cancel_url=url_for("location_detail", location_id=location.id),
         )
 
     @app.route("/locations/<int:location_id>/qr")

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}{{ form_title }} - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ form_title }}</h1>
+    <p class="text-secondary mb-0">Projekt alapadatok rögzítése. A készlet, rajzok és PDF-ek a projekt adatlapján kezelhetők.</p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ cancel_url }}"><i class="bi bi-arrow-left"></i> Vissza</a>
+</div>
+
+<form method="post" class="form-panel">
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label" for="code">Kód</label>
+      <input class="form-control" id="code" name="code" value="{{ project.code if project else '' }}" required>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="name">Név</label>
+      <input class="form-control" id="name" name="name" value="{{ project.name if project else '' }}" required>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="customer">Ügyfél</label>
+      <input class="form-control" id="customer" name="customer" value="{{ project.customer if project else '' }}">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="status">Státusz</label>
+      <select class="form-select" id="status" name="status">
+        {% for status, label in project_statuses.items() %}
+          <option value="{{ status }}" {% if project and project.status == status %}selected{% elif not project and status == "planned" %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12">
+      <label class="form-label" for="notes">Megjegyzés</label>
+      <textarea class="form-control" id="notes" name="notes" rows="4">{{ project.notes if project else '' }}</textarea>
+    </div>
+  </div>
+  <div class="mt-4 d-flex flex-wrap gap-2">
+    <button class="btn btn-purple btn-icon" type="submit"><i class="bi bi-save"></i> {{ submit_label }}</button>
+    <a class="btn btn-outline-secondary" href="{{ cancel_url }}">Mégse</a>
+  </div>
+</form>
+{% endblock %}

@@ -12,12 +12,13 @@
     {% if current_user %}
       {% set endpoint = request.endpoint or '' %}
       {% set dashboard_active = endpoint == 'dashboard' %}
-      {% set projects_active = endpoint in ['projects', 'project_detail', 'project_edit', 'project_drawing_create', 'project_drawing_editor', 'project_drawing_save', 'drawing_background'] %}
-      {% set devices_active = endpoint in ['devices', 'device_detail', 'device_edit', 'device_action'] %}
+      {% set projects_active = endpoint in ['projects', 'project_new', 'project_detail', 'project_edit'] %}
+      {% set drawings_active = endpoint in ['drawings', 'project_drawing_create', 'project_drawing_editor', 'project_drawing_save', 'drawing_background'] %}
+      {% set devices_active = endpoint in ['devices', 'device_new', 'device_detail', 'device_edit', 'device_action'] %}
       {% set labels_active = endpoint in ['labels', 'device_qr', 'device_label', 'device_units', 'device_units_create', 'device_unit_detail', 'device_unit_edit', 'device_unit_qr', 'device_unit_label', 'device_unit_labels_pdf', 'location_qr', 'project_qr'] %}
-      {% set locations_active = endpoint in ['locations', 'location_detail', 'location_edit', 'location_archive'] %}
+      {% set locations_active = endpoint in ['locations', 'location_new', 'location_detail', 'location_edit', 'location_archive'] %}
       {% set movements_active = endpoint == 'movements' %}
-      {% set import_export_active = endpoint == 'import_export' %}
+      {% set import_export_active = endpoint in ['import_export', 'import_template_download', 'data_export'] %}
       {% set work_orders_active = endpoint.startswith('work_order') and endpoint != 'work_order_pdf' %}
       {% set documents_active = endpoint in ['documents', 'work_order_pdf', 'project_pdf'] %}
       {% set attention_active = endpoint == 'attention' %}
@@ -67,7 +68,7 @@
           </div>
 
           <div class="sidebar-group">
-            <div class="sidebar-group-label">Készlet</div>
+            <div class="sidebar-group-label">Eszközkezelés</div>
             <a class="sidebar-link {% if devices_active %}active{% endif %}" href="{{ url_for('devices') }}" title="Eszközök">
               <i class="bi bi-boxes"></i><span>Eszközök</span>
             </a>
@@ -83,41 +84,39 @@
           </div>
 
           <div class="sidebar-group">
-            <div class="sidebar-group-label">Projekt</div>
+            <div class="sidebar-group-label">Projektek</div>
             <a class="sidebar-link {% if projects_active %}active{% endif %}" href="{{ url_for('projects') }}" title="Projektek">
               <i class="bi bi-kanban"></i><span>Projektek</span>
+            </a>
+            <a class="sidebar-link {% if drawings_active %}active{% endif %}" href="{{ url_for('drawings') }}" title="Rajzok">
+              <i class="bi bi-layers"></i><span>Rajzok</span>
             </a>
           </div>
 
           <div class="sidebar-group">
-            <div class="sidebar-group-label">Dokumentáció</div>
+            <div class="sidebar-group-label">Dokumentumok</div>
             <a class="sidebar-link {% if work_orders_active %}active{% endif %}" href="{{ url_for('work_orders') }}" title="Munkalapok">
               <i class="bi bi-clipboard-check"></i><span>Munkalapok</span>
             </a>
-            {% if can_export %}
-              <a class="sidebar-link {% if documents_active %}active{% endif %}" href="{{ url_for('documents') }}" title="PDF-ek / jegyzőkönyvek">
-                <i class="bi bi-file-earmark-pdf"></i><span>PDF-ek / jegyzőkönyvek</span>
-              </a>
-            {% endif %}
-            {% if can_view_finance %}
-              <a class="sidebar-link {% if invoices_active %}active{% endif %}" href="{{ url_for('unassigned_invoices') }}" title="Gazdátlan számlasorok">
-                <i class="bi bi-receipt"></i><span>Gazdátlan számlasorok</span>
-              </a>
-            {% endif %}
           </div>
 
-          {% if can_export %}
+          {% if can_export or can_view_finance or can_manage_users %}
             <div class="sidebar-group">
-              <div class="sidebar-group-label">Adatkezelés</div>
+              <div class="sidebar-group-label">Adminisztráció</div>
+              {% if can_export %}
               <a class="sidebar-link {% if import_export_active %}active{% endif %}" href="{{ url_for('import_export') }}" title="Import / Export">
                 <i class="bi bi-arrow-down-up"></i><span>Import / Export</span>
               </a>
-            </div>
-          {% endif %}
-
-          {% if can_manage_users %}
-            <div class="sidebar-group">
-              <div class="sidebar-group-label">Admin</div>
+              <a class="sidebar-link {% if documents_active %}active{% endif %}" href="{{ url_for('documents') }}" title="PDF-ek / jegyzőkönyvek">
+                <i class="bi bi-file-earmark-pdf"></i><span>PDF-ek / jegyzőkönyvek</span>
+              </a>
+              {% endif %}
+              {% if can_view_finance %}
+              <a class="sidebar-link {% if invoices_active %}active{% endif %}" href="{{ url_for('unassigned_invoices') }}" title="Gazdátlan számlasorok">
+                <i class="bi bi-receipt"></i><span>Gazdátlan számlasorok</span>
+              </a>
+              {% endif %}
+              {% if can_manage_users %}
               <a class="sidebar-link {% if admin_active %}active{% endif %}" href="{{ url_for('admin_tools') }}" title="Admin eszközök">
                 <i class="bi bi-gear"></i><span>Admin eszközök</span>
               </a>
@@ -127,6 +126,7 @@
               <a class="sidebar-link {% if legacy_active %}active{% endif %}" href="{{ url_for('legacy') }}" title="Legacy funkciók">
                 <i class="bi bi-archive"></i><span>Legacy funkciók</span>
               </a>
+              {% endif %}
             </div>
           {% endif %}
 

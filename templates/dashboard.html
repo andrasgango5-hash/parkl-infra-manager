@@ -18,15 +18,15 @@
   <div class="p-3">
     <div class="quick-action-grid mb-3">
       {% if can_write %}
-      <a class="quick-action-card" href="{{ url_for('projects') }}#name" data-bs-toggle="tooltip" data-bs-title="Új projekt létrehozása">
+      <a class="quick-action-card" href="{{ url_for('project_new') }}" data-bs-toggle="tooltip" data-bs-title="Új projekt létrehozása">
         <span class="quick-action-icon"><i class="bi bi-building-add"></i></span>
         <span><strong>Új projekt</strong><span>Projektkód és ügyfél rögzítése</span></span>
       </a>
-      <a class="quick-action-card" href="{{ url_for('locations') }}#name" data-bs-toggle="tooltip" data-bs-title="Új készlethely vagy helyszín létrehozása">
+      <a class="quick-action-card" href="{{ url_for('location_new') }}" data-bs-toggle="tooltip" data-bs-title="Új készlethely vagy helyszín létrehozása">
         <span class="quick-action-icon"><i class="bi bi-geo-alt"></i></span>
         <span><strong>Új helyszín</strong><span>Raktár, szervizautó vagy projekt helyszín</span></span>
       </a>
-      <a class="quick-action-card" href="{{ url_for('devices') }}#asset_tag" data-bs-toggle="tooltip" data-bs-title="Új eszköz kézi rögzítése">
+      <a class="quick-action-card" href="{{ url_for('device_new') }}" data-bs-toggle="tooltip" data-bs-title="Új eszköz kézi rögzítése">
         <span class="quick-action-icon"><i class="bi bi-cpu"></i></span>
         <span><strong>Új eszköz</strong><span>Töltő, kamera, router vagy anyag</span></span>
       </a>
@@ -48,7 +48,7 @@
           <span class="workflow-step"><i class="bi bi-building"></i></span>
           <strong>Projekt létrehozása</strong>
           <span>Rögzíts projektkódot, ügyfelet és státuszt, hogy minden készlettételnek legyen kontextusa.</span>
-          <div class="mt-3"><a class="btn btn-success btn-sm btn-icon" href="{{ url_for('projects') }}"><i class="bi bi-arrow-right-circle"></i> Projektek megnyitása</a></div>
+          <div class="mt-3"><a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('project_new') }}"><i class="bi bi-plus-circle"></i> Projekt indítása</a></div>
         </div>
       </div>
       <div class="col-md-6 col-xl-4">
@@ -64,7 +64,7 @@
           <span class="workflow-step"><i class="bi bi-diagram-3"></i></span>
           <strong>Eszköz hozzárendelése projekthez</strong>
           <span>Szűrd és keresd a tételeket, majd rendeld őket projekthez és készlethelyhez.</span>
-          <div class="mt-3"><a class="btn btn-success btn-sm btn-icon" href="{{ url_for('devices') }}"><i class="bi bi-search"></i> Eszközök keresése</a></div>
+          <div class="mt-3"><a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('devices') }}"><i class="bi bi-search"></i> Eszközök keresése</a></div>
         </div>
       </div>
       <div class="col-md-6 col-xl-4">
@@ -211,7 +211,7 @@
               <div class="empty-state">
                 <strong>Még nincs készletmozgás.</strong>
                 <span>Rögzíts vagy importálj eszközt, majd hozz létre első mozgást.</span>
-                <a class="btn btn-success btn-sm btn-icon" href="{{ url_for('devices') }}"><i class="bi bi-cpu"></i> Eszközök megnyitása</a>
+                <a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('devices') }}"><i class="bi bi-cpu"></i> Eszközök megnyitása</a>
               </div>
             </td>
           </tr>

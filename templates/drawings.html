@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Rajzok - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Rajzok</h1>
+    <p class="text-secondary mb-0">Projektalapú helyszíni felmérési és implementációs rajzok áttekintése.</p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('projects') }}"><i class="bi bi-kanban"></i> Projektek megnyitása</a>
+</div>
+
+<div class="help-box">
+  A rajzok továbbra is projekthez kötődnek. Új rajzot a projekt adatlapján, a Rajzok fülön lehet létrehozni háttérképpel és Fabric.js szerkesztővel.
+</div>
+
+<section class="data-section">
+  <div class="section-title"><h2>Rajzlista</h2></div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Rajz</th><th>Projekt</th><th>Módosítva</th><th>Művelet</th></tr></thead>
+      <tbody>
+        {% for drawing in drawings %}
+          <tr>
+            <td class="fw-semibold"><span class="table-item-with-icon"><span class="table-item-icon"><i class="bi bi-layers"></i></span>{{ drawing.name }}</span></td>
+            <td>{{ drawing.project.code }} - {{ drawing.project.name }}</td>
+            <td>{{ drawing.updated_at.strftime("%Y-%m-%d %H:%M") if drawing.updated_at else "-" }}</td>
+            <td><a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('project_drawing_editor', project_id=drawing.project_id, drawing_id=drawing.id) }}"><i class="bi bi-pencil"></i> Megnyitás</a></td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="4">
+              <div class="empty-state">
+                <strong>Még nincs projekt rajz.</strong>
+                <span>Nyiss meg egy projektet, és a Rajzok fülön hozz létre első helyszíni rajzot.</span>
+                <a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('projects') }}"><i class="bi bi-kanban"></i> Projektek megnyitása</a>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

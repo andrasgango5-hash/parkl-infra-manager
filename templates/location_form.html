@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}{{ form_title }} - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ form_title }}</h1>
+    <p class="text-secondary mb-0">Raktár, szervizautó vagy projekt helyszín rögzítése az eszközmozgásokhoz.</p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ cancel_url }}"><i class="bi bi-arrow-left"></i> Vissza</a>
+</div>
+
+<form method="post" class="form-panel">
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label" for="name">Név</label>
+      <input class="form-control" id="name" name="name" value="{{ location.name if location else '' }}" required>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="location_type">Típus</label>
+      <select class="form-select" id="location_type" name="location_type">
+        {% for type, label in location_types.items() %}
+          <option value="{{ type }}" {% if location and location.location_type == type %}selected{% elif not location and type == "warehouse" %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12">
+      <label class="form-label" for="address">Cím</label>
+      <input class="form-control" id="address" name="address" value="{{ location.address if location else '' }}">
+    </div>
+    <div class="col-12">
+      <label class="form-label" for="notes">Megjegyzés</label>
+      <textarea class="form-control" id="notes" name="notes" rows="4">{{ location.notes if location else '' }}</textarea>
+    </div>
+  </div>
+  <div class="mt-4 d-flex flex-wrap gap-2">
+    <button class="btn btn-purple btn-icon" type="submit"><i class="bi bi-save"></i> {{ submit_label }}</button>
+    <a class="btn btn-outline-secondary" href="{{ cancel_url }}">Mégse</a>
+  </div>
+</form>
+{% endblock %}

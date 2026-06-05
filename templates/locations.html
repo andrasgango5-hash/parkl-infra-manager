@@ -30,40 +30,13 @@
   </div>
 </form>
 
-<div class="row g-4">
+<div class="page-actions mb-4">
   {% if can_write %}
-  <div class="col-lg-4">
-    <form method="post" class="form-panel">
-      <h2>Készlethely létrehozása</h2>
-      <div class="mb-3">
-        <label class="form-label" for="name">Név</label>
-        <input class="form-control" id="name" name="name" required>
-      </div>
-      <div class="mb-3">
-        <label class="form-label" for="location_type">Típus</label>
-        <select class="form-select" id="location_type" name="location_type">
-          <option value="warehouse">Raktár</option>
-          <option value="project_site">Projekt helyszín</option>
-          <option value="service_vehicle">Szervizautó</option>
-          <option value="installed">Telepített helyszín</option>
-          <option value="service">Szerviz / javítás</option>
-          <option value="supplier">Beszállító</option>
-        </select>
-      </div>
-      <div class="mb-3">
-        <label class="form-label" for="address">Cím</label>
-        <input class="form-control" id="address" name="address">
-      </div>
-      <div class="mb-3">
-        <label class="form-label" for="notes">Megjegyzés</label>
-        <textarea class="form-control" id="notes" name="notes" rows="3"></textarea>
-      </div>
-      <button class="btn btn-success btn-icon" type="submit" data-bs-toggle="tooltip" data-bs-title="Új készlethely mentése"><i class="bi bi-plus-circle"></i> Létrehozás</button>
-    </form>
-  </div>
+    <a class="btn btn-purple btn-icon" href="{{ url_for('location_new') }}" data-bs-toggle="tooltip" data-bs-title="Új készlethely létrehozása"><i class="bi bi-plus-circle"></i> Új készlethely</a>
   {% endif %}
-  <div class="{% if can_write %}col-lg-8{% else %}col-12{% endif %}">
-    <section class="data-section">
+</div>
+
+<section class="data-section">
       <div class="section-title"><h2>Készlethelylista</h2></div>
       <div class="table-responsive">
         <table class="table table-hover align-middle">
@@ -99,7 +72,7 @@
                   <div class="empty-state">
                     <strong>Még nincs készlethely.</strong>
                     <span>Hozz létre legalább egy raktárat vagy projekt helyszínt az eszközök mozgatásához.</span>
-                    {% if can_write %}<a class="btn btn-success btn-sm btn-icon" href="#name"><i class="bi bi-plus-circle"></i> Készlethely létrehozása</a>{% endif %}
+                    {% if can_write %}<a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('location_new') }}"><i class="bi bi-plus-circle"></i> Készlethely létrehozása</a>{% endif %}
                   </div>
                 </td>
               </tr>
@@ -107,7 +80,5 @@
           </tbody>
         </table>
       </div>
-    </section>
-  </div>
-</div>
+</section>
 {% endblock %}
