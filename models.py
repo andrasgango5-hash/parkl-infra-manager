@@ -92,6 +92,11 @@ class User(db.Model):
     is_admin = db.Column(db.Boolean, default=False, nullable=False)
     role = db.Column(db.String(20), default="viewer", nullable=False, index=True)
     is_active = db.Column(db.Boolean, default=True, nullable=False, index=True)
+    force_password_change = db.Column(db.Boolean, default=True, nullable=False)
+    failed_login_count = db.Column(db.Integer, default=0, nullable=False)
+    locked_until = db.Column(db.DateTime(timezone=True), nullable=True)
+    last_login_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    last_seen_at = db.Column(db.DateTime(timezone=True), nullable=True)
     created_at = db.Column(
         db.DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -101,6 +106,7 @@ class User(db.Model):
     movements = db.relationship("StockMovement", back_populates="created_by")
     import_batches = db.relationship("ImportBatch", back_populates="imported_by")
     work_orders = db.relationship("WorkOrder", back_populates="created_by")
+    audit_logs = db.relationship("AuditLog", back_populates="user")
 
     def has_role(self, *roles):
         effective_role = "admin" if self.is_admin else self.role
@@ -109,6 +115,39 @@ class User(db.Model):
     @property
     def effective_role(self):
         return "admin" if self.is_admin else self.role
+
+
+class AuthRateLimit(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    identifier = db.Column(db.String(255), unique=True, nullable=False, index=True)
+    failed_count = db.Column(db.Integer, default=0, nullable=False)
+    locked_until = db.Column(db.DateTime(timezone=True), nullable=True)
+    last_failed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
+class AuditLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    event_type = db.Column(db.String(80), nullable=False, index=True)
+    username = db.Column(db.String(80), nullable=True, index=True)
+    ip_address = db.Column(db.String(80), nullable=True)
+    user_agent = db.Column(db.String(255), nullable=True)
+    success = db.Column(db.Boolean, nullable=True, index=True)
+    details = db.Column(db.Text, nullable=True)
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        index=True,
+    )
+
+    user = db.relationship("User", back_populates="audit_logs")
 
 
 class Project(db.Model):

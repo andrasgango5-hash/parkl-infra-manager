@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Új felhasználó - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Új felhasználó</h1>
+    <p class="text-secondary mb-0">Admin által létrehozott fiók ideiglenes jelszóval. Első belépéskor kötelező jelszócsere történik.</p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('admin_users') }}"><i class="bi bi-arrow-left"></i> Vissza</a>
+</div>
+
+<form method="post" class="form-panel">
+  <div class="row g-3">
+    <div class="col-md-4">
+      <label class="form-label" for="username">Felhasználónév</label>
+      <input class="form-control" id="username" name="username" autocomplete="username" required autofocus>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label" for="role">Szerepkör</label>
+      <select class="form-select" id="role" name="role">
+        {% for role in roles %}
+          <option value="{{ role }}" {% if role == "viewer" %}selected{% endif %}>{{ role_labels[role] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label" for="temporary_password">Ideiglenes jelszó</label>
+      <input class="form-control" id="temporary_password" name="temporary_password" type="password" minlength="12" autocomplete="new-password" required>
+      <div class="form-text">Legalább 12 karakter, első belépéskor cserélni kell.</div>
+    </div>
+  </div>
+  <div class="mt-4 d-flex flex-wrap gap-2">
+    <button class="btn btn-purple btn-icon" type="submit"><i class="bi bi-person-plus"></i> Felhasználó létrehozása</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('admin_users') }}">Mégse</a>
+  </div>
+</form>
+{% endblock %}

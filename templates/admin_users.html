@@ -8,11 +8,14 @@
     <h1>Felhasználók</h1>
     <p class="text-secondary mb-0">Szerepkörök és aktív felhasználói fiókok kezelése.</p>
   </div>
-  <a class="btn btn-outline-secondary btn-icon" href="{{ url_for('admin_tools') }}"><i class="bi bi-arrow-left"></i> Admin eszközök</a>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-purple btn-icon" href="{{ url_for('admin_user_new') }}"><i class="bi bi-person-plus"></i> Új felhasználó</a>
+    <a class="btn btn-outline-secondary btn-icon" href="{{ url_for('admin_tools') }}"><i class="bi bi-arrow-left"></i> Admin eszközök</a>
+  </div>
 </div>
 
 <div class="help-box">
-  Az emailes meghívás egy későbbi fejlesztési körben készül el. Ebben a verzióban a már létező felhasználók szerepköre és aktív állapota kezelhető.
+  Itt hozható létre új felhasználó ideiglenes jelszóval. Első belépéskor a rendszer kötelező jelszócserét kér.
 </div>
 
 <form method="get" class="filter-bar mb-4">
@@ -30,11 +33,18 @@
   <div class="section-title"><h2>Felhasználói fiókok</h2></div>
   <div class="table-responsive">
     <table class="table align-middle mb-0">
-      <thead><tr><th>Felhasználónév</th><th>Szerepkör</th><th>Státusz</th><th>Létrehozva</th><th>Műveletek</th></tr></thead>
+      <thead><tr><th>Felhasználónév</th><th>Típus</th><th>Szerepkör</th><th>Státusz</th><th>Utolsó belépés</th><th>Jelszócsere</th><th>Létrehozva</th><th>Műveletek</th></tr></thead>
       <tbody>
         {% for user in users %}
           <tr>
             <td class="fw-semibold">{{ user.username }}</td>
+            <td>
+              {% if user.effective_role == "admin" %}
+                <span class="badge text-bg-danger">Admin</span>
+              {% else %}
+                <span class="badge text-bg-light border">User</span>
+              {% endif %}
+            </td>
             <td>
               <form method="post" action="{{ url_for('admin_user_role', user_id=user.id) }}" class="d-flex gap-2">
                 <select class="form-select form-select-sm" name="role" aria-label="{{ user.username }} szerepköre">
@@ -52,9 +62,20 @@
                 <span class="badge text-bg-secondary">Inaktív</span>
               {% endif %}
             </td>
-            <td>{{ user.created_at.strftime("%Y-%m-%d") if user.created_at else "–" }}</td>
+            <td>{{ user.last_login_at.strftime("%Y-%m-%d %H:%M") if user.last_login_at else "–" }}</td>
             <td>
-              <form method="post" action="{{ url_for('admin_user_toggle_active', user_id=user.id) }}">
+              {% if user.force_password_change %}
+                <span class="badge text-bg-warning">Kötelező</span>
+              {% else %}
+                <span class="badge text-bg-light border">Nem szükséges</span>
+              {% endif %}
+            </td>
+            <td>{{ user.created_at.strftime("%Y-%m-%d") if user.created_at else "–" }}</td>
+            <td class="text-nowrap">
+              <form method="post" action="{{ url_for('admin_user_force_password_change', user_id=user.id) }}" class="d-inline">
+                <button class="btn btn-outline-secondary btn-sm btn-icon" type="submit" data-confirm="Biztosan kötelező jelszócserét állítasz be?"><i class="bi bi-key"></i> Jelszócsere</button>
+              </form>
+              <form method="post" action="{{ url_for('admin_user_toggle_active', user_id=user.id) }}" class="d-inline">
                 {% if user.is_active %}
                   <button class="btn btn-outline-danger btn-sm btn-icon" type="submit" data-confirm="Biztosan deaktiválod ezt a felhasználót?"><i class="bi bi-person-x"></i> Deaktiválás</button>
                 {% else %}
@@ -64,7 +85,30 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="5"><div class="empty-state"><strong>Nincs találat.</strong><span>Próbálj más keresési kifejezést.</span></div></td></tr>
+          <tr><td colspan="8"><div class="empty-state"><strong>Nincs találat.</strong><span>Próbálj más keresési kifejezést.</span></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="data-section mt-4">
+  <div class="section-title"><h2>Login audit log</h2></div>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead><tr><th>Időpont</th><th>Esemény</th><th>Felhasználó</th><th>Siker</th><th>IP</th><th>Részlet</th></tr></thead>
+      <tbody>
+        {% for log in login_audit_logs %}
+          <tr>
+            <td>{{ log.created_at.strftime("%Y-%m-%d %H:%M:%S") if log.created_at else "–" }}</td>
+            <td>{{ log.event_type }}</td>
+            <td>{{ log.username or (log.user.username if log.user else "–") }}</td>
+            <td>{% if log.success is sameas true %}<span class="badge text-bg-success">Igen</span>{% elif log.success is sameas false %}<span class="badge text-bg-danger">Nem</span>{% else %}–{% endif %}</td>
+            <td>{{ log.ip_address or "–" }}</td>
+            <td>{{ log.details or "–" }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6"><div class="empty-state"><strong>Még nincs login audit esemény.</strong><span>Az első belépés után itt jelenik meg.</span></div></td></tr>
         {% endfor %}
       </tbody>
     </table>

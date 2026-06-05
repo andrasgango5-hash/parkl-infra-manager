@@ -140,6 +140,7 @@
 
         <div class="sidebar-footer">
           <div class="sidebar-user"><i class="bi bi-person-circle"></i><span>{{ current_user.username }} · {{ user_role_label(current_user.effective_role) }}</span></div>
+          <a class="sidebar-logout" href="{{ url_for('change_password') }}" title="Jelszócsere"><i class="bi bi-key"></i><span>Jelszócsere</span></a>
           <form method="post" action="{{ url_for('logout') }}">
             <button class="sidebar-logout" type="submit" title="Kijelentkezés"><i class="bi bi-box-arrow-right"></i><span>Kijelentkezés</span></button>
           </form>

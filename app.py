@@ -1,5 +1,5 @@
 from functools import wraps
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 import base64
 import json
@@ -249,6 +249,8 @@ def create_app(config_class=Config):
         MOVEMENT_TYPES,
         USER_ROLES,
         USER_ROLE_LABELS,
+        AuditLog,
+        AuthRateLimit,
         Device,
         DeviceUnit,
         ImportBatch,
@@ -271,9 +273,116 @@ def create_app(config_class=Config):
             return None
         return db.session.get(User, user_id)
 
+    def client_ip_address():
+        forwarded_for = request.headers.get("X-Forwarded-For", "")
+        if forwarded_for:
+            return forwarded_for.split(",", 1)[0].strip()
+        return request.remote_addr
+
+    def aware_utc(value):
+        if value and value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+
+    def log_audit_event(event_type, user=None, username=None, success=None, details=None):
+        db.session.add(
+            AuditLog(
+                user_id=user.id if user else None,
+                event_type=event_type,
+                username=username or (user.username if user else None),
+                ip_address=client_ip_address(),
+                user_agent=(request.user_agent.string or "")[:255],
+                success=success,
+                details=details,
+            )
+        )
+
+    def lockout_identifier(username):
+        return (username or "").strip().lower()
+
+    def get_or_create_rate_limit(identifier):
+        record = AuthRateLimit.query.filter_by(identifier=identifier).first()
+        if record is None:
+            record = AuthRateLimit(identifier=identifier)
+            db.session.add(record)
+            db.session.flush()
+        return record
+
+    def is_login_locked(user, rate_limit_record, now):
+        locked_until_values = []
+        if user and user.locked_until:
+            locked_until_values.append(user.locked_until)
+        if rate_limit_record and rate_limit_record.locked_until:
+            locked_until_values.append(rate_limit_record.locked_until)
+        return any(aware_utc(value) and aware_utc(value) > now for value in locked_until_values)
+
+    def register_failed_login(user, rate_limit_record, now):
+        max_attempts = app.config["LOGIN_MAX_FAILED_ATTEMPTS"]
+        lockout_until = None
+        if rate_limit_record:
+            rate_limit_record.failed_count += 1
+            rate_limit_record.last_failed_at = now
+            if rate_limit_record.failed_count >= max_attempts:
+                rate_limit_record.locked_until = now + timedelta(
+                    minutes=app.config["LOGIN_LOCKOUT_MINUTES"]
+                )
+                lockout_until = rate_limit_record.locked_until
+        if user:
+            user.failed_login_count += 1
+            if user.failed_login_count >= max_attempts:
+                user.locked_until = now + timedelta(
+                    minutes=app.config["LOGIN_LOCKOUT_MINUTES"]
+                )
+                lockout_until = user.locked_until
+        return lockout_until
+
+    def register_successful_login(user, rate_limit_record, now):
+        user.failed_login_count = 0
+        user.locked_until = None
+        user.last_login_at = now
+        user.last_seen_at = now
+        if rate_limit_record:
+            rate_limit_record.failed_count = 0
+            rate_limit_record.locked_until = None
+        session.clear()
+        session.permanent = True
+        session["user_id"] = user.id
+        session["last_activity"] = now.isoformat()
+
     def user_can(*roles):
         user = get_current_user()
         return bool(user and user.is_active and user.has_role(*roles))
+
+    @app.before_request
+    def enforce_session_security():
+        endpoint = request.endpoint or ""
+        if endpoint in {"static", "login", "logout"}:
+            return None
+        user = get_current_user()
+        if not user:
+            return None
+
+        now = datetime.now(timezone.utc)
+        last_activity_raw = session.get("last_activity")
+        if last_activity_raw:
+            try:
+                last_activity = datetime.fromisoformat(last_activity_raw)
+            except ValueError:
+                last_activity = None
+            if last_activity and now - last_activity > app.config["PERMANENT_SESSION_LIFETIME"]:
+                log_audit_event("session_timeout", user=user, success=True)
+                db.session.commit()
+                session.clear()
+                flash("A munkamenet lejárt 8 óra inaktivitás után. Jelentkezz be újra.", "warning")
+                return redirect(url_for("login"))
+
+        session["last_activity"] = now.isoformat()
+        user.last_seen_at = now
+        db.session.commit()
+        if user.force_password_change and endpoint != "change_password":
+            flash("Az első belépéshez jelszócsere szükséges.", "warning")
+            return redirect(url_for("change_password"))
+        return None
 
     @app.context_processor
     def inject_current_user():
@@ -404,6 +513,9 @@ def create_app(config_class=Config):
             user.role = role
             user.is_admin = role == "admin"
             user.is_active = True
+            user.force_password_change = False
+            user.failed_login_count = 0
+            user.locked_until = None
         db.session.commit()
         click.echo("Szerepkör tesztfelhasználók létrehozva/frissítve.")
         for username, (role, password) in demo_users.items():
@@ -480,17 +592,48 @@ def create_app(config_class=Config):
             query = query.filter(User.username.ilike(f"%{search}%"))
         return query.order_by(User.username.asc())
 
+    def recent_login_audit_query(limit=50):
+        login_events = (
+            "login_success",
+            "login_failure",
+            "login_locked",
+            "login_inactive",
+            "logout",
+            "session_timeout",
+            "password_changed",
+            "password_change_failure",
+        )
+        return (
+            AuditLog.query.filter(AuditLog.event_type.in_(login_events))
+            .order_by(AuditLog.created_at.desc())
+            .limit(limit)
+        )
+
     def reject_inactive_login(user):
         if user and not user.is_active:
             flash("A felhasználói fiók inaktív. Fordulj egy adminisztrátorhoz.", "danger")
             return True
         return False
 
+    def validate_new_password(password, confirmation=None):
+        if len(password or "") < 12:
+            return "Az új jelszó legalább 12 karakter legyen."
+        if confirmation is not None and password != confirmation:
+            return "A két új jelszó nem egyezik."
+        return None
+
     @app.cli.command("seed-admin")
-    def seed_admin():
+    @click.option("--password", hide_input=True, required=False)
+    def seed_admin(password):
         """Create or update the default admin user."""
         username = app.config["ADMIN_USERNAME"]
-        password = app.config["ADMIN_PASSWORD"]
+        password = app.config["ADMIN_PASSWORD"] or password
+        if not password:
+            password = click.prompt(
+                "Admin jelszó",
+                hide_input=True,
+                confirmation_prompt=True,
+            )
         user = User.query.filter_by(username=username).first()
         if user is None:
             user = User(
@@ -499,6 +642,7 @@ def create_app(config_class=Config):
                 is_admin=True,
                 role="admin",
                 is_active=True,
+                force_password_change=True,
             )
             db.session.add(user)
             action = "Létrehozva"
@@ -507,6 +651,9 @@ def create_app(config_class=Config):
             user.is_admin = True
             user.role = "admin"
             user.is_active = True
+            user.force_password_change = True
+            user.failed_login_count = 0
+            user.locked_until = None
             action = "Frissítve"
         for location in Location.query.all():
             if location.name == "Main Warehouse":
@@ -568,23 +715,88 @@ def create_app(config_class=Config):
         if request.method == "POST":
             username = request.form.get("username", "").strip()
             password = request.form.get("password", "")
+            identifier = lockout_identifier(username) or f"ip:{client_ip_address() or 'unknown'}"
+            now = datetime.now(timezone.utc)
+            rate_limit = get_or_create_rate_limit(identifier)
             user = User.query.filter_by(username=username).first()
             if reject_inactive_login(user):
+                log_audit_event("login_inactive", user=user, username=username, success=False)
+                db.session.commit()
+                return render_template("login.html")
+            if is_login_locked(user, rate_limit, now):
+                log_audit_event("login_locked", user=user, username=username, success=False)
+                db.session.commit()
+                flash("Túl sok hibás belépési kísérlet. Próbáld újra 15 perc múlva.", "danger")
                 return render_template("login.html")
             if user and check_password_hash(user.password_hash, password):
                 if user.is_admin and user.role != "admin":
                     user.role = "admin"
-                    db.session.commit()
-                session.clear()
-                session["user_id"] = user.id
+                register_successful_login(user, rate_limit, now)
+                log_audit_event("login_success", user=user, username=username, success=True)
+                db.session.commit()
                 flash("Sikeres bejelentkezés.", "success")
+                if user.force_password_change:
+                    return redirect(url_for("change_password"))
                 return redirect(url_for("dashboard"))
-            flash("Hibás felhasználónév vagy jelszó.", "danger")
+            lockout_until = register_failed_login(user, rate_limit, now)
+            log_audit_event(
+                "login_failure",
+                user=user,
+                username=username,
+                success=False,
+                details="locked" if lockout_until else None,
+            )
+            db.session.commit()
+            if lockout_until:
+                flash("Túl sok hibás belépési kísérlet. A fiók 15 percre tiltva.", "danger")
+            else:
+                remaining = app.config["LOGIN_MAX_FAILED_ATTEMPTS"]
+                if rate_limit:
+                    remaining = max(0, remaining - rate_limit.failed_count)
+                flash(f"Hibás felhasználónév vagy jelszó. Hátralévő próbálkozás: {remaining}.", "danger")
         return render_template("login.html")
+
+    @app.route("/change-password", methods=["GET", "POST"])
+    @login_required
+    def change_password():
+        user = get_current_user()
+        if request.method == "POST":
+            current_password = request.form.get("current_password", "")
+            new_password = request.form.get("new_password", "")
+            confirmation = request.form.get("new_password_confirm", "")
+            if not check_password_hash(user.password_hash, current_password):
+                log_audit_event(
+                    "password_change_failure",
+                    user=user,
+                    success=False,
+                    details="bad_current_password",
+                )
+                db.session.commit()
+                flash("A jelenlegi jelszó hibás.", "danger")
+            else:
+                error = validate_new_password(new_password, confirmation)
+                if error:
+                    flash(error, "danger")
+                elif check_password_hash(user.password_hash, new_password):
+                    flash("Az új jelszó nem egyezhet meg a jelenlegi jelszóval.", "danger")
+                else:
+                    user.password_hash = generate_password_hash(new_password)
+                    user.force_password_change = False
+                    user.failed_login_count = 0
+                    user.locked_until = None
+                    log_audit_event("password_changed", user=user, success=True)
+                    db.session.commit()
+                    flash("A jelszó módosítva.", "success")
+                    return redirect(url_for("dashboard"))
+        return render_template("change_password.html", forced=user.force_password_change)
 
     @app.route("/logout", methods=["POST"])
     @login_required
     def logout():
+        user = get_current_user()
+        if user:
+            log_audit_event("logout", user=user, success=True)
+            db.session.commit()
         session.clear()
         flash("Kijelentkeztél.", "info")
         return redirect(url_for("login"))
@@ -782,6 +994,48 @@ def create_app(config_class=Config):
             search=search,
             roles=USER_ROLES,
             role_labels=USER_ROLE_LABELS,
+            login_audit_logs=recent_login_audit_query().all(),
+        )
+
+    @app.route("/admin/users/new", methods=["GET", "POST"])
+    @admin_required
+    def admin_user_new():
+        if request.method == "POST":
+            username = request.form.get("username", "").strip()
+            role = validate_user_role(request.form.get("role", "viewer"))
+            password = request.form.get("temporary_password", "")
+            if not username:
+                flash("A felhasználónév kötelező.", "danger")
+            elif User.query.filter_by(username=username).first():
+                flash("Ezzel a felhasználónévvel már létezik fiók.", "danger")
+            else:
+                error = validate_new_password(password)
+                if error:
+                    flash(error, "danger")
+                else:
+                    user = User(
+                        username=username,
+                        password_hash=generate_password_hash(password),
+                        role=role,
+                        is_admin=role == "admin",
+                        is_active=True,
+                        force_password_change=True,
+                    )
+                    db.session.add(user)
+                    log_audit_event(
+                        "user_created",
+                        user=get_current_user(),
+                        username=username,
+                        success=True,
+                        details=f"role={role}",
+                    )
+                    db.session.commit()
+                    flash("A felhasználó létrejött. Első belépéskor jelszót kell cserélnie.", "success")
+                    return redirect(url_for("admin_users"))
+        return render_template(
+            "admin_user_form.html",
+            roles=USER_ROLES,
+            role_labels=USER_ROLE_LABELS,
         )
 
     @app.route("/admin/users/<int:user_id>/role", methods=["POST"])
@@ -791,6 +1045,13 @@ def create_app(config_class=Config):
         role = validate_user_role(request.form.get("role", ""))
         if not apply_user_management_change(user, role=role):
             return redirect(url_for("admin_users"))
+        log_audit_event(
+            "user_role_changed",
+            user=get_current_user(),
+            username=user.username,
+            success=True,
+            details=f"role={role}",
+        )
         db.session.commit()
         flash(f"{user.username} szerepköre módosítva.", "success")
         return redirect(url_for("admin_users"))
@@ -802,9 +1063,31 @@ def create_app(config_class=Config):
         new_active = not user.is_active
         if not apply_user_management_change(user, is_active=new_active):
             return redirect(url_for("admin_users"))
+        log_audit_event(
+            "user_activation_changed",
+            user=get_current_user(),
+            username=user.username,
+            success=True,
+            details=f"is_active={new_active}",
+        )
         db.session.commit()
         state = "aktiválva" if user.is_active else "deaktiválva"
         flash(f"{user.username} felhasználó {state}.", "success")
+        return redirect(url_for("admin_users"))
+
+    @app.route("/admin/users/<int:user_id>/force-password-change", methods=["POST"])
+    @admin_required
+    def admin_user_force_password_change(user_id):
+        user = get_user_or_404(user_id)
+        user.force_password_change = True
+        log_audit_event(
+            "user_force_password_change",
+            user=get_current_user(),
+            username=user.username,
+            success=True,
+        )
+        db.session.commit()
+        flash(f"{user.username} következő belépéskor jelszót cserél.", "success")
         return redirect(url_for("admin_users"))
 
     @app.route("/legacy")
@@ -2206,10 +2489,18 @@ def reset_demo_dataset(
     password = app.config["ADMIN_PASSWORD"]
     user = User.query.filter_by(username=username).first()
     if user is None:
+        if not password:
+            raise click.ClickException(
+                "Nincs admin felhasználó és ADMIN_PASSWORD sincs beállítva. "
+                "Futtasd előbb: flask --app app seed-admin --password"
+            )
         user = User(
             username=username,
             password_hash=generate_password_hash(password),
             is_admin=True,
+            role="admin",
+            is_active=True,
+            force_password_change=True,
         )
         db.session.add(user)
         db.session.flush()

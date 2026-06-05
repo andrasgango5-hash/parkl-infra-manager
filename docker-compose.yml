@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: parkl-infra-postgres
+    environment:
+      POSTGRES_DB: parkl_infra
+      POSTGRES_USER: parkl
+      POSTGRES_PASSWORD: parkl_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - parkl_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U parkl -d parkl_infra"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  parkl_postgres_data:

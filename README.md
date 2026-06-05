@@ -8,8 +8,8 @@ Parkl-specifikus belső ERP/készletkezelő webalkalmazás első működő MVP v
 - Flask
 - Flask-SQLAlchemy
 - Flask-Migrate
-- Alapértelmezés szerint SQLite
-- PostgreSQL-kompatibilis konfiguráció `DATABASE_URL` alapján
+- Helyi fejlesztésben SQLite fallback
+- PostgreSQL production konfiguráció `DATABASE_URL` alapján
 - Bootstrap 5
 - Vanilla JavaScript
 - Flask session alapú hitelesítés
@@ -26,19 +26,25 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Adatbázis inicializálása:
+PostgreSQL indítása helyi Dockerrel:
 
 ```bash
-flask --app app db init
-flask --app app db migrate -m "Initial schema"
+docker compose up -d postgres
+```
+
+Adatbázis inicializálása / migrálása:
+
+```bash
 flask --app app db upgrade
 ```
 
 Alapértelmezett admin felhasználó létrehozása:
 
 ```bash
-flask --app app seed-admin
+flask --app app seed-admin --password
 ```
+
+Production környezetben inkább `ADMIN_PASSWORD` környezeti változóval futtasd a seedet, majd töröld/forgasd az értéket. Az admin első belépéskor kötelező jelszócserét kap.
 
 Tiszta helyi demóadatok létrehozása:
 
@@ -54,25 +60,20 @@ Alkalmazás indítása:
 flask --app app run --debug
 ```
 
-Nyisd meg: http://127.0.0.1:5000, majd jelentkezz be a `.env` fájlban megadott adatokkal.
-
-Alapértelmezett helyi belépési adatok a `.env.example` alapján:
-
-- Felhasználónév: `admin`
-- Jelszó: `admin123`
+Nyisd meg: http://127.0.0.1:5000, majd jelentkezz be az általad seedelt admin adatokkal.
 
 ## Konfiguráció
 
-Alapértelmezés szerint SQLite fut:
+Helyi fejlesztéshez használható SQLite fallback, ha nincs `DATABASE_URL`:
 
 ```env
 DATABASE_URL=sqlite:///instance/parkl.db
 ```
 
-Későbbi PostgreSQL használathoz ezt állítsd be:
+Production / Docker PostgreSQL használathoz:
 
 ```env
-DATABASE_URL=postgresql://user:password@localhost:5432/parkl_infra
+DATABASE_URL=postgresql://parkl:parkl_dev_password@localhost:5432/parkl_infra
 ```
 
 Helyi fejlesztésen kívül állíts be valódi titkos kulcsot is:
@@ -81,18 +82,39 @@ Helyi fejlesztésen kívül állíts be valódi titkos kulcsot is:
 SECRET_KEY=replace-with-a-long-random-value
 ```
 
+Biztonsági beállítások:
+
+```env
+SESSION_COOKIE_SECURE=true
+SESSION_COOKIE_SAMESITE=Lax
+LOGIN_MAX_FAILED_ATTEMPTS=5
+LOGIN_LOCKOUT_MINUTES=15
+```
+
+## Production authentikáció
+
+- A jelszavak Werkzeug hash formában tárolódnak.
+- 5 hibás login próbálkozás után 15 perces tiltás lép életbe.
+- A session 8 óra inaktivitás után lejár.
+- Az admin jelszó nincs hardcode-olva; `seed-admin` jelszót kér vagy `ADMIN_PASSWORD`-t használ.
+- Új/admin seedelt felhasználónál első belépéskor kötelező jelszócsere van.
+- A Felhasználók admin oldalon új felhasználó hozható létre ideiglenes jelszóval.
+- A login, logout, lockout és jelszócsere események audit logba kerülnek.
+
+PostgreSQL migrációs részletek: [docs/postgresql-migration.md](docs/postgresql-migration.md)
+
 ## Magyar használat
 
 Az alkalmazás böngészőben látható felülete magyar nyelvű. A fő menüpontok:
 
 - `Áttekintés` - workflow indítópontok, figyelmet igénylő tételek és legutóbbi mozgások
-- `Projektek` - projektek listázása és létrehozása
-- `Eszközök` - eszközök, bulk anyagok és importált készletsorok keresése, workflow nézetekkel
+- `Projektek` - projektek listázása, új projekt külön `/projects/new` oldalon
+- `Eszközök` - eszközök, bulk anyagok és importált készletsorok keresése, új eszköz külön `/devices/new` oldalon
 - `Készlethelyek` - raktárak, helyszínek és egyéb készlethelyek kezelése
 - `Mozgások` - készletmozgások rögzítése és megtekintése
 - `Munkalapok` - önálló karbantartási, hibaelhárítási, kábelcsere- és helyszíni jegyzőkönyvek
 - `Gazdátlan számlasorok` - projekthez vagy eszközhöz még nem rendelt számlasorok nyilvántartása
-- `Excel import` - Parkl készletkezelő `.xlsx` feltöltése, dry-run előnézet és megerősített import
+- `Import / Export` - sablon alapú napi import/export; a régi Parkl Excel import admin Legacy funkció
 
 ## Hogyan használd az appot
 
@@ -101,7 +123,7 @@ Az app célja, hogy az Excelből átvett készlet-, beszerzési, projekt- és sz
 Javasolt Parkl munkafolyamat:
 
 1. Hozd létre a projektet a `Projektek` oldalon.
-2. Rögzíts kézzel eszközt, vagy töltsd be a Parkl Excel fájlt az `Excel import` oldalon.
+2. Rögzíts kézzel eszközt a `/devices/new` oldalon, vagy töltsd be a normál import sablont az `Import / Export` oldalon.
 3. Az `Eszközök` oldalon használd a workflow nézeteket: `Raktáron`, `Projekthez rendelve`, `Kiadva`, `Telepítve`, `Beérkezésre vár`, `Pénzügyileg nyitott`, `Figyelmet igényel`.
 4. Az eszköz részletein foglald, add ki, telepítsd, vedd vissza, küldd szervizbe, helyezd át vagy selejtezd.
 5. A projekt részletező oldalon ellenőrizd a hozzárendelt tételeket, az összértéket, a nyitott számlákat és a mozgástörténetet.
@@ -251,6 +273,7 @@ Státuszváltási szabályok:
 
 Az alkalmazás egyszerű, központi szerepkör alapú jogosultságkezelést használ:
 
+- Alap biztonsági szint: `Admin` vagy `User`
 - `admin` - teljes hozzáférés, felhasználókezelés, Legacy funkciók, import/export és pénzügyi adatok
 - `manager` - projektek, eszközök, készlethelyek, mozgások, munkalapok, PDF-ek és import/export kezelése
 - `technician` - eszközök, QR-kódok és munkalapok megtekintése; munkalap létrehozása és szerkesztése; pénzügyi adatok és import/export nélkül
@@ -270,15 +293,18 @@ Ez a fejlesztési parancs létrehozza vagy frissíti az `admin`, `manager`, `tec
 
 - `/login` - bejelentkezés
 - `/dashboard` - workflow indítópult, gyors műveletek, figyelmet igénylő tételek és legutóbbi készletmozgások
-- `/projects` - projektek listázása és létrehozása
-- `/devices` - eszközök listázása, szűrése és létrehozása
+- `/projects` - projektek listázása és szűrése
+- `/projects/new` - új projekt létrehozása
+- `/devices` - eszközök listázása és szűrése
+- `/devices/new` - új eszköz létrehozása
 - `/devices/<id>/units` - egy csoportos eszköztétel egyedi fizikai példányai
 - `/devices/<id>/units/create` - példányok előnézete és megerősített létrehozása
 - `/devices/<id>/unit-labels.pdf` - az összes aktív példány QR-címkéje PDF-ben
 - `/device-units/<id>` - egyedi eszközpéldány adatlapja
 - `/device-units/<id>/qr` - egyedi eszközpéldány QR-kódja
 - `/device-units/<id>/label` - egyedi eszközpéldány nyomtatható címkéje
-- `/locations` - készlethelyek listázása és létrehozása
+- `/locations` - készlethelyek listázása és szűrése
+- `/locations/new` - új készlethely létrehozása
 - `/movements` - készletmozgások listázása és létrehozása
 - `/unassigned-invoices` - gazdátlan számlasorok listázása és létrehozása
 - `/import` - Legacy Parkl Excel import kompatibilitási URL, csak admin felhasználóknak
