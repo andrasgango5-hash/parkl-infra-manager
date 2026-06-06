@@ -84,6 +84,8 @@ USER_ROLE_LABELS = {
     "viewer": "Megtekintő",
 }
 
+TRACKING_MODES = ("bulk", "unit")
+
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -165,7 +167,23 @@ class Project(db.Model):
     archived_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     devices = db.relationship("Device", back_populates="project")
-    movements = db.relationship("StockMovement", back_populates="project")
+    device_units = db.relationship("DeviceUnit", back_populates="project")
+    bulk_balances = db.relationship("BulkStockBalance", back_populates="project")
+    movements = db.relationship(
+        "StockMovement",
+        foreign_keys="StockMovement.project_id",
+        back_populates="project",
+    )
+    outgoing_movements = db.relationship(
+        "StockMovement",
+        foreign_keys="StockMovement.from_project_id",
+        back_populates="from_project",
+    )
+    incoming_movements = db.relationship(
+        "StockMovement",
+        foreign_keys="StockMovement.to_project_id",
+        back_populates="to_project",
+    )
     unassigned_invoice_items = db.relationship(
         "UnassignedInvoiceItem", back_populates="assigned_project"
     )
@@ -188,6 +206,8 @@ class Location(db.Model):
     archived_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     devices = db.relationship("Device", back_populates="location")
+    device_units = db.relationship("DeviceUnit", back_populates="location")
+    bulk_balances = db.relationship("BulkStockBalance", back_populates="location")
     outgoing_movements = db.relationship(
         "StockMovement",
         foreign_keys="StockMovement.from_location_id",
@@ -201,6 +221,13 @@ class Location(db.Model):
 
 
 class Device(db.Model):
+    __table_args__ = (
+        db.CheckConstraint(
+            "tracking_mode IN ('bulk', 'unit')",
+            name="ck_device_tracking_mode",
+        ),
+    )
+
     id = db.Column(db.Integer, primary_key=True)
     asset_tag = db.Column(db.String(80), unique=True, nullable=False, index=True)
     serial_number = db.Column(db.String(120), default="", nullable=False)
@@ -217,6 +244,7 @@ class Device(db.Model):
     huf_value = db.Column(db.Float, nullable=True)
     vat_rate = db.Column(db.Float, nullable=True)
     qr_mode = db.Column(db.String(20), default="group", nullable=False)
+    tracking_mode = db.Column(db.String(20), default="bulk", nullable=False, index=True)
     assignment_quantity = db.Column(db.Float, nullable=True)
     assignment_notes = db.Column(db.Text, nullable=True)
     order_date = db.Column(db.Date, nullable=True)
@@ -265,6 +293,12 @@ class Device(db.Model):
         back_populates="device",
         cascade="all, delete-orphan",
         order_by="DeviceUnit.unit_code",
+    )
+    bulk_balances = db.relationship(
+        "BulkStockBalance",
+        back_populates="device",
+        cascade="all, delete-orphan",
+        order_by="BulkStockBalance.id",
     )
 
     @property
@@ -335,6 +369,9 @@ class DeviceUnit(db.Model):
     unit_code = db.Column(db.String(120), unique=True, nullable=False, index=True)
     serial_number = db.Column(db.String(120), nullable=True, index=True)
     asset_tag = db.Column(db.String(80), nullable=True, index=True)
+    status = db.Column(db.String(40), default="IN_STOCK", nullable=False, index=True)
+    location_id = db.Column(db.Integer, db.ForeignKey("location.id"), nullable=True, index=True)
+    project_id = db.Column(db.Integer, db.ForeignKey("project.id"), nullable=True, index=True)
     notes = db.Column(db.Text, nullable=True)
     created_at = db.Column(
         db.DateTime(timezone=True),
@@ -350,6 +387,13 @@ class DeviceUnit(db.Model):
     archived_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     device = db.relationship("Device", back_populates="units")
+    location = db.relationship("Location", back_populates="device_units")
+    project = db.relationship("Project", back_populates="device_units")
+    movements = db.relationship(
+        "StockMovement",
+        foreign_keys="StockMovement.unit_id",
+        back_populates="unit",
+    )
 
     @property
     def human_label(self):
@@ -364,15 +408,67 @@ class DeviceUnit(db.Model):
         return " – ".join(parts)
 
 
+class BulkStockBalance(db.Model):
+    __table_args__ = (
+        db.CheckConstraint("quantity >= 0", name="ck_bulk_stock_balance_quantity"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    device_id = db.Column(db.Integer, db.ForeignKey("device.id"), nullable=False, index=True)
+    status = db.Column(db.String(40), nullable=False, index=True)
+    quantity = db.Column(db.Float, nullable=False, default=0)
+    location_id = db.Column(db.Integer, db.ForeignKey("location.id"), nullable=True, index=True)
+    project_id = db.Column(db.Integer, db.ForeignKey("project.id"), nullable=True, index=True)
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    device = db.relationship("Device", back_populates="bulk_balances")
+    location = db.relationship("Location", back_populates="bulk_balances")
+    project = db.relationship("Project", back_populates="bulk_balances")
+
+
 class StockMovement(db.Model):
+    __table_args__ = (
+        db.CheckConstraint(
+            "quantity IS NULL OR quantity > 0",
+            name="ck_stock_movement_quantity_positive",
+        ),
+        db.CheckConstraint(
+            "unit_id IS NULL OR quantity = 1",
+            name="ck_stock_movement_unit_quantity",
+        ),
+        db.CheckConstraint(
+            "reversal_of_movement_id IS NULL OR reversal_of_movement_id != id",
+            name="ck_stock_movement_not_self_reversal",
+        ),
+    )
+
     id = db.Column(db.Integer, primary_key=True)
     device_id = db.Column(db.Integer, db.ForeignKey("device.id"), nullable=False)
     movement_type = db.Column(db.String(40), nullable=False)
+    quantity = db.Column(db.Float, nullable=True)
+    unit_id = db.Column(db.Integer, db.ForeignKey("device_unit.id"), nullable=True, index=True)
     from_location_id = db.Column(
         db.Integer, db.ForeignKey("location.id"), nullable=True
     )
     to_location_id = db.Column(db.Integer, db.ForeignKey("location.id"), nullable=True)
     project_id = db.Column(db.Integer, db.ForeignKey("project.id"), nullable=True)
+    from_project_id = db.Column(db.Integer, db.ForeignKey("project.id"), nullable=True)
+    to_project_id = db.Column(db.Integer, db.ForeignKey("project.id"), nullable=True)
+    reversal_of_movement_id = db.Column(
+        db.Integer, db.ForeignKey("stock_movement.id"), nullable=True, index=True
+    )
+    from_status = db.Column(db.String(40), nullable=True)
+    to_status = db.Column(db.String(40), nullable=True)
     notes = db.Column(db.Text, default="", nullable=False)
     created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     created_at = db.Column(
@@ -382,13 +478,27 @@ class StockMovement(db.Model):
     )
 
     device = db.relationship("Device", back_populates="movements")
+    unit = db.relationship("DeviceUnit", foreign_keys=[unit_id], back_populates="movements")
     from_location = db.relationship(
         "Location", foreign_keys=[from_location_id], back_populates="outgoing_movements"
     )
     to_location = db.relationship(
         "Location", foreign_keys=[to_location_id], back_populates="incoming_movements"
     )
-    project = db.relationship("Project", back_populates="movements")
+    project = db.relationship(
+        "Project", foreign_keys=[project_id], back_populates="movements"
+    )
+    from_project = db.relationship(
+        "Project", foreign_keys=[from_project_id], back_populates="outgoing_movements"
+    )
+    to_project = db.relationship(
+        "Project", foreign_keys=[to_project_id], back_populates="incoming_movements"
+    )
+    reversal_of = db.relationship(
+        "StockMovement",
+        remote_side=[id],
+        foreign_keys=[reversal_of_movement_id],
+    )
     created_by = db.relationship("User", back_populates="movements")
 
 
@@ -656,3 +766,21 @@ def prevent_direct_device_status_update(mapper, connection, target):
     )
     if not has_new_movement:
         raise ValueError("Az eszköz státusza csak StockMovement létrehozásával változhat.")
+
+
+@event.listens_for(DeviceUnit, "before_update")
+def prevent_direct_device_unit_status_update(mapper, connection, target):
+    status_history = inspect(target).attrs.status.history
+    if not status_history.has_changes():
+        return
+
+    session = object_session(target)
+    has_new_movement = session is not None and any(
+        isinstance(item, StockMovement)
+        and (item.unit is target or item.unit_id == target.id)
+        for item in session.new
+    )
+    if not has_new_movement:
+        raise ValueError(
+            "Az eszközpéldány státusza csak StockMovement létrehozásával változhat."
+        )

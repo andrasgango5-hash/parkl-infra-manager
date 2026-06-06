@@ -9,10 +9,24 @@
     <p class="text-secondary mb-0">{{ location_type_label(location.location_type) }}</p>
   </div>
   <div class="d-flex gap-2">
-    {% if can_write %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('location_edit', location_id=location.id) }}">Szerkesztés</a>{% endif %}
+    {% if can_write %}
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('location_edit', location_id=location.id) }}">Szerkesztés</a>
+      {% if not archive_blockers %}
+      <form method="post" action="{{ url_for('location_archive', location_id=location.id) }}">
+        <button class="btn btn-outline-danger btn-sm" type="submit" data-confirm="Biztosan archiválod ezt az üres készlethelyet?">Archiválás</button>
+      </form>
+      {% endif %}
+    {% endif %}
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('locations') }}">Vissza</a>
   </div>
 </div>
+
+{% if archive_blockers %}
+<div class="alert alert-warning">
+  <strong>A készlethely jelenleg nem archiválható.</strong>
+  <ul class="mb-0 mt-2">{% for blocker in archive_blockers %}<li>{{ blocker }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
 
 <section class="data-section mb-4">
   <div class="section-title"><h2>Készlethely adatok</h2></div>
@@ -44,29 +58,30 @@
     <table class="table table-hover align-middle">
       <thead><tr><th>Azonosító</th><th>Termék</th><th>Mennyiség</th>{% if can_view_finance %}<th>Deviza</th><th>Egység nettó</th><th>Összes nettó</th><th>ÁFA</th><th>Egység bruttó</th><th>Összes bruttó</th>{% endif %}<th>Státusz</th><th>Projekt</th><th></th></tr></thead>
       <tbody>
-        {% for device in devices %}
+        {% for balance in bulk_balances %}
+          {% set device = balance.device %}
           <tr>
             <td class="fw-semibold">{{ device.asset_tag }}</td>
             <td>{{ device_primary_label(device) }}</td>
-            <td>{{ format_number(device.quantity) }}</td>
+            <td>{{ format_number(balance.quantity) }}</td>
             {% if can_view_finance %}
             <td>{{ device.currency or "hiányzik" }}</td>
             <td>{{ device_money_text(device, "unit_net") }}</td>
-            <td>{{ device_money_text(device, "total_net") }}</td>
+            <td>{% if device.unit_net_price is not none and device.currency %}{{ format_number(device.unit_net_price * balance.quantity) }} {{ device.currency }}{% else %}Nem számolható{% endif %}</td>
             <td>{{ format_vat_rate(device.vat_rate) }}</td>
             <td>{{ device_money_text(device, "unit_gross") }}</td>
-            <td>{{ device_money_text(device, "total_gross") }}</td>
+            <td>{% if device.unit_gross_price is not none and device.currency %}{{ format_number(device.unit_gross_price * balance.quantity) }} {{ device.currency }}{% else %}Nem számolható{% endif %}</td>
             {% endif %}
-            <td><span class="status-badge {{ status_badge_class(device.status) }}">{{ status_label(device.status) }}</span></td>
-            <td>{{ device.project.code if device.project else "-" }}</td>
+            <td><span class="status-badge {{ status_badge_class(balance.status) }}">{{ status_label(balance.status) }}</span></td>
+            <td>{{ balance.project.code if balance.project else "-" }}</td>
             <td><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_detail', device_id=device.id) }}">Részletek</a></td>
           </tr>
         {% else %}
           <tr>
             <td colspan="12">
               <div class="empty-state">
-                <strong>Nincs eszköz ezen a készlethelyen.</strong>
-                <span>Mozgass ide eszközt az eszköz részletein vagy a Mozgások oldalon.</span>
+                <strong>{% if units %}Nincs mennyiségi tétel ezen a készlethelyen.{% else %}Nincs eszköz ezen a készlethelyen.{% endif %}</strong>
+                <span>{% if units %}Az egyedi példányok az alábbi külön listában láthatók.{% else %}Mozgass ide eszközt az eszköz részletein vagy a Mozgások oldalon.{% endif %}</span>
                 <a class="btn btn-success btn-sm" href="{{ url_for('devices') }}">Eszközök megnyitása</a>
               </div>
             </td>
@@ -76,6 +91,28 @@
     </table>
   </div>
 </section>
+
+{% if units %}
+<section class="data-section mb-4">
+  <div class="section-title"><h2>Egyedi eszközpéldányok ezen a készlethelyen</h2></div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Példány</th><th>Terméktétel</th><th>Státusz</th><th>Projekt</th><th></th></tr></thead>
+      <tbody>
+        {% for unit in units %}
+          <tr>
+            <td class="fw-semibold">{{ unit.unit_code }}</td>
+            <td>{{ device_primary_label(unit.device) }}</td>
+            <td><span class="status-badge {{ status_badge_class(unit.status) }}">{{ status_label(unit.status) }}</span></td>
+            <td>{{ unit.project.code if unit.project else "-" }}</td>
+            <td><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_unit_detail', unit_id=unit.id) }}">Példány részletei</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
 
 <section class="data-section">
   <div class="section-title"><h2>Kapcsolódó mozgások</h2></div>

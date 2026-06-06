@@ -43,7 +43,7 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -71,6 +71,7 @@ MOVEMENT_TYPE_LABELS = {
     "SERVICE": "Szervizbe küldés",
     "SCRAP": "Selejtezés",
     "TRANSFER": "Áthelyezés",
+    "REVERSAL": "Mozgás visszavonása",
 }
 
 CATEGORY_LABELS = {
@@ -247,10 +248,12 @@ def create_app(config_class=Config):
         DEVICE_CATEGORIES,
         DEVICE_STATUSES,
         MOVEMENT_TYPES,
+        TRACKING_MODES,
         USER_ROLES,
         USER_ROLE_LABELS,
         AuditLog,
         AuthRateLimit,
+        BulkStockBalance,
         Device,
         DeviceUnit,
         ImportBatch,
@@ -410,6 +413,8 @@ def create_app(config_class=Config):
             "device_primary_label": device_primary_label,
             "device_money_text": device_money_text,
             "device_qr_mode_label": device_qr_mode_label,
+            "tracking_mode_label": tracking_mode_label,
+            "bulk_balance_summary": bulk_balance_summary,
             "status_badge_class": status_badge_class,
             "movement_badge_class": movement_badge_class,
             "work_order_type_label": work_order_type_label,
@@ -687,6 +692,7 @@ def create_app(config_class=Config):
             Location,
             Device,
             DeviceUnit,
+            BulkStockBalance,
             StockMovement,
             UnassignedInvoiceItem,
             ImportBatch,
@@ -805,6 +811,12 @@ def create_app(config_class=Config):
     @login_required
     def dashboard():
         active_devices = Device.query.filter(Device.archived_at.is_(None)).all()
+        active_units = (
+            DeviceUnit.query.filter(DeviceUnit.archived_at.is_(None))
+            .join(Device)
+            .filter(Device.archived_at.is_(None), Device.tracking_mode == "unit")
+            .all()
+        )
         finance_visible = user_can("admin", "manager")
         active_invoice_items = (
             UnassignedInvoiceItem.query.filter(UnassignedInvoiceItem.archived_at.is_(None)).all()
@@ -818,10 +830,10 @@ def create_app(config_class=Config):
             "projects": Project.query.filter(Project.archived_at.is_(None)).count(),
             "locations": Location.query.filter(Location.archived_at.is_(None)).count(),
             "movements": StockMovement.query.count(),
-            "in_stock": sum(1 for device in active_devices if device.status == "IN_STOCK"),
-            "reserved": sum(1 for device in active_devices if device.status == "RESERVED"),
-            "issued": sum(1 for device in active_devices if device.status == "ISSUED"),
-            "installed": sum(1 for device in active_devices if device.status == "INSTALLED"),
+            "in_stock": inventory_status_quantity(active_devices, active_units, "IN_STOCK"),
+            "reserved": inventory_status_quantity(active_devices, active_units, "RESERVED"),
+            "issued": inventory_status_quantity(active_devices, active_units, "ISSUED"),
+            "installed": inventory_status_quantity(active_devices, active_units, "INSTALLED"),
             "awaiting_arrival": sum(1 for device in active_devices if is_awaiting_arrival(device)),
             "unassigned_invoices": sum(
                 1
@@ -1401,13 +1413,43 @@ def create_app(config_class=Config):
     def project_detail(project_id):
         project = Project.query.get_or_404(project_id)
         devices = (
-            Device.query.filter_by(project_id=project.id)
-            .filter(Device.archived_at.is_(None))
+            Device.query.join(BulkStockBalance)
+            .filter(
+                BulkStockBalance.project_id == project.id,
+                BulkStockBalance.quantity > 0,
+                Device.archived_at.is_(None),
+                Device.tracking_mode == "bulk",
+            )
+            .distinct()
             .order_by(Device.asset_tag.asc())
             .all()
         )
+        bulk_balances = (
+            BulkStockBalance.query.filter(
+                BulkStockBalance.project_id == project.id,
+                BulkStockBalance.quantity > 0,
+            )
+            .join(Device)
+            .filter(Device.archived_at.is_(None), Device.tracking_mode == "bulk")
+            .order_by(BulkStockBalance.id.asc())
+            .all()
+        )
+        units = (
+            DeviceUnit.query.filter_by(project_id=project.id)
+            .filter(DeviceUnit.archived_at.is_(None))
+            .join(Device)
+            .filter(Device.archived_at.is_(None), Device.tracking_mode == "unit")
+            .order_by(DeviceUnit.unit_code.asc())
+            .all()
+        )
         movements = (
-            StockMovement.query.filter_by(project_id=project.id)
+            StockMovement.query.filter(
+                or_(
+                    StockMovement.project_id == project.id,
+                    StockMovement.from_project_id == project.id,
+                    StockMovement.to_project_id == project.id,
+                )
+            )
             .order_by(StockMovement.created_at.desc())
             .limit(50)
             .all()
@@ -1418,15 +1460,19 @@ def create_app(config_class=Config):
             .all()
         )
         finance_summary = {
-            "device_count": len(devices),
-            "quantity": sum(device.quantity or 0 for device in devices),
+            "device_count": len(devices) + len(units),
+            "quantity": sum(balance.quantity for balance in bulk_balances) + len(units),
+            "bulk_quantity": sum(balance.quantity for balance in bulk_balances),
             **device_currency_totals(devices),
             "invoice_value": sum(device.invoice_value or 0 for device in devices),
             "ordered": sum(1 for device in devices if device.is_ordered),
             "arrived": sum(1 for device in devices if device.has_arrived),
-            "issued": sum(1 for device in devices if device.status == "ISSUED"),
-            "installed": sum(1 for device in devices if device.status == "INSTALLED"),
-            "returned": sum(1 for device in devices if device.status == "RETURNED"),
+            "issued": sum(balance.quantity for balance in bulk_balances if balance.status == "ISSUED")
+            + sum(1 for unit in units if unit.status == "ISSUED"),
+            "installed": sum(balance.quantity for balance in bulk_balances if balance.status == "INSTALLED")
+            + sum(1 for unit in units if unit.status == "INSTALLED"),
+            "returned": sum(balance.quantity for balance in bulk_balances if balance.status == "RETURNED")
+            + sum(1 for unit in units if unit.status == "RETURNED"),
             "unpaid_supplier_invoice_count": sum(
                 1
                 for device in devices
@@ -1443,15 +1489,139 @@ def create_app(config_class=Config):
             for device in devices
             if device_attention_reasons(device, include_finance=finance_visible)
         ]
+        warehouses = (
+            Location.query.filter(
+                Location.archived_at.is_(None),
+                Location.location_type == "warehouse",
+            )
+            .order_by(Location.name.asc())
+            .all()
+        )
         return render_template(
             "project_detail.html",
             project=project,
             devices=devices,
+            bulk_balances=bulk_balances,
+            units=units,
             movements=movements,
             drawings=drawings,
             finance_summary=finance_summary,
             attention_items=attention_items,
+            warehouses=warehouses,
+            archive_blockers=project_archive_blockers(project),
+            reversed_movement_ids=reversed_movement_ids(movements),
+            reversible_movement_ids=reversible_movement_ids(movements),
         )
+
+    @app.route(
+        "/projects/<int:project_id>/bulk-balances/<int:balance_id>/return",
+        methods=["POST"],
+    )
+    @manager_write_required
+    def project_bulk_return(project_id, balance_id):
+        project = Project.query.get_or_404(project_id)
+        balance = (
+            BulkStockBalance.query.filter_by(id=balance_id, project_id=project.id)
+            .with_for_update()
+            .first_or_404()
+        )
+        quantity = optional_float(request.form.get("quantity"))
+        to_location_id = optional_int(request.form.get("to_location_id"))
+        warehouse = db.session.get(Location, to_location_id) if to_location_id else None
+        if warehouse is None or warehouse.archived_at is not None:
+            flash("Visszavételhez aktív célraktár kiválasztása kötelező.", "danger")
+            return redirect(url_for("project_detail", project_id=project.id))
+        if warehouse.location_type != "warehouse":
+            flash("Projektből történő visszavétel célja csak raktár lehet.", "danger")
+            return redirect(url_for("project_detail", project_id=project.id))
+
+        error = validate_movement(
+            balance.device,
+            "RETURN",
+            to_location_id=warehouse.id,
+            project_id=None,
+            quantity=quantity,
+            source_balance=balance,
+        )
+        if error:
+            flash(error, "danger")
+            return redirect(url_for("project_detail", project_id=project.id))
+        try:
+            create_movement(
+                device=balance.device,
+                movement_type="RETURN",
+                quantity=quantity,
+                to_location_id=warehouse.id,
+                source_balance=balance,
+                notes=request.form.get("notes", "").strip()
+                or f"Részleges visszavétel a(z) {project.code} projektből.",
+                user_id=session["user_id"],
+            )
+            apply_device_state(
+                balance.device,
+                "RETURN",
+                warehouse.id,
+                None,
+                quantity=quantity,
+                source_balance=balance,
+            )
+            db.session.commit()
+        except ValueError as error:
+            db.session.rollback()
+            flash(str(error), "danger")
+            return redirect(url_for("project_detail", project_id=project.id))
+        flash(
+            f"{format_number(quantity)} db visszavétele rögzítve a(z) {warehouse.name} raktárba.",
+            "success",
+        )
+        return redirect(url_for("project_detail", project_id=project.id))
+
+    @app.route(
+        "/projects/<int:project_id>/device-units/<int:unit_id>/return",
+        methods=["POST"],
+    )
+    @manager_write_required
+    def project_unit_return(project_id, unit_id):
+        project = Project.query.get_or_404(project_id)
+        unit = (
+            DeviceUnit.query.filter_by(id=unit_id, project_id=project.id)
+            .with_for_update()
+            .first_or_404()
+        )
+        to_location_id = optional_int(request.form.get("to_location_id"))
+        warehouse = db.session.get(Location, to_location_id) if to_location_id else None
+        if warehouse is None or warehouse.archived_at is not None:
+            flash("Visszavételhez aktív célraktár kiválasztása kötelező.", "danger")
+            return redirect(url_for("project_detail", project_id=project.id))
+        if warehouse.location_type != "warehouse":
+            flash("Projektből történő visszavétel célja csak raktár lehet.", "danger")
+            return redirect(url_for("project_detail", project_id=project.id))
+
+        error = validate_movement(
+            unit.device,
+            "RETURN",
+            to_location_id=warehouse.id,
+            project_id=None,
+            quantity=1,
+            unit=unit,
+        )
+        if error:
+            flash(error, "danger")
+            return redirect(url_for("project_detail", project_id=project.id))
+        create_movement(
+            device=unit.device,
+            unit=unit,
+            movement_type="RETURN",
+            quantity=1,
+            to_location_id=warehouse.id,
+            notes=request.form.get("notes", "").strip()
+            or f"Visszavétel a(z) {project.code} projektből.",
+            user_id=session["user_id"],
+        )
+        apply_device_state(unit.device, "RETURN", warehouse.id, None, unit=unit)
+        db.session.commit()
+        flash(f"A(z) {unit.unit_code} példány visszavétele rögzítve.", "success")
+        return redirect(url_for("project_detail", project_id=project.id))
 
     @app.route("/projects/<int:project_id>/pdf/<pdf_type>")
     @export_required
@@ -1595,6 +1765,10 @@ def create_app(config_class=Config):
     @manager_write_required
     def project_archive(project_id):
         project = Project.query.get_or_404(project_id)
+        blockers = project_archive_blockers(project)
+        if blockers:
+            flash_archive_blockers("A projekt nem archiválható.", blockers)
+            return redirect(url_for("project_detail", project_id=project.id))
         project.archived_at = now_utc()
         db.session.commit()
         flash("A projekt archiválva.", "info")
@@ -1631,18 +1805,92 @@ def create_app(config_class=Config):
                     Device.serial_number.ilike(term),
                     Device.supplier_manufacturer.ilike(term),
                     Device.project.has(Project.code.ilike(term)),
+                    Device.units.any(
+                        and_(
+                            DeviceUnit.archived_at.is_(None),
+                            or_(
+                                DeviceUnit.unit_code.ilike(term),
+                                DeviceUnit.asset_tag.ilike(term),
+                                DeviceUnit.serial_number.ilike(term),
+                                DeviceUnit.project.has(Project.code.ilike(term)),
+                            ),
+                        )
+                    ),
                 )
             )
         if selected_status in DEVICE_STATUSES:
-            device_query = device_query.filter(Device.status == selected_status)
+            device_query = device_query.filter(
+                or_(
+                    and_(
+                        Device.tracking_mode == "bulk",
+                        Device.bulk_balances.any(
+                            and_(
+                                BulkStockBalance.quantity > 0,
+                                BulkStockBalance.status == selected_status,
+                            )
+                        ),
+                    ),
+                    and_(
+                        Device.tracking_mode == "unit",
+                        Device.units.any(
+                            and_(
+                                DeviceUnit.archived_at.is_(None),
+                                DeviceUnit.status == selected_status,
+                            )
+                        ),
+                    ),
+                )
+            )
         if selected_category in DEVICE_CATEGORIES:
             device_query = device_query.filter(Device.device_type == selected_category)
         if selected_source_sheet:
             device_query = device_query.filter(Device.source_sheet == selected_source_sheet)
         if selected_project_id:
-            device_query = device_query.filter(Device.project_id == selected_project_id)
+            device_query = device_query.filter(
+                or_(
+                    and_(
+                        Device.tracking_mode == "bulk",
+                        Device.bulk_balances.any(
+                            and_(
+                                BulkStockBalance.quantity > 0,
+                                BulkStockBalance.project_id == selected_project_id,
+                            )
+                        ),
+                    ),
+                    and_(
+                        Device.tracking_mode == "unit",
+                        Device.units.any(
+                            and_(
+                                DeviceUnit.archived_at.is_(None),
+                                DeviceUnit.project_id == selected_project_id,
+                            )
+                        ),
+                    ),
+                )
+            )
         if selected_location_id:
-            device_query = device_query.filter(Device.location_id == selected_location_id)
+            device_query = device_query.filter(
+                or_(
+                    and_(
+                        Device.tracking_mode == "bulk",
+                        Device.bulk_balances.any(
+                            and_(
+                                BulkStockBalance.quantity > 0,
+                                BulkStockBalance.location_id == selected_location_id,
+                            )
+                        ),
+                    ),
+                    and_(
+                        Device.tracking_mode == "unit",
+                        Device.units.any(
+                            and_(
+                                DeviceUnit.archived_at.is_(None),
+                                DeviceUnit.location_id == selected_location_id,
+                            )
+                        ),
+                    ),
+                )
+            )
 
         device_list = device_query.order_by(Device.created_at.desc()).all()
         quick_filter = request.args.get("quick_filter", "").strip()
@@ -1650,13 +1898,13 @@ def create_app(config_class=Config):
         if workflow_filter == "financial_open" and not user_can("admin", "manager"):
             abort(403)
         if workflow_filter == "in_stock":
-            device_list = [device for device in device_list if device.status == "IN_STOCK"]
+            device_list = [device for device in device_list if device_has_status(device, "IN_STOCK")]
         elif workflow_filter == "assigned":
-            device_list = [device for device in device_list if device.project_id]
+            device_list = [device for device in device_list if device_has_project(device)]
         elif workflow_filter == "issued":
-            device_list = [device for device in device_list if device.status == "ISSUED"]
+            device_list = [device for device in device_list if device_has_status(device, "ISSUED")]
         elif workflow_filter == "installed":
-            device_list = [device for device in device_list if device.status == "INSTALLED"]
+            device_list = [device for device in device_list if device_has_status(device, "INSTALLED")]
         elif workflow_filter == "attention":
             device_list = [
                 device
@@ -1714,22 +1962,43 @@ def create_app(config_class=Config):
                 flash("Érvénytelen deviza. Válassz HUF vagy EUR értéket.", "danger")
             elif data["qr_mode"] not in DEVICE_QR_MODE_LABELS:
                 flash("Érvénytelen QR mód.", "danger")
+            elif data["tracking_mode"] not in TRACKING_MODES:
+                flash("Érvénytelen követési mód.", "danger")
+            elif data["quantity"] is None or data["quantity"] <= 0:
+                flash("Pozitív mennyiség megadása kötelező.", "danger")
+            elif data["tracking_mode"] == "unit" and not float(data["quantity"]).is_integer():
+                flash("Egyedi példánykövetésnél a mennyiség csak egész szám lehet.", "danger")
             elif Device.query.filter_by(asset_tag=data["asset_tag"]).first():
                 flash("Ezzel az eszközazonosítóval már létezik eszköz.", "danger")
             else:
                 device = Device(**data, status="IN_STOCK")
                 db.session.add(device)
                 db.session.flush()
-                create_movement(
-                    device=device,
-                    movement_type="INBOUND",
-                    to_location_id=device.location_id,
-                    project_id=device.project_id,
-                    notes="Kezdeti eszközrögzítés.",
-                    user_id=session["user_id"],
-                )
+                if device.tracking_mode == "bulk":
+                    create_movement(
+                        device=device,
+                        movement_type="INBOUND",
+                        quantity=device.quantity,
+                        to_location_id=device.location_id,
+                        project_id=device.project_id,
+                        notes="Kezdeti mennyiségi tétel rögzítése.",
+                        user_id=session["user_id"],
+                    )
+                    apply_device_state(
+                        device,
+                        "INBOUND",
+                        device.location_id,
+                        device.project_id,
+                        quantity=device.quantity,
+                    )
                 db.session.commit()
-                flash("Az eszköz létrejött, a készletmozgás rögzítve.", "success")
+                if device.tracking_mode == "bulk":
+                    flash("Az eszköz létrejött, a készletmozgás rögzítve.", "success")
+                else:
+                    flash(
+                        "Az egyedi követésű terméktörzs létrejött. Hozd létre a fizikai példányokat a mozgások előtt.",
+                        "success",
+                    )
                 return redirect(url_for("device_detail", device_id=device.id))
         return render_template(
             "device_new.html",
@@ -1742,6 +2011,7 @@ def create_app(config_class=Config):
     @login_required
     def device_detail(device_id):
         device = Device.query.get_or_404(device_id)
+        bulk_balances = active_bulk_balances(device)
         projects = Project.query.filter(Project.archived_at.is_(None)).order_by(Project.name.asc()).all()
         locations = Location.query.filter(Location.archived_at.is_(None)).order_by(Location.name.asc()).all()
         units = (
@@ -1762,6 +2032,10 @@ def create_app(config_class=Config):
             projects=projects,
             locations=locations,
             units=units,
+            bulk_balances=bulk_balances,
+            archive_blockers=device_archive_blockers(device),
+            reversed_movement_ids=reversed_movement_ids(movements),
+            reversible_movement_ids=reversible_movement_ids(movements),
         )
 
     @app.route("/devices/<int:device_id>/edit", methods=["GET", "POST"])
@@ -1780,6 +2054,21 @@ def create_app(config_class=Config):
                 flash("Érvénytelen deviza. Válassz HUF vagy EUR értéket.", "danger")
             elif data["qr_mode"] not in DEVICE_QR_MODE_LABELS:
                 flash("Érvénytelen QR mód.", "danger")
+            elif data["tracking_mode"] not in TRACKING_MODES:
+                flash("Érvénytelen követési mód.", "danger")
+            elif device.tracking_mode == "bulk" and data["tracking_mode"] == "unit":
+                flash(
+                    "Bulk tételt a Példányok létrehozása művelettel állíts egyedi követésre.",
+                    "danger",
+                )
+            elif (
+                data["tracking_mode"] == "bulk"
+                and any(unit.archived_at is None for unit in device.units)
+            ):
+                flash(
+                    "Aktív eszközpéldányokkal rendelkező tétel nem állítható vissza mennyiségi követésre.",
+                    "danger",
+                )
             elif not device_quantity_supports_existing_units(device, data["quantity"]):
                 flash(
                     "A mennyiség nem lehet kisebb a már létrehozott aktív példányok számánál.",
@@ -1836,6 +2125,13 @@ def create_app(config_class=Config):
     @manager_write_required
     def device_units_create(device_id):
         device = Device.query.get_or_404(device_id)
+        bulk_balances = active_bulk_balances(device)
+        if device.tracking_mode == "bulk" and len(bulk_balances) > 1:
+            flash(
+                "Több készletegyenlegre bontott bulk tétel csak az egyenlegek összevonása után példányosítható.",
+                "warning",
+            )
+            return redirect(url_for("device_detail", device_id=device.id))
         quantity = whole_device_quantity(device)
         active_units = (
             DeviceUnit.query.filter_by(device_id=device.id)
@@ -1858,8 +2154,19 @@ def create_app(config_class=Config):
             if request.form.get("confirm") != "1":
                 flash("A példányok létrehozásához erősítsd meg a műveletet.", "warning")
             else:
+                device.tracking_mode = "unit"
+                source_balance = bulk_balances[0] if bulk_balances else None
                 for unit_code in generated_codes:
-                    db.session.add(DeviceUnit(device=device, unit_code=unit_code))
+                    unit = DeviceUnit(
+                        device=device,
+                        unit_code=unit_code,
+                        status=source_balance.status if source_balance else device.status,
+                        location_id=source_balance.location_id if source_balance else device.location_id,
+                        project_id=source_balance.project_id if source_balance else device.project_id,
+                    )
+                    db.session.add(unit)
+                if source_balance is not None:
+                    source_balance.quantity = 0
                 if device.qr_mode != "individual":
                     device.qr_mode = "individual"
                 db.session.commit()
@@ -1906,7 +2213,66 @@ def create_app(config_class=Config):
     @login_required
     def device_unit_detail(unit_id):
         unit = DeviceUnit.query.get_or_404(unit_id)
-        return render_template("device_unit_detail.html", unit=unit, device=unit.device)
+        projects = Project.query.filter(Project.archived_at.is_(None)).order_by(Project.name.asc()).all()
+        locations = Location.query.filter(Location.archived_at.is_(None)).order_by(Location.name.asc()).all()
+        movements = (
+            StockMovement.query.filter_by(unit_id=unit.id)
+            .order_by(StockMovement.created_at.desc())
+            .all()
+        )
+        return render_template(
+            "device_unit_detail.html",
+            unit=unit,
+            device=unit.device,
+            projects=projects,
+            locations=locations,
+            movements=movements,
+            archive_blockers=device_unit_archive_blockers(unit),
+            reversed_movement_ids=reversed_movement_ids(movements),
+            reversible_movement_ids=reversible_movement_ids(movements),
+        )
+
+    @app.route("/device-units/<int:unit_id>/actions", methods=["POST"])
+    @manager_write_required
+    def device_unit_action(unit_id):
+        unit = DeviceUnit.query.filter_by(id=unit_id).with_for_update().first_or_404()
+        device = unit.device
+        movement_type = request.form.get("movement_type", "").strip()
+        to_location_id = optional_int(request.form.get("to_location_id"))
+        project_id = optional_int(request.form.get("project_id"))
+        notes = request.form.get("notes", "").strip()
+        error = validate_movement(
+            device,
+            movement_type,
+            to_location_id,
+            project_id,
+            quantity=1,
+            unit=unit,
+        )
+        if error:
+            flash(error, "danger")
+            return redirect(url_for("device_unit_detail", unit_id=unit.id))
+        create_movement(
+            device=device,
+            unit=unit,
+            movement_type=movement_type,
+            quantity=1,
+            from_location_id=unit.location_id,
+            to_location_id=to_location_id,
+            project_id=project_id,
+            notes=notes,
+            user_id=session["user_id"],
+        )
+        apply_device_state(
+            device,
+            movement_type,
+            to_location_id,
+            project_id,
+            unit=unit,
+        )
+        db.session.commit()
+        flash(f"Példánymozgás rögzítve: {movement_type_label(movement_type)}.", "success")
+        return redirect(url_for("device_unit_detail", unit_id=unit.id))
 
     @app.route("/device-units/<int:unit_id>/edit", methods=["GET", "POST"])
     @manager_write_required
@@ -1955,6 +2321,10 @@ def create_app(config_class=Config):
     @manager_write_required
     def device_unit_archive(unit_id):
         unit = DeviceUnit.query.get_or_404(unit_id)
+        blockers = device_unit_archive_blockers(unit)
+        if blockers:
+            flash_archive_blockers("Az eszközpéldány nem archiválható.", blockers)
+            return redirect(url_for("device_unit_detail", unit_id=unit.id))
         unit.archived_at = now_utc()
         db.session.commit()
         flash("Az eszközpéldány archiválva.", "info")
@@ -1964,6 +2334,10 @@ def create_app(config_class=Config):
     @manager_write_required
     def device_archive(device_id):
         device = Device.query.get_or_404(device_id)
+        blockers = device_archive_blockers(device)
+        if blockers:
+            flash_archive_blockers("Az eszköztétel nem archiválható.", blockers)
+            return redirect(url_for("device_detail", device_id=device.id))
         device.archived_at = now_utc()
         db.session.commit()
         flash("Az eszköz archiválva.", "info")
@@ -1973,29 +2347,58 @@ def create_app(config_class=Config):
     @manager_write_required
     def device_action(device_id):
         device = Device.query.get_or_404(device_id)
+        source_balance_id = optional_int(request.form.get("source_balance_id"))
+        source_balance = (
+            db.session.get(BulkStockBalance, source_balance_id)
+            if source_balance_id
+            else None
+        )
         movement_type = request.form.get("movement_type", "").strip()
         to_location_id = optional_int(request.form.get("to_location_id"))
         project_id = optional_int(request.form.get("project_id"))
+        quantity = optional_float(request.form.get("quantity"))
         notes = request.form.get("notes", "").strip()
         from_location_id = device.location_id
         if movement_type not in MOVEMENT_TYPES:
             flash("Érvénytelen készletművelet.", "danger")
             return redirect(url_for("device_detail", device_id=device.id))
-        error = validate_movement(device, movement_type, to_location_id, project_id)
+        error = validate_movement(
+            device,
+            movement_type,
+            to_location_id,
+            project_id,
+            quantity=quantity,
+            from_location_id=from_location_id,
+            source_balance=source_balance,
+        )
         if error:
             flash(error, "danger")
             return redirect(url_for("device_detail", device_id=device.id))
-        create_movement(
-            device=device,
-            movement_type=movement_type,
-            from_location_id=from_location_id,
-            to_location_id=to_location_id,
-            project_id=project_id,
-            notes=notes,
-            user_id=session["user_id"],
-        )
-        apply_device_state(device, movement_type, to_location_id, project_id)
-        db.session.commit()
+        try:
+            create_movement(
+                device=device,
+                movement_type=movement_type,
+                quantity=quantity,
+                from_location_id=from_location_id,
+                to_location_id=to_location_id,
+                project_id=project_id,
+                notes=notes,
+                user_id=session["user_id"],
+                source_balance=source_balance,
+            )
+            apply_device_state(
+                device,
+                movement_type,
+                to_location_id,
+                project_id,
+                quantity=quantity,
+                source_balance=source_balance,
+            )
+            db.session.commit()
+        except ValueError as error:
+            db.session.rollback()
+            flash(str(error), "danger")
+            return redirect(url_for("device_detail", device_id=device.id))
         flash(f"Készletművelet rögzítve: {movement_type_label(movement_type)}.", "success")
         return redirect(url_for("device_detail", device_id=device.id))
 
@@ -2340,9 +2743,33 @@ def create_app(config_class=Config):
     def location_detail(location_id):
         location = Location.query.get_or_404(location_id)
         devices = (
-            Device.query.filter_by(location_id=location.id)
-            .filter(Device.archived_at.is_(None))
+            Device.query.join(BulkStockBalance)
+            .filter(
+                BulkStockBalance.location_id == location.id,
+                BulkStockBalance.quantity > 0,
+                Device.archived_at.is_(None),
+                Device.tracking_mode == "bulk",
+            )
+            .distinct()
             .order_by(Device.asset_tag.asc())
+            .all()
+        )
+        bulk_balances = (
+            BulkStockBalance.query.filter(
+                BulkStockBalance.location_id == location.id,
+                BulkStockBalance.quantity > 0,
+            )
+            .join(Device)
+            .filter(Device.archived_at.is_(None), Device.tracking_mode == "bulk")
+            .order_by(BulkStockBalance.id.asc())
+            .all()
+        )
+        units = (
+            DeviceUnit.query.filter_by(location_id=location.id)
+            .filter(DeviceUnit.archived_at.is_(None))
+            .join(Device)
+            .filter(Device.archived_at.is_(None), Device.tracking_mode == "unit")
+            .order_by(DeviceUnit.unit_code.asc())
             .all()
         )
         movements = (
@@ -2360,11 +2787,14 @@ def create_app(config_class=Config):
             "location_detail.html",
             location=location,
             devices=devices,
+            units=units,
+            bulk_balances=bulk_balances,
             movements=movements,
             location_summary={
-                "quantity": sum(device.quantity or 0 for device in devices),
+                "quantity": sum(balance.quantity for balance in bulk_balances) + len(units),
                 **device_currency_totals(devices),
             },
+            archive_blockers=location_archive_blockers(location),
         )
 
     @app.route("/locations/<int:location_id>/edit", methods=["GET", "POST"])
@@ -2405,6 +2835,10 @@ def create_app(config_class=Config):
     @manager_write_required
     def location_archive(location_id):
         location = Location.query.get_or_404(location_id)
+        blockers = location_archive_blockers(location)
+        if blockers:
+            flash_archive_blockers("A készlethely nem archiválható.", blockers)
+            return redirect(url_for("location_detail", location_id=location.id))
         location.archived_at = now_utc()
         db.session.commit()
         flash("A készlethely archiválva.", "info")
@@ -2420,9 +2854,26 @@ def create_app(config_class=Config):
         )
         locations = Location.query.filter(Location.archived_at.is_(None)).order_by(Location.name.asc()).all()
         projects = Project.query.filter(Project.archived_at.is_(None)).order_by(Project.name.asc()).all()
+        units = (
+            DeviceUnit.query.filter(DeviceUnit.archived_at.is_(None))
+            .join(Device)
+            .filter(Device.archived_at.is_(None))
+            .order_by(DeviceUnit.unit_code.asc())
+            .all()
+        )
+        bulk_balances = (
+            BulkStockBalance.query.filter(BulkStockBalance.quantity > 0)
+            .join(Device)
+            .filter(Device.archived_at.is_(None), Device.tracking_mode == "bulk")
+            .order_by(BulkStockBalance.device_id.asc(), BulkStockBalance.id.asc())
+            .all()
+        )
 
         if request.method == "POST":
             device_id = optional_int(request.form.get("device_id"))
+            unit_id = optional_int(request.form.get("unit_id"))
+            source_balance_id = optional_int(request.form.get("source_balance_id"))
+            quantity = optional_float(request.form.get("quantity"))
             movement_type = request.form.get("movement_type", "").strip()
             from_location_id = optional_int(request.form.get("from_location_id"))
             to_location_id = optional_int(request.form.get("to_location_id"))
@@ -2430,26 +2881,59 @@ def create_app(config_class=Config):
             notes = request.form.get("notes", "").strip()
 
             device = db.session.get(Device, device_id) if device_id else None
+            unit = (
+                DeviceUnit.query.filter_by(id=unit_id).with_for_update().one_or_none()
+                if unit_id
+                else None
+            )
+            source_balance = (
+                db.session.get(BulkStockBalance, source_balance_id)
+                if source_balance_id
+                else None
+            )
             if device is None or not movement_type:
                 flash("Az eszköz és a mozgástípus kötelező.", "danger")
             else:
-                error = validate_movement(device, movement_type, to_location_id, project_id)
+                error = validate_movement(
+                    device,
+                    movement_type,
+                    to_location_id,
+                    project_id,
+                    quantity=quantity,
+                    unit=unit,
+                    from_location_id=from_location_id,
+                    source_balance=source_balance,
+                )
                 if error:
                     flash(error, "danger")
                 else:
-                    create_movement(
-                        device=device,
-                        movement_type=movement_type,
-                        from_location_id=from_location_id,
-                        to_location_id=to_location_id,
-                        project_id=project_id,
-                        notes=notes,
-                        user_id=session["user_id"],
-                    )
-                    apply_device_state(
-                        device, movement_type, to_location_id, project_id
-                    )
-                    db.session.commit()
+                    try:
+                        create_movement(
+                            device=device,
+                            movement_type=movement_type,
+                            quantity=quantity,
+                            unit=unit,
+                            from_location_id=from_location_id,
+                            to_location_id=to_location_id,
+                            project_id=project_id,
+                            notes=notes,
+                            user_id=session["user_id"],
+                            source_balance=source_balance,
+                        )
+                        apply_device_state(
+                            device,
+                            movement_type,
+                            to_location_id,
+                            project_id,
+                            unit=unit,
+                            quantity=quantity,
+                            source_balance=source_balance,
+                        )
+                        db.session.commit()
+                    except ValueError as error:
+                        db.session.rollback()
+                        flash(str(error), "danger")
+                        return redirect(url_for("movements"))
                     flash("A készletmozgás rögzítve.", "success")
                     return redirect(url_for("movements"))
 
@@ -2462,8 +2946,36 @@ def create_app(config_class=Config):
             devices=devices,
             locations=locations,
             projects=projects,
+            units=units,
+            bulk_balances=bulk_balances,
             movement_types=MOVEMENT_TYPES,
+            reversed_movement_ids=reversed_movement_ids(movement_list),
+            reversible_movement_ids=reversible_movement_ids(movement_list),
         )
+
+    @app.route("/movements/<int:movement_id>/reverse", methods=["POST"])
+    @manager_write_required
+    def movement_reverse(movement_id):
+        movement = StockMovement.query.get_or_404(movement_id)
+        try:
+            reversal = reverse_stock_movement(movement, session["user_id"])
+            db.session.commit()
+        except ValueError as error:
+            db.session.rollback()
+            flash(str(error), "danger")
+        else:
+            flash(
+                f"A(z) #{movement.id} készletmozgás ellenmozgással visszavonva "
+                f"(új mozgás: #{reversal.id}).",
+                "success",
+            )
+
+        project_id = movement.to_project_id or movement.from_project_id or movement.project_id
+        if request.form.get("return_to") == "project" and project_id:
+            return redirect(url_for("project_detail", project_id=project_id))
+        if movement.unit_id:
+            return redirect(url_for("device_unit_detail", unit_id=movement.unit_id))
+        return redirect(url_for("device_detail", device_id=movement.device_id))
 
     return app
 
@@ -2475,6 +2987,7 @@ def reset_demo_dataset(
     Location,
     Device,
     DeviceUnit,
+    BulkStockBalance,
     StockMovement,
     UnassignedInvoiceItem,
     ImportBatch,
@@ -2514,6 +3027,7 @@ def reset_demo_dataset(
     UnassignedInvoiceItem.query.delete()
     StockMovement.query.delete()
     DeviceUnit.query.delete()
+    BulkStockBalance.query.delete()
     Device.query.delete()
     ImportBatch.query.delete()
     Project.query.delete()
@@ -3117,6 +3631,38 @@ def device_qr_mode_label(value):
     return DEVICE_QR_MODE_LABELS.get(value, value)
 
 
+def tracking_mode_label(value):
+    return {
+        "bulk": "Mennyiségi követés",
+        "unit": "Egyedi példánykövetés",
+    }.get(value, value)
+
+
+def bulk_balance_summary(device, field):
+    balances = [
+        balance
+        for balance in device.bulk_balances
+        if balance.quantity is not None and balance.quantity > 1e-9
+    ]
+    if not balances:
+        return "-"
+    if field == "status":
+        values = {status_label(balance.status) for balance in balances}
+    elif field == "project":
+        values = {
+            balance.project.code if balance.project else "Nincs projekt"
+            for balance in balances
+        }
+    elif field == "location":
+        values = {
+            balance.location.name if balance.location else "Nincs készlethely"
+            for balance in balances
+        }
+    else:
+        return "-"
+    return next(iter(values)) if len(values) == 1 else f"{len(values)} féle"
+
+
 def available_device_movements(device):
     transitions = {
         "IN_STOCK": ["RESERVE", "ISSUE", "TRANSFER", "SERVICE", "SCRAP"],
@@ -3128,6 +3674,301 @@ def available_device_movements(device):
         "SCRAPPED": [],
     }
     return transitions.get(device.status, [])
+
+
+def movement_allowed_statuses():
+    return {
+        "INBOUND": {"RETURNED", "IN_SERVICE"},
+        "RESERVE": {"IN_STOCK"},
+        "ISSUE": {"IN_STOCK", "RESERVED", "RETURNED"},
+        "INSTALL": {"ISSUED", "RETURNED"},
+        "RETURN": {"RESERVED", "ISSUED", "INSTALLED", "IN_SERVICE"},
+        "SERVICE": {"IN_STOCK", "RETURNED", "ISSUED", "INSTALLED"},
+        "SCRAP": None,
+        "TRANSFER": {"IN_STOCK", "RETURNED", "ISSUED"},
+    }
+
+
+def reversed_movement_ids(movements):
+    from models import StockMovement
+
+    movement_ids = [movement.id for movement in movements if movement.id is not None]
+    if not movement_ids:
+        return set()
+    return {
+        movement_id
+        for (movement_id,) in db.session.query(StockMovement.reversal_of_movement_id)
+        .filter(StockMovement.reversal_of_movement_id.in_(movement_ids))
+        .all()
+        if movement_id is not None
+    }
+
+
+def reversible_movement_ids(movements):
+    return {
+        movement.id
+        for movement in movements
+        if movement.id is not None and not movement_reversal_blockers(movement)
+    }
+
+
+def movement_reversal_blockers(movement):
+    from models import BulkStockBalance, StockMovement
+
+    blockers = []
+    if movement.reversal_of_movement_id is not None or movement.movement_type == "REVERSAL":
+        blockers.append("Ellenmozgás nem vonható vissza újabb ellenmozgással.")
+        return blockers
+    if StockMovement.query.filter_by(reversal_of_movement_id=movement.id).first():
+        blockers.append("Ezt a mozgást már visszavonták.")
+        return blockers
+    if movement.quantity is None or movement.quantity <= 0:
+        blockers.append("A régi mozgásnak nincs egyértelmű mennyisége.")
+        return blockers
+    if movement.device.archived_at is not None:
+        blockers.append("Az eszköztétel archiválva van.")
+
+    if movement.unit_id is not None:
+        unit = movement.unit
+        if unit is None or unit.archived_at is not None:
+            blockers.append("Az érintett eszközpéldány nem aktív.")
+            return blockers
+        if movement.from_status is None:
+            blockers.append("A példány eredeti kiinduló állapota nem ismert.")
+            return blockers
+        if (
+            unit.status != movement.to_status
+            or unit.location_id != movement.to_location_id
+            or unit.project_id != movement.to_project_id
+        ):
+            blockers.append(
+                "A példány aktuális állapota már nem egyezik a mozgás eredményével."
+            )
+        return blockers
+
+    if movement.device.tracking_mode != "bulk":
+        blockers.append("A mozgás nem köthető egyértelműen bulk készlethez vagy példányhoz.")
+        return blockers
+    target_balance = BulkStockBalance.query.filter_by(
+        device_id=movement.device_id,
+        status=movement.to_status,
+        location_id=movement.to_location_id,
+        project_id=movement.to_project_id,
+    ).first()
+    if target_balance is None or target_balance.quantity + 1e-9 < movement.quantity:
+        blockers.append(
+            "A mozgás eredményoldalán már nincs elegendő, azonos állapotú mennyiség."
+        )
+    return blockers
+
+
+def reverse_stock_movement(original, user_id):
+    from models import BulkStockBalance, DeviceUnit, StockMovement
+
+    blockers = movement_reversal_blockers(original)
+    if blockers:
+        raise ValueError("A mozgás nem vonható vissza: " + " ".join(blockers))
+
+    quantity = original.quantity
+    if original.unit_id is not None:
+        unit = (
+            DeviceUnit.query.filter_by(id=original.unit_id)
+            .with_for_update()
+            .one()
+        )
+        reversal = StockMovement(
+            device_id=original.device_id,
+            unit_id=unit.id,
+            movement_type="REVERSAL",
+            quantity=1,
+            from_location_id=original.to_location_id,
+            to_location_id=original.from_location_id,
+            project_id=original.from_project_id,
+            from_project_id=original.to_project_id,
+            to_project_id=original.from_project_id,
+            reversal_of_movement_id=original.id,
+            from_status=original.to_status,
+            to_status=original.from_status,
+            notes=f"#{original.id} mozgás visszavonása ellenmozgással.",
+            created_by_id=user_id,
+        )
+        db.session.add(reversal)
+        unit.status = original.from_status
+        unit.location_id = original.from_location_id
+        unit.project_id = original.from_project_id
+        unit.updated_at = now_utc()
+        db.session.flush()
+        return reversal
+
+    target_balance = (
+        BulkStockBalance.query.filter_by(
+            device_id=original.device_id,
+            status=original.to_status,
+            location_id=original.to_location_id,
+            project_id=original.to_project_id,
+        )
+        .with_for_update()
+        .one()
+    )
+    if target_balance.quantity + 1e-9 < quantity:
+        raise ValueError("A visszavonáshoz nincs elegendő mennyiség a célállapotban.")
+    target_balance.quantity -= quantity
+    if abs(target_balance.quantity) <= 1e-9:
+        target_balance.quantity = 0
+
+    if original.from_status is not None:
+        restored_balance = find_or_create_bulk_balance(
+            original.device,
+            original.from_status,
+            original.from_location_id,
+            original.from_project_id,
+        )
+        restored_balance.quantity += quantity
+    else:
+        original.device.quantity = max((original.device.quantity or 0) - quantity, 0)
+
+    reversal = StockMovement(
+        device_id=original.device_id,
+        movement_type="REVERSAL",
+        quantity=quantity,
+        from_location_id=original.to_location_id,
+        to_location_id=original.from_location_id,
+        project_id=original.from_project_id,
+        from_project_id=original.to_project_id,
+        to_project_id=original.from_project_id,
+        reversal_of_movement_id=original.id,
+        from_status=original.to_status,
+        to_status=original.from_status,
+        notes=f"#{original.id} mozgás visszavonása ellenmozgással.",
+        created_by_id=user_id,
+    )
+    db.session.add(reversal)
+    sync_bulk_device_legacy_state(original.device)
+    db.session.flush()
+    return reversal
+
+
+def flash_archive_blockers(title, blockers):
+    flash(title, "danger")
+    for blocker in blockers:
+        flash(blocker, "warning")
+
+
+def device_unit_archive_blockers(unit):
+    if unit.status != "SCRAPPED":
+        return [
+            f"A példány jelenlegi státusza {status_label(unit.status)}. "
+            "Archiválás előtt selejtezési mozgás szükséges."
+        ]
+    return []
+
+
+def device_archive_blockers(device):
+    blockers = []
+    active_balances = [
+        balance
+        for balance in device.bulk_balances
+        if balance.quantity is not None
+        and balance.quantity > 1e-9
+        and balance.status != "SCRAPPED"
+    ]
+    if active_balances:
+        quantity = sum(balance.quantity for balance in active_balances)
+        blockers.append(
+            f"{format_number(quantity)} aktív készletmennyiség maradt "
+            f"{len(active_balances)} egyenlegen. Mozgasd vagy selejtezd a készletet."
+        )
+    if (
+        device.tracking_mode == "bulk"
+        and not device.bulk_balances
+        and device.quantity
+        and device.quantity > 0
+    ):
+        blockers.append(
+            f"A régi készletadat szerint {format_number(device.quantity)} darab aktív készlet van."
+        )
+    active_units = [
+        unit
+        for unit in device.units
+        if unit.archived_at is None and unit.status != "SCRAPPED"
+    ]
+    if active_units:
+        blockers.append(
+            f"{len(active_units)} aktív eszközpéldány kapcsolódik a tételhez. "
+            "Előbb selejtezd vagy rendezd a példányokat."
+        )
+    scrapped_units = [
+        unit
+        for unit in device.units
+        if unit.archived_at is None and unit.status == "SCRAPPED"
+    ]
+    if scrapped_units:
+        blockers.append(
+            f"{len(scrapped_units)} selejtezett, de még nem archivált példány kapcsolódik "
+            "a tételhez. Archiváld előbb a példányokat."
+        )
+    return blockers
+
+
+def project_archive_blockers(project):
+    from models import DeviceUnit
+
+    blockers = []
+    if project.status != "completed":
+        blockers.append(
+            f"A projekt státusza {project_status_label(project.status)}. "
+            "Csak lezárt projekt archiválható."
+        )
+    active_balances = [
+        balance
+        for balance in project.bulk_balances
+        if balance.quantity is not None
+        and balance.quantity > 1e-9
+        and balance.status != "SCRAPPED"
+    ]
+    if active_balances:
+        blockers.append(
+            f"{format_number(sum(balance.quantity for balance in active_balances))} "
+            "aktív bulk készletmennyiség van még a projekten."
+        )
+    active_units = [
+        unit
+        for unit in DeviceUnit.query.filter_by(project_id=project.id)
+        .filter(DeviceUnit.archived_at.is_(None))
+        .all()
+        if unit.status != "SCRAPPED"
+    ]
+    if active_units:
+        blockers.append(
+            f"{len(active_units)} aktív egyedi eszközpéldány van még a projekthez rendelve."
+        )
+    return blockers
+
+
+def location_archive_blockers(location):
+    blockers = []
+    active_balances = [
+        balance
+        for balance in location.bulk_balances
+        if balance.quantity is not None
+        and balance.quantity > 1e-9
+        and balance.status != "SCRAPPED"
+    ]
+    if active_balances:
+        blockers.append(
+            f"{format_number(sum(balance.quantity for balance in active_balances))} "
+            "aktív bulk készletmennyiség található ezen a készlethelyen."
+        )
+    active_units = [
+        unit
+        for unit in location.device_units
+        if unit.archived_at is None and unit.status != "SCRAPPED"
+    ]
+    if active_units:
+        blockers.append(
+            f"{len(active_units)} aktív egyedi eszközpéldány található ezen a készlethelyen."
+        )
+    return blockers
 
 
 def whole_device_quantity(device):
@@ -3187,6 +4028,7 @@ def movement_badge_class(value):
         "SERVICE": "movement-service",
         "SCRAP": "movement-scrap",
         "TRANSFER": "movement-transfer",
+        "REVERSAL": "movement-reversal",
     }.get(value, "movement-neutral")
 
 
@@ -3264,7 +4106,53 @@ def is_awaiting_arrival(device):
     return device.is_ordered is True and device.has_arrived is not True
 
 
+def active_device_units(device):
+    return [unit for unit in device.units if unit.archived_at is None]
+
+
+def device_has_status(device, status):
+    if device.tracking_mode == "unit":
+        return any(unit.status == status for unit in active_device_units(device))
+    return any(
+        balance.status == status and balance.quantity > 1e-9
+        for balance in device.bulk_balances
+    )
+
+
+def device_has_project(device):
+    if device.tracking_mode == "unit":
+        return any(unit.project_id is not None for unit in active_device_units(device))
+    return any(
+        balance.project_id is not None and balance.quantity > 1e-9
+        for balance in device.bulk_balances
+    )
+
+
+def inventory_status_quantity(devices, units, status):
+    bulk_quantity = sum(
+        balance.quantity
+        for device in devices
+        if device.tracking_mode == "bulk"
+        for balance in device.bulk_balances
+        if balance.status == status and balance.quantity > 1e-9
+    )
+    return bulk_quantity + sum(1 for unit in units if unit.status == status)
+
+
 def is_arrived_unassigned(device):
+    if device.tracking_mode == "unit":
+        units = active_device_units(device)
+        return device.has_arrived is True and (
+            not units
+            or all(not unit.project_id and not unit.location_id for unit in units)
+        )
+    balances = [
+        balance for balance in device.bulk_balances if balance.quantity > 1e-9
+    ]
+    if balances:
+        return device.has_arrived is True and all(
+            not balance.project_id and not balance.location_id for balance in balances
+        )
     return device.has_arrived is True and not device.project_id and not device.location_id
 
 
@@ -3292,25 +4180,44 @@ def device_attention_reasons(device, include_finance=True):
         reasons.append("Beszállítói számla van, de nincs fizetettként jelölve.")
     if include_finance and device.shipping_invoice_number and device.shipping_invoice_paid is not True:
         reasons.append("Szállítmányozói számla van, de nincs fizetettként jelölve.")
-    if device.project and (
-        not device.project.code
-        or not device.project.name
-        or device.project.name == device.project.code
-        or not device.project.customer
-    ):
-        reasons.append("A kapcsolódó projekt adatai hiányosak.")
+    if device.tracking_mode == "bulk":
+        projects = {
+            balance.project.id: balance.project
+            for balance in device.bulk_balances
+            if balance.quantity > 1e-9 and balance.project
+        }
+        if any(
+            not project.code
+            or not project.name
+            or project.name == project.code
+            or not project.customer
+            for project in projects.values()
+        ):
+            reasons.append("A kapcsolódó projekt adatai hiányosak.")
     if device.source_sheet and not device.product_name:
         reasons.append("Importált sorból hiányzik a terméknév.")
     if not device.device_type or device.device_type not in CATEGORY_LABELS:
         reasons.append("Hiányzó vagy ismeretlen kategória.")
     if device.source_sheet and (device.quantity is None or device.quantity <= 0):
         reasons.append("Hiányzó vagy nulla mennyiség.")
-    if device.status not in STATUS_LABELS:
-        reasons.append("Ismeretlen státusz.")
-    if device.status == "INSTALLED" and not device.project_id:
-        reasons.append("Telepített eszköz projekthozzárendelés nélkül.")
-    if device.status in {"ISSUED", "INSTALLED"} and not device.location_id:
-        reasons.append("Kiadott vagy telepített eszköz lokáció nélkül.")
+    if device.tracking_mode == "unit":
+        for unit in active_device_units(device):
+            if unit.status not in STATUS_LABELS:
+                reasons.append(f"{unit.unit_code}: ismeretlen példánystátusz.")
+            if unit.status == "INSTALLED" and not unit.project_id:
+                reasons.append(f"{unit.unit_code}: telepítve, de nincs projekthez rendelve.")
+            if unit.status in {"ISSUED", "INSTALLED"} and not unit.location_id:
+                reasons.append(f"{unit.unit_code}: kiadott vagy telepített, de nincs lokációja.")
+    else:
+        for balance in device.bulk_balances:
+            if balance.quantity <= 1e-9:
+                continue
+            if balance.status not in STATUS_LABELS:
+                reasons.append("Ismeretlen bulk készletstátusz.")
+            if balance.status == "INSTALLED" and not balance.project_id:
+                reasons.append("Telepített bulk mennyiség projekthozzárendelés nélkül.")
+            if balance.status in {"ISSUED", "INSTALLED"} and not balance.location_id:
+                reasons.append("Kiadott vagy telepített bulk mennyiség lokáció nélkül.")
     return reasons
 
 
@@ -3909,6 +4816,7 @@ def device_form_data(form):
         "currency": currency,
         "vat_rate": optional_float(form.get("vat_rate")),
         "qr_mode": form.get("qr_mode", "group").strip() or "group",
+        "tracking_mode": form.get("tracking_mode", "bulk").strip() or "bulk",
         "huf_value": huf_value
         if huf_value is not None
         else calculate_huf_value(quantity, unit_net_price, currency),
@@ -4333,7 +5241,22 @@ def import_template_workbook(summary, Project, Device, Location, user_id):
         )
         db.session.add(device)
         db.session.flush()
-        create_movement(device=device, movement_type="INBOUND", to_location_id=device.location_id, project_id=device.project_id, notes="Sablon alapú import.", user_id=user_id)
+        create_movement(
+            device=device,
+            movement_type="INBOUND",
+            quantity=device.quantity,
+            to_location_id=device.location_id,
+            project_id=device.project_id,
+            notes="Sablon alapú import.",
+            user_id=user_id,
+        )
+        apply_device_state(
+            device,
+            "INBOUND",
+            device.location_id,
+            device.project_id,
+            quantity=device.quantity,
+        )
         apply_imported_device_status(device, row.get("status") or "IN_STOCK", user_id)
         result["devices_created"] += 1
     return result
@@ -4719,9 +5642,17 @@ def import_parsed_workbook(summary, import_batch_id, user_id):
         create_movement(
             device=device,
             movement_type="INBOUND",
+            quantity=device.quantity,
             project_id=device.project_id,
             notes=f"Excel import: {row['source_sheet']} #{row['source_row_number']}",
             user_id=user_id,
+        )
+        apply_device_state(
+            device,
+            "INBOUND",
+            device.location_id,
+            device.project_id,
+            quantity=device.quantity,
         )
         created += 1
 
@@ -4934,16 +5865,77 @@ def create_movement(
     from_location_id=None,
     to_location_id=None,
     project_id=None,
+    quantity=None,
+    unit=None,
+    unit_id=None,
+    from_project_id=None,
+    to_project_id=None,
+    reversal_of_movement_id=None,
+    source_balance=None,
     notes="",
 ):
-    from models import StockMovement
+    from models import DeviceUnit, StockMovement
+
+    if unit is None and unit_id is not None:
+        unit = db.session.get(DeviceUnit, unit_id)
+    if unit is not None and unit.device_id != device.id:
+        raise ValueError("Az eszközpéldány nem ehhez a terméktételhez tartozik.")
+
+    if (
+        device.tracking_mode == "bulk"
+        and source_balance is None
+        and movement_type != "INBOUND"
+    ):
+        source_balance = infer_bulk_source_balance(device, movement_type, quantity)
+    subject = unit or source_balance or device
+    if unit is not None:
+        quantity = 1
+    elif quantity is None:
+        quantity = device.quantity
+
+    external_bulk_inbound = (
+        device.tracking_mode == "bulk"
+        and unit is None
+        and source_balance is None
+        and movement_type == "INBOUND"
+    )
+    if source_balance is not None:
+        from_location_id = source_balance.location_id
+        from_project_id = source_balance.project_id
+    elif external_bulk_inbound:
+        from_location_id = None
+        from_project_id = None
+    elif from_location_id is None and movement_type != "INBOUND":
+        from_location_id = subject.location_id
+    if from_project_id is None:
+        from_project_id = subject.project_id
+    from_status = subject.status if movement_type != "INBOUND" or source_balance else None
+    to_status = movement_target_status(from_status, movement_type)
+    effective_location_id, effective_project_id = movement_target_dimensions(
+        movement_type,
+        from_location_id,
+        from_project_id,
+        to_location_id,
+        project_id if to_project_id is None else to_project_id,
+    )
+    if external_bulk_inbound and project_id is not None:
+        effective_project_id = project_id
+    to_location_id = effective_location_id
+    to_project_id = effective_project_id
 
     movement = StockMovement(
         device=device,
+        unit=unit,
         movement_type=movement_type,
+        quantity=quantity,
         from_location_id=from_location_id,
         to_location_id=to_location_id,
-        project_id=project_id,
+        project_id=to_project_id,
+        from_project_id=from_project_id,
+        to_project_id=to_project_id,
+        reversal_of_movement_id=reversal_of_movement_id,
+        from_status=from_status,
+        to_status=to_status,
         notes=notes,
         created_by_id=user_id,
     )
@@ -4951,48 +5943,137 @@ def create_movement(
     return movement
 
 
-def validate_movement(device, movement_type, to_location_id=None, project_id=None):
-    from models import MOVEMENT_TYPES
+def validate_movement(
+    device,
+    movement_type,
+    to_location_id=None,
+    project_id=None,
+    quantity=None,
+    unit=None,
+    reversal_of_movement_id=None,
+    from_location_id=None,
+    source_balance=None,
+):
+    from models import BulkStockBalance, Location, MOVEMENT_TYPES, Project, StockMovement
 
     if movement_type not in MOVEMENT_TYPES:
         return "Érvénytelen mozgástípus."
 
-    if device.status == "SCRAPPED":
+    if device.tracking_mode == "unit":
+        if unit is None:
+            return "Egyedi követésű tételnél konkrét eszközpéldány kiválasztása kötelező."
+        if unit.device_id != device.id:
+            return "A kiválasztott eszközpéldány nem ehhez a terméktételhez tartozik."
+        if quantity not in (None, 1, 1.0):
+            return "Egyedi követésű eszközpéldány mozgási mennyisége csak 1 lehet."
+    else:
+        if unit is not None:
+            return "Mennyiségi követésű tételhez nem választható egyedi eszközpéldány."
+        if quantity is None or quantity <= 0:
+            return "Mennyiségi követésű tételnél pozitív mozgási mennyiség megadása kötelező."
+        if source_balance is not None:
+            if not isinstance(source_balance, BulkStockBalance):
+                return "Érvénytelen forrás készletegyenleg."
+            if source_balance.device_id != device.id:
+                return "A forrás készletegyenleg nem ehhez a tételhez tartozik."
+            if source_balance.quantity <= 0:
+                return "A kiválasztott készletegyenlegből nincs elérhető mennyiség."
+            if quantity > source_balance.quantity + 1e-9:
+                return (
+                    f"Legfeljebb {format_number(source_balance.quantity)} mozgatható "
+                    "a kiválasztott készletegyenlegből."
+                )
+        elif movement_type != "INBOUND":
+            return "Bulk mozgáshoz forrás készletegyenleg kiválasztása kötelező."
+
+    if reversal_of_movement_id is not None:
+        original = db.session.get(StockMovement, reversal_of_movement_id)
+        if original is None:
+            return "A visszafordítandó készletmozgás nem található."
+        if original.device_id != device.id or original.unit_id != (unit.id if unit else None):
+            return "Csak ugyanahhoz a tételhez vagy példányhoz tartozó mozgás fordítható vissza."
+        if StockMovement.query.filter_by(reversal_of_movement_id=original.id).first():
+            return "Ezt a készletmozgást már visszafordították."
+
+    subject = unit or source_balance or device
+    if (
+        source_balance is None
+        and from_location_id is not None
+        and movement_type != "INBOUND"
+        and subject.location_id != from_location_id
+    ):
+        return "A megadott forrás készlethely nem egyezik a tétel aktuális készlethelyével."
+    if to_location_id is not None and db.session.get(Location, to_location_id) is None:
+        return "A megadott cél készlethely nem található."
+    if project_id is not None and db.session.get(Project, project_id) is None:
+        return "A megadott projekt nem található."
+    if source_balance is None and device.tracking_mode == "bulk" and movement_type == "INBOUND":
+        current_status = None
+    else:
+        current_status = subject.status
+    if current_status == "SCRAPPED":
         return "Selejtezett eszköz nem mozgatható tovább."
 
-    allowed_statuses = {
-        "INBOUND": {"RETURNED", "IN_SERVICE"},
-        "RESERVE": {"IN_STOCK"},
-        "ISSUE": {"IN_STOCK", "RESERVED", "RETURNED"},
-        "INSTALL": {"ISSUED", "RETURNED"},
-        "RETURN": {"RESERVED", "ISSUED", "INSTALLED", "IN_SERVICE"},
-        "SERVICE": {"IN_STOCK", "RETURNED", "ISSUED", "INSTALLED"},
-        "SCRAP": None,
-        "TRANSFER": {"IN_STOCK", "RETURNED", "ISSUED"},
-    }
+    allowed_statuses = movement_allowed_statuses()
     allowed = allowed_statuses[movement_type]
-    if allowed is not None and device.status not in allowed:
+    if (
+        not (movement_type == "INBOUND" and current_status is None)
+        and allowed is not None
+        and current_status not in allowed
+    ):
         readable = ", ".join(status_label(status) for status in sorted(allowed))
         return (
             f"A(z) {movement_type_label(movement_type)} nem engedélyezett "
             f"a(z) {device.asset_tag} eszköznél, mert jelenlegi státusza: "
-            f"{status_label(device.status)}. Engedélyezett aktuális státusz: "
+            f"{status_label(current_status)}. Engedélyezett aktuális státusz: "
             f"{readable}."
         )
     if movement_type in {"RETURN", "INBOUND", "TRANSFER"} and not to_location_id:
         return f"A(z) {movement_type_label(movement_type)} művelethez cél készlethely megadása kötelező."
-    if movement_type == "ISSUE" and not (project_id or device.project_id):
+    if movement_type == "ISSUE" and not (project_id or subject.project_id):
         return "Kiadáshoz projekt megadása kötelező."
     if movement_type == "INSTALL":
-        if not (project_id or device.project_id):
+        if not (project_id or subject.project_id):
             return "Telepítéshez projekt megadása kötelező."
         if not to_location_id:
             return "Telepítéshez cél helyszín / készlethely megadása kötelező."
+    if (
+        movement_type == "TRANSFER"
+        and to_location_id == subject.location_id
+        and (project_id is None or project_id == subject.project_id)
+    ):
+        return "Áthelyezéshez az aktuálistól eltérő cél készlethely szükséges."
     return None
 
 
-def apply_device_state(device, movement_type, to_location_id=None, project_id=None):
-    device.updated_at = datetime.now(timezone.utc)
+def apply_device_state(
+    device,
+    movement_type,
+    to_location_id=None,
+    project_id=None,
+    unit=None,
+    quantity=None,
+    source_balance=None,
+):
+    if device.tracking_mode == "bulk" and unit is None:
+        if source_balance is None and movement_type != "INBOUND":
+            source_balance = infer_bulk_source_balance(
+                device, movement_type, quantity
+            )
+        if quantity is None:
+            quantity = device.quantity
+        apply_bulk_movement(
+            device,
+            movement_type,
+            quantity,
+            source_balance,
+            to_location_id,
+            project_id,
+        )
+        return
+
+    subject = unit or device
+    subject.updated_at = datetime.now(timezone.utc)
 
     status_by_movement = {
         "INBOUND": "IN_STOCK",
@@ -5004,43 +6085,220 @@ def apply_device_state(device, movement_type, to_location_id=None, project_id=No
         "SCRAP": "SCRAPPED",
     }
     if movement_type in status_by_movement:
-        device.status = status_by_movement[movement_type]
+        subject.status = status_by_movement[movement_type]
 
     if movement_type == "RESERVE":
         if project_id is not None:
-            device.project_id = project_id
+            subject.project_id = project_id
         return
 
     if movement_type == "ISSUE":
         if project_id is not None:
-            device.project_id = project_id
+            subject.project_id = project_id
         if to_location_id is not None:
-            device.location_id = to_location_id
+            subject.location_id = to_location_id
         return
 
     if movement_type == "INSTALL":
-        device.project_id = project_id if project_id is not None else device.project_id
-        device.location_id = to_location_id
+        subject.project_id = project_id if project_id is not None else subject.project_id
+        subject.location_id = to_location_id
         return
 
     if movement_type in {"RETURN", "INBOUND"}:
-        device.location_id = to_location_id
-        device.project_id = None
+        subject.location_id = to_location_id
+        subject.project_id = None
         return
 
     if movement_type == "TRANSFER":
-        device.location_id = to_location_id
+        subject.location_id = to_location_id
         if project_id is not None:
-            device.project_id = project_id
+            subject.project_id = project_id
         return
 
     if movement_type == "SERVICE":
         if to_location_id is not None:
-            device.location_id = to_location_id
+            subject.location_id = to_location_id
         return
 
     if movement_type == "SCRAP":
         return
+
+
+def movement_target_status(from_status, movement_type):
+    status_by_movement = {
+        "INBOUND": "IN_STOCK",
+        "RESERVE": "RESERVED",
+        "ISSUE": "ISSUED",
+        "INSTALL": "INSTALLED",
+        "RETURN": "RETURNED",
+        "SERVICE": "IN_SERVICE",
+        "SCRAP": "SCRAPPED",
+    }
+    return status_by_movement.get(movement_type, from_status)
+
+
+def movement_target_dimensions(
+    movement_type,
+    from_location_id,
+    from_project_id,
+    to_location_id,
+    project_id,
+):
+    target_location_id = (
+        to_location_id if to_location_id is not None else from_location_id
+    )
+    if movement_type in {"RETURN", "INBOUND"}:
+        target_project_id = None
+    elif movement_type in {"RESERVE", "ISSUE", "INSTALL"}:
+        target_project_id = (
+            project_id if project_id is not None else from_project_id
+        )
+    else:
+        target_project_id = (
+            project_id if project_id is not None else from_project_id
+        )
+    return target_location_id, target_project_id
+
+
+def active_bulk_balances(device):
+    from models import BulkStockBalance
+
+    if device.tracking_mode != "bulk":
+        return []
+    balances = [
+        balance
+        for balance in device.bulk_balances
+        if balance.quantity is not None and balance.quantity > 1e-9
+    ]
+    if not balances and device.quantity and device.quantity > 0:
+        balance = BulkStockBalance(
+            device=device,
+            status=device.status,
+            quantity=device.quantity,
+            location_id=device.location_id,
+            project_id=device.project_id,
+        )
+        db.session.add(balance)
+        db.session.flush()
+        balances = [balance]
+    return balances
+
+
+def infer_bulk_source_balance(device, movement_type, quantity=None):
+    allowed_statuses = movement_allowed_statuses().get(movement_type)
+    candidates = [
+        balance
+        for balance in active_bulk_balances(device)
+        if balance.status != "SCRAPPED"
+        and (allowed_statuses is None or balance.status in allowed_statuses)
+        and (quantity is None or balance.quantity + 1e-9 >= quantity)
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
+    if quantity is None and candidates:
+        return max(candidates, key=lambda balance: balance.quantity)
+    return None
+
+
+def find_or_create_bulk_balance(device, status, location_id, project_id):
+    from models import BulkStockBalance
+
+    balance = BulkStockBalance.query.filter_by(
+        device_id=device.id,
+        status=status,
+        location_id=location_id,
+        project_id=project_id,
+    ).first()
+    if balance is None:
+        balance = BulkStockBalance(
+            device=device,
+            status=status,
+            quantity=0,
+            location_id=location_id,
+            project_id=project_id,
+        )
+        db.session.add(balance)
+    return balance
+
+
+def apply_bulk_movement(
+    device,
+    movement_type,
+    quantity,
+    source_balance,
+    to_location_id,
+    project_id,
+):
+    from models import BulkStockBalance
+
+    if quantity is None or quantity <= 0:
+        raise ValueError("Pozitív bulk mozgási mennyiség szükséges.")
+
+    if source_balance is not None and source_balance.id is not None:
+        source_balance = (
+            BulkStockBalance.query.filter_by(id=source_balance.id)
+            .with_for_update()
+            .one()
+        )
+        if quantity > source_balance.quantity + 1e-9:
+            raise ValueError(
+                f"Legfeljebb {format_number(source_balance.quantity)} mozgatható "
+                "a kiválasztott készletegyenlegből."
+            )
+
+    source_status = source_balance.status if source_balance else None
+    target_status = movement_target_status(source_status, movement_type)
+    source_location_id = source_balance.location_id if source_balance else None
+    source_project_id = source_balance.project_id if source_balance else None
+
+    if source_balance is not None:
+        source_balance.quantity -= quantity
+        if source_balance.quantity < -1e-9:
+            raise ValueError("A bulk készletegyenleg nem mehet negatívba.")
+        if abs(source_balance.quantity) <= 1e-9:
+            source_balance.quantity = 0
+    else:
+        existing_quantity = sum(
+            balance.quantity
+            for balance in device.bulk_balances
+            if balance.quantity is not None and balance.quantity > 1e-9
+        )
+        if existing_quantity > 1e-9:
+            device.quantity = (device.quantity or existing_quantity) + quantity
+
+    target_location_id, target_project_id = movement_target_dimensions(
+        movement_type,
+        source_location_id,
+        source_project_id,
+        to_location_id,
+        project_id,
+    )
+    if source_balance is None and movement_type == "INBOUND" and project_id is not None:
+        target_project_id = project_id
+
+    target = find_or_create_bulk_balance(
+        device,
+        target_status,
+        target_location_id,
+        target_project_id,
+    )
+    target.quantity += quantity
+    sync_bulk_device_legacy_state(device)
+
+
+def sync_bulk_device_legacy_state(device):
+    balances = sorted(
+        active_bulk_balances(device),
+        key=lambda balance: balance.quantity,
+        reverse=True,
+    )
+    if not balances:
+        return
+    representative = balances[0]
+    device.status = representative.status
+    device.location_id = representative.location_id
+    device.project_id = representative.project_id
+    device.updated_at = datetime.now(timezone.utc)
 
 
 app = create_app()

@@ -919,6 +919,7 @@ body {
 .movement-service { background: #f2e6ff; color: #7d35c8; }
 .movement-scrap { background: #ffe4ef; color: #c0265d; }
 .movement-transfer { background: #edf4f8; color: #25566b; }
+.movement-reversal { background: #fff4d8; color: #8a5700; }
 .movement-neutral { background: #eee7f7; color: #655477; }
 
 .btn-success,

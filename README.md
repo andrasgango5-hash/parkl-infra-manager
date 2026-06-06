@@ -155,7 +155,7 @@ Használat:
 
 Helyi kipróbáláshoz érdemes a `reset-demo-data` paranccsal indulni. A demo két projektet hoz létre (`PRK-001 - Arena EV Upgrade`, `PRK-002 - Office Park Sorompó projekt`), öt hasznos készlethelyet, hat érthető eszközt, hozzájuk tartozó bevételezési/készletmozgási naplót és két gazdátlan számlasort.
 
-A törlés jellegű műveletek alapértelmezés szerint archiválnak. Készletmozgással rendelkező eszközök és importált adatok így nem vesznek el, de eltűnnek az aktív listákból.
+A törlés jellegű műveletek alapértelmezés szerint archiválnak. Aktív készlettel, projekthez rendelt példánnyal vagy nem selejtezett állománnyal rendelkező rekord nem archiválható; a felület felsorolja a rendezendő blokkoló tételeket.
 
 Workflow fókuszú nézetek:
 
@@ -223,15 +223,35 @@ Az oldalról a projektek, eszközök és készlethelyek Excel exportja is letöl
 
 A tartós készletadatok adatbázisban tárolódnak. CSV fájlokat az alkalmazás nem használ.
 
-Minden eszközrögzítés létrehoz egy `INBOUND` típusú `StockMovement` rekordot, és minden kézi készletművelet a Mozgások oldalon újabb `StockMovement` rekordot hoz létre. Az eszköz státusza csak készletmozgás létrehozásával változhat. A `StockMovement` rekordok nem módosíthatók, auditnaplóként kezelendők.
+A mennyiségi eszközrögzítés `INBOUND` típusú `StockMovement` rekordot hoz létre. Egyedi követésnél a terméktörzs létrehozása még nem fizikai készletmozgás; a létrehozott `DeviceUnit` példányok kapják a saját mozgásaikat. Minden kézi készletművelet új `StockMovement` rekordot hoz létre. A státusz csak készletmozgással változhat, a `StockMovement` rekordok pedig nem módosíthatók.
 
 ### Csoportos eszköztételek és egyedi példányok
 
-A `Device` a beszerzési és készletnyilvántartási csoportos tétel. Több darabos fizikai eszköznél az eszköz adatlapján a **Példányok létrehozása** művelettel külön `DeviceUnit` példányok hozhatók létre.
+A `Device` a termék-, beszerzési és készlettétel törzs. A `tracking_mode` határozza meg a követést:
+
+- `bulk`: a mozgás egy kiválasztott készletegyenlegből von le pozitív mennyiséget, és a célállapothoz/helyhez/projekthez tartozó egyenleghez adja;
+- `unit`: minden mozgáshoz konkrét `DeviceUnit` szükséges, a mozgási mennyiség mindig 1.
+
+A bulk készlet aktuális állapotát a `BulkStockBalance` sorok adják meg. Egy Device ezért egyszerre több státuszban, projekten vagy készlethelyen is rendelkezhet mennyiséggel. Például 60 darabból 10 kiadható úgy, hogy 50 továbbra is raktáron marad. A rendszer nem enged a kiválasztott egyenlegnél nagyobb mennyiséget mozgatni.
+
+A projekt adatlap külön mutatja az egyedi `DeviceUnit` példányokat és a bulk készletegyenlegeket. Innen konkrét példány vagy részleges bulk mennyiség vehető vissza egy kiválasztott raktárba.
+
+Hibás készletmozgás nem módosítható és nem törölhető. A **Mozgás visszavonása** művelet új `REVERSAL` ellenmozgást hoz létre, amely a `reversal_of_movement_id` mezővel hivatkozik az eredeti rekordra. A visszavonás csak akkor engedélyezett, ha az érintett példány vagy mennyiség még az eredeti mozgás célállapotában található.
+
+Az archiválás, selejtezés és visszavonás külön művelet:
+
+- archiválás: készlet nélküli, már nem aktív törzsadat elrejtése;
+- selejtezés: `SCRAP` készletmozgás, amely lezárja az érintett készlet életciklusát;
+- visszavonás: hibás naplóbejegyzés korrekciója ellenmozgással, az eredeti rekord megtartásával.
+
+Több darabos fizikai eszköznél az eszköz adatlapján a **Példányok létrehozása** művelettel külön `DeviceUnit` példányok hozhatók létre.
 
 - A csoportos tétel mennyisége nem változik a példányok létrehozásakor.
 - Minden példány saját példányazonosítót, sorozatszámot, eszközazonosítót, QR-kódot és címkét kaphat.
-- A példányok státusza, projektje és készlethelye jelenleg a szülő eszköztételből származik.
+- Minden példánynak saját státusza, projektje és készlethelye van.
+- A példányosításkor ezek az értékek a szülő tétel aktuális állapotából indulnak, később csak példányszintű készletmozgással változnak.
+- A mozgásnapló a forrás- és célprojektet is megőrzi; a régi rekordok hiányzó mennyisége történeti okból üres marad.
+- A Device és DeviceUnit QR-kódja a megfelelő adatlapra vezet, ahonnan jogosultság esetén közvetlenül indítható készletművelet.
 - A csoportos QR-kódok és a korábbi `/devices/<id>/qr` linkek továbbra is működnek.
 - A QR mód lehet: nincs QR, csoport QR vagy egyedi QR példányonként.
 - A példánylistából az összes egyedi QR-címke egy PDF-ben nyomtatható.

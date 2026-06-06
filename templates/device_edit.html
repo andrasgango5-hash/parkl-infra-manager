@@ -24,6 +24,14 @@
     <div class="col-md-4"><label class="form-label" for="model">Modell</label><input class="form-control" id="model" name="model" value="{{ device.model }}"></div>
     <div class="col-md-4"><label class="form-label" for="version">Verzió</label><input class="form-control" id="version" name="version" value="{{ device.version or '' }}"></div>
     <div class="col-md-4">
+      <label class="form-label" for="tracking_mode">Készletkövetés módja</label>
+      <select class="form-select" id="tracking_mode" name="tracking_mode">
+        <option value="bulk" {% if device.tracking_mode == "bulk" %}selected{% endif %}>Mennyiségi (bulk)</option>
+        <option value="unit" {% if device.tracking_mode == "unit" %}selected{% endif %}>Egyedi eszközpéldányok</option>
+      </select>
+      <div class="form-text">Aktív példányokkal rendelkező tétel nem állítható vissza bulk módra.</div>
+    </div>
+    <div class="col-md-4">
       <label class="form-label" for="qr_mode">QR mód</label>
       <select class="form-select" id="qr_mode" name="qr_mode">
         <option value="none" {% if device.qr_mode == "none" %}selected{% endif %}>Nincs QR</option>

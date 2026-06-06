@@ -163,9 +163,9 @@
                 <td class="mobile-hide">{{ device_money_text(device, "unit_gross") }}</td>
                 <td class="mobile-hide">{{ device_money_text(device, "total_gross") }}</td>
                 {% endif %}
-                <td><span class="status-badge {{ status_badge_class(device.status) }}">{{ status_label(device.status) }}</span></td>
-                <td>{{ device.project.code if device.project else "-" }}</td>
-                <td class="mobile-hide">{{ device.location.name if device.location else "-" }}</td>
+                <td>{% if device.tracking_mode == "unit" %}<span class="status-badge status-neutral">Példányonként</span>{% else %}<span class="status-badge status-neutral">{{ bulk_balance_summary(device, "status") }}</span>{% endif %}</td>
+                <td>{% if device.tracking_mode == "unit" %}Példányonként{% else %}{{ bulk_balance_summary(device, "project") }}{% endif %}</td>
+                <td class="mobile-hide">{% if device.tracking_mode == "unit" %}Példányonként{% else %}{{ bulk_balance_summary(device, "location") }}{% endif %}</td>
                 <td class="text-nowrap">
                   <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_detail', device_id=device.id) }}" data-bs-toggle="tooltip" data-bs-title="Eszköz megnyitása"><i class="bi bi-eye"></i> Részletek</a>
                   {% if can_write %}

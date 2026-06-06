@@ -28,11 +28,39 @@
           {% for category, grouped_devices in devices|groupby("device_type") %}
             <optgroup label="{{ category_label(category) }}">
               {% for device in grouped_devices %}
-                <option value="{{ device.id }}" data-search="{{ device_display_label(device)|lower }}">{{ device_display_label(device) }}</option>
+                <option value="{{ device.id }}" data-search="{{ device_display_label(device)|lower }}" data-tracking-mode="{{ device.tracking_mode }}" data-quantity="{{ device.quantity if device.quantity is not none else '' }}">{{ device_display_label(device) }}</option>
               {% endfor %}
             </optgroup>
           {% endfor %}
         </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="unit_id">Eszközpéldány</label>
+        <select class="form-select" id="unit_id" name="unit_id">
+          <option value="">Bulk tételnél nem kell kiválasztani</option>
+          {% for unit in units %}
+            <option value="{{ unit.id }}" data-device-id="{{ unit.device_id }}">{{ unit.human_label }}</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">Egyedi követésű tételnél kötelező.</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="source_balance_id">Bulk forrás készletegyenleg</label>
+        <select class="form-select" id="source_balance_id" name="source_balance_id">
+          <option value="">Új bevételezés / unit mozgás</option>
+          {% for balance in bulk_balances %}
+            <option value="{{ balance.id }}" data-device-id="{{ balance.device_id }}" data-quantity="{{ balance.quantity }}" {% if balance.status == "SCRAPPED" %}disabled{% endif %}>
+              {{ device_primary_label(balance.device) }} · {{ format_number(balance.quantity) }} db ·
+              {{ status_label(balance.status) }} · {{ balance.location.name if balance.location else "-" }}
+            </option>
+          {% endfor %}
+        </select>
+        <div class="form-text">Bulk mozgásnál kötelező, kivéve új bevételezéskor.</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="quantity">Mozgatott mennyiség</label>
+        <input class="form-control" id="quantity" name="quantity" type="number" min="0.01" step="0.01" value="1">
+        <div class="form-text">Bulk tételnél kötelező; egyedi példánynál mindig 1.</div>
       </div>
       <div class="mb-3">
         <label class="form-label" for="movement_type">Típus</label>
@@ -87,11 +115,14 @@
             <tr>
               <th>Időpont</th>
               <th>Eszköz</th>
+              <th>Példány / mennyiség</th>
               <th>Típus</th>
+              <th>Státusz</th>
               <th>Innen</th>
               <th>Ide</th>
               <th>Projekt</th>
               <th>Felhasználó</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -99,15 +130,28 @@
               <tr>
                 <td>{{ movement.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
                 <td class="fw-semibold"><span class="table-item-with-icon"><span class="table-item-icon"><i class="bi bi-arrow-left-right"></i></span>{{ device_primary_label(movement.device) }}</span></td>
-                <td><span class="movement-badge {{ movement_badge_class(movement.movement_type) }}">{{ movement_type_label(movement.movement_type) }}</span></td>
+                <td>{% if movement.unit %}<a href="{{ url_for('device_unit_detail', unit_id=movement.unit.id) }}">{{ movement.unit.unit_code }}</a>{% elif movement.quantity is not none %}{{ format_number(movement.quantity) }} db{% else %}<span class="text-secondary">régi rekord</span>{% endif %}</td>
+                <td>
+                  <span class="movement-badge {{ movement_badge_class(movement.movement_type) }}">{{ movement_type_label(movement.movement_type) }}</span>
+                  {% if movement.id in reversed_movement_ids %}<div class="small text-secondary">Visszavonva</div>{% endif %}
+                  {% if movement.reversal_of %}<div class="small text-secondary">Eredeti: #{{ movement.reversal_of.id }}</div>{% endif %}
+                </td>
+                <td>{{ status_label(movement.from_status) if movement.from_status else "-" }} → {{ status_label(movement.to_status) if movement.to_status else "-" }}</td>
                 <td>{{ movement.from_location.name if movement.from_location else "-" }}</td>
                 <td>{{ movement.to_location.name if movement.to_location else "-" }}</td>
-                <td>{{ movement.project.code if movement.project else "-" }}</td>
+                <td>{{ movement.from_project.code if movement.from_project else "-" }} → {{ movement.to_project.code if movement.to_project else "-" }}</td>
                 <td>{{ movement.created_by.username }}</td>
+                <td>
+                  {% if can_write and movement.id in reversible_movement_ids %}
+                  <form method="post" action="{{ url_for('movement_reverse', movement_id=movement.id) }}">
+                    <button class="btn btn-outline-warning btn-sm" type="submit" data-confirm="Biztosan létrehozod az ellenmozgást? Az eredeti naplóbejegyzés nem törlődik.">Visszavonás</button>
+                  </form>
+                  {% endif %}
+                </td>
               </tr>
             {% else %}
               <tr>
-                <td colspan="7">
+                <td colspan="10">
                   <div class="empty-state">
                     <strong>Még nincs készletmozgás.</strong>
                     <span>Rögzíts eszközt, majd hozz létre bevételezést, kiadást vagy telepítést.</span>
@@ -125,6 +169,47 @@
 <script>
   const deviceSearch = document.querySelector("#device_search");
   const deviceSelect = document.querySelector("#device_id");
+  const unitSelect = document.querySelector("#unit_id");
+  const balanceSelect = document.querySelector("#source_balance_id");
+  const quantityInput = document.querySelector("#quantity");
+
+  function filterUnitsForDevice() {
+    if (!deviceSelect || !unitSelect) return;
+    const selectedDeviceId = deviceSelect.value;
+    unitSelect.querySelectorAll("option[data-device-id]").forEach((option) => {
+      option.hidden = Boolean(selectedDeviceId) && option.dataset.deviceId !== selectedDeviceId;
+    });
+    if (balanceSelect) {
+      balanceSelect.querySelectorAll("option[data-device-id]").forEach((option) => {
+        option.hidden = Boolean(selectedDeviceId) && option.dataset.deviceId !== selectedDeviceId;
+      });
+      if (balanceSelect.selectedOptions.length && balanceSelect.selectedOptions[0].hidden) {
+        balanceSelect.value = "";
+      }
+    }
+    if (
+      unitSelect.selectedOptions.length &&
+      unitSelect.selectedOptions[0].hidden
+    ) {
+      unitSelect.value = "";
+    }
+    const selectedDevice = deviceSelect.selectedOptions[0];
+    if (!selectedDevice || !quantityInput) return;
+    if (selectedDevice.dataset.trackingMode === "unit") {
+      quantityInput.value = "1";
+      quantityInput.readOnly = true;
+      if (balanceSelect) balanceSelect.value = "";
+    } else {
+      quantityInput.readOnly = false;
+      quantityInput.value = "1";
+    }
+  }
+  if (balanceSelect && quantityInput) {
+    balanceSelect.addEventListener("change", () => {
+      const selected = balanceSelect.selectedOptions[0];
+      quantityInput.max = selected && selected.dataset.quantity ? selected.dataset.quantity : "";
+    });
+  }
 
   if (deviceSearch && deviceSelect) {
     deviceSearch.addEventListener("input", () => {
@@ -139,6 +224,10 @@
         group.hidden = !hasVisibleOption;
       });
     });
+  }
+  if (deviceSelect && unitSelect) {
+    deviceSelect.addEventListener("change", filterUnitsForDevice);
+    filterUnitsForDevice();
   }
 </script>
 {% endblock %}

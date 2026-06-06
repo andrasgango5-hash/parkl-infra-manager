@@ -9,14 +9,28 @@
     <p class="text-secondary mb-0">{{ device.product_name or device.model or device.asset_tag }}</p>
   </div>
   <div class="d-flex flex-wrap gap-2">
-    {% if can_write %}<a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_unit_edit', unit_id=unit.id) }}"><i class="bi bi-pencil"></i> Szerkesztés</a>{% endif %}
+    {% if can_write %}
+      <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_unit_edit', unit_id=unit.id) }}"><i class="bi bi-pencil"></i> Szerkesztés</a>
+      {% if not archive_blockers %}
+      <form method="post" action="{{ url_for('device_unit_archive', unit_id=unit.id) }}">
+        <button class="btn btn-outline-danger btn-sm" type="submit" data-confirm="Biztosan archiválod ezt a selejtezett példányt?">Archiválás</button>
+      </form>
+      {% endif %}
+    {% endif %}
     <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_units', device_id=device.id) }}"><i class="bi bi-arrow-left"></i> Példánylista</a>
   </div>
 </div>
 
 <div class="help-box">
-  Ez az adatlap az egyedi fizikai példányt azonosítja. A készletstátusz, projekt és készlethely a szülő csoportos tételből származik.
+  Ez az adatlap egy konkrét fizikai eszközpéldányt azonosít. A státusz, projekt és készlethely ennél a példánynál önállóan követett adat.
 </div>
+
+{% if archive_blockers %}
+<div class="alert alert-warning">
+  <strong>A példány jelenleg nem archiválható.</strong>
+  <ul class="mb-0 mt-2">{% for blocker in archive_blockers %}<li>{{ blocker }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
 
 <div class="row g-4">
   <div class="col-xl-7">
@@ -27,9 +41,9 @@
         <div><strong>Eszközazonosító:</strong> {{ unit.asset_tag or "-" }}</div>
         <div><strong>Sorozatszám:</strong> {{ unit.serial_number or "-" }}</div>
         <div><strong>Szülő tétel:</strong> <a href="{{ url_for('device_detail', device_id=device.id) }}">{{ device_primary_label(device) }}</a></div>
-        <div><strong>Csoport státusza:</strong> <span class="status-badge {{ status_badge_class(device.status) }}">{{ status_label(device.status) }}</span></div>
-        <div><strong>Csoport projektje:</strong> {{ device.project.code if device.project else "-" }}</div>
-        <div><strong>Csoport készlethelye:</strong> {{ device.location.name if device.location else "-" }}</div>
+        <div><strong>Státusz:</strong> <span class="status-badge {{ status_badge_class(unit.status) }}">{{ status_label(unit.status) }}</span></div>
+        <div><strong>Projekt:</strong> {{ unit.project.code if unit.project else "-" }}</div>
+        <div><strong>Készlethely:</strong> {{ unit.location.name if unit.location else "-" }}</div>
         <div><strong>Megjegyzés:</strong> {{ unit.notes or "-" }}</div>
       </div>
     </section>
@@ -42,4 +56,83 @@
     {% include "_qr_card.html" %}
   </div>
 </div>
+
+{% if can_write %}
+<section class="data-section mt-4">
+  <div class="section-title"><h2>Példány készletművelete</h2></div>
+  <form method="post" action="{{ url_for('device_unit_action', unit_id=unit.id) }}" class="p-3">
+    {% set allowed_movements = available_device_movements(unit) %}
+    <div class="row g-3 align-items-end">
+      <div class="col-md-4">
+        <label class="form-label" for="to_location_id">Cél készlethely</label>
+        <select class="form-select" id="to_location_id" name="to_location_id">
+          <option value="">Nincs / változatlan</option>
+          {% for location in locations %}
+            <option value="{{ location.id }}" {% if unit.location_id == location.id %}selected{% endif %}>{{ location.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="project_id">Projekt</label>
+        <select class="form-select" id="project_id" name="project_id">
+          <option value="">Nincs / változatlan</option>
+          {% for project in projects %}
+            <option value="{{ project.id }}" {% if unit.project_id == project.id %}selected{% endif %}>{{ project.code }} - {{ project.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="notes">Megjegyzés</label>
+        <input class="form-control" id="notes" name="notes">
+      </div>
+      <div class="col-12 d-flex flex-wrap gap-2">
+        {% if "INBOUND" in allowed_movements %}<button class="btn btn-outline-secondary btn-move-inbound btn-sm" name="movement_type" value="INBOUND" type="submit">Raktárra vétel</button>{% endif %}
+        {% if "RESERVE" in allowed_movements %}<button class="btn btn-outline-secondary btn-move-reserve btn-sm" name="movement_type" value="RESERVE" type="submit">Előjegyzés</button>{% endif %}
+        {% if "ISSUE" in allowed_movements %}<button class="btn btn-outline-secondary btn-move-issue btn-sm" name="movement_type" value="ISSUE" type="submit">Kiadás</button>{% endif %}
+        {% if "INSTALL" in allowed_movements %}<button class="btn btn-outline-secondary btn-move-install btn-sm" name="movement_type" value="INSTALL" type="submit">Telepítés</button>{% endif %}
+        {% if "RETURN" in allowed_movements %}<button class="btn btn-outline-secondary btn-move-return btn-sm" name="movement_type" value="RETURN" type="submit">Visszavétel</button>{% endif %}
+        {% if "SERVICE" in allowed_movements %}<button class="btn btn-outline-secondary btn-move-service btn-sm" name="movement_type" value="SERVICE" type="submit">Szervizbe küldés</button>{% endif %}
+        {% if "TRANSFER" in allowed_movements %}<button class="btn btn-outline-secondary btn-move-transfer btn-sm" name="movement_type" value="TRANSFER" type="submit">Áthelyezés</button>{% endif %}
+        {% if "SCRAP" in allowed_movements %}<button class="btn btn-outline-danger btn-sm" name="movement_type" value="SCRAP" type="submit" data-confirm="Biztosan selejtezed ezt a példányt?">Selejtezés</button>{% endif %}
+      </div>
+    </div>
+  </form>
+</section>
+{% endif %}
+
+<section class="data-section mt-4">
+  <div class="section-title"><h2>Példány mozgástörténete</h2></div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Időpont</th><th>Típus</th><th>Státusz</th><th>Innen</th><th>Ide</th><th>Projektváltozás</th><th>Felhasználó</th><th>Megjegyzés</th><th></th></tr></thead>
+      <tbody>
+        {% for movement in movements %}
+          <tr>
+            <td>{{ movement.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+            <td>
+              <span class="movement-badge {{ movement_badge_class(movement.movement_type) }}">{{ movement_type_label(movement.movement_type) }}</span>
+              {% if movement.id in reversed_movement_ids %}<div class="small text-secondary">Visszavonva</div>{% endif %}
+              {% if movement.reversal_of %}<div class="small text-secondary">Eredeti: #{{ movement.reversal_of.id }}</div>{% endif %}
+            </td>
+            <td>{{ status_label(movement.from_status) if movement.from_status else "-" }} → {{ status_label(movement.to_status) if movement.to_status else "-" }}</td>
+            <td>{{ movement.from_location.name if movement.from_location else "-" }}</td>
+            <td>{{ movement.to_location.name if movement.to_location else "-" }}</td>
+            <td>{{ movement.from_project.code if movement.from_project else "-" }} → {{ movement.to_project.code if movement.to_project else "-" }}</td>
+            <td>{{ movement.created_by.username }}</td>
+            <td>{{ movement.notes or "-" }}</td>
+            <td>
+              {% if can_write and movement.id in reversible_movement_ids %}
+              <form method="post" action="{{ url_for('movement_reverse', movement_id=movement.id) }}">
+                <button class="btn btn-outline-warning btn-sm" type="submit" data-confirm="Biztosan létrehozod az ellenmozgást?">Visszavonás</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="9"><div class="empty-state"><strong>Nincs példányszintű mozgás.</strong><span>Az első készletművelet után itt jelenik meg a történet.</span></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
 {% endblock %}

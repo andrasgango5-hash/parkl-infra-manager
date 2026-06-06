@@ -99,25 +99,25 @@
   <div class="col-6 col-xl-3">
     <div class="metric">
       <span class="metric-icon"><i class="bi bi-server"></i></span>
-      <div class="metric-body"><span>Raktáron lévő eszközök</span><strong>{{ stats.in_stock }}</strong></div>
+      <div class="metric-body"><span>Raktáron lévő eszközök</span><strong>{{ format_number(stats.in_stock) }}</strong></div>
     </div>
   </div>
   <div class="col-6 col-xl-3">
     <div class="metric">
       <span class="metric-icon"><i class="bi bi-bookmark-check"></i></span>
-      <div class="metric-body"><span>Előjegyzett eszközök</span><strong>{{ stats.reserved }}</strong></div>
+      <div class="metric-body"><span>Előjegyzett eszközök</span><strong>{{ format_number(stats.reserved) }}</strong></div>
     </div>
   </div>
   <div class="col-6 col-xl-3">
     <div class="metric">
       <span class="metric-icon"><i class="bi bi-box-arrow-up-right"></i></span>
-      <div class="metric-body"><span>Kiadott eszközök</span><strong>{{ stats.issued }}</strong></div>
+      <div class="metric-body"><span>Kiadott eszközök</span><strong>{{ format_number(stats.issued) }}</strong></div>
     </div>
   </div>
   <div class="col-6 col-xl-3">
     <div class="metric">
       <span class="metric-icon"><i class="bi bi-geo-alt"></i></span>
-      <div class="metric-body"><span>Telepített eszközök</span><strong>{{ stats.installed }}</strong></div>
+      <div class="metric-body"><span>Telepített eszközök</span><strong>{{ format_number(stats.installed) }}</strong></div>
     </div>
   </div>
   <div class="col-6 col-xl-3">

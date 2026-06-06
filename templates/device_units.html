@@ -18,7 +18,7 @@
 </div>
 
 <div class="help-box">
-  Ezek az egyedi fizikai példányok a csoportos eszköztételhez tartoznak. A státuszt, projektet és készlethelyet jelenleg a szülő tétel alapján mutatjuk.
+  Ezek az egyedi fizikai példányok a termék- vagy beszerzési tételhez tartoznak. Minden példánynak saját státusza, projektje, készlethelye és QR-kódja van.
 </div>
 
 <section class="data-section">
@@ -32,9 +32,9 @@
             <td class="fw-semibold">{{ unit.unit_code }}</td>
             <td>{{ unit.serial_number or "-" }}</td>
             <td>{{ unit.asset_tag or "-" }}</td>
-            <td><span class="status-badge {{ status_badge_class(device.status) }}">{{ status_label(device.status) }}</span></td>
-            <td>{{ device.project.code if device.project else "-" }}</td>
-            <td>{{ device.location.name if device.location else "-" }}</td>
+            <td><span class="status-badge {{ status_badge_class(unit.status) }}">{{ status_label(unit.status) }}</span></td>
+            <td>{{ unit.project.code if unit.project else "-" }}</td>
+            <td>{{ unit.location.name if unit.location else "-" }}</td>
             <td class="text-nowrap">
               <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_unit_detail', unit_id=unit.id) }}" data-bs-toggle="tooltip" data-bs-title="Példány megnyitása"><i class="bi bi-eye"></i> Részletek</a>
               {% if can_write %}<a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_unit_edit', unit_id=unit.id) }}" data-bs-toggle="tooltip" data-bs-title="Példány szerkesztése"><i class="bi bi-pencil"></i> Szerkesztés</a>{% endif %}
