@@ -43,7 +43,10 @@
 {% include "_qr_card.html" %}
 
 <div class="row g-3 mb-4">
-  <div class="col-6 col-xl-3"><div class="metric"><span>Összes mennyiség</span><strong>{{ format_number(location_summary.quantity) }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="metric"><span>Összes fizikai mennyiség</span><strong>{{ format_number(location_summary.quantity) }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="metric"><span>Szabad készlet</span><strong>{{ format_number(location_summary.free_quantity) }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="metric"><span>Projektre foglalt</span><strong>{{ format_number(location_summary.reserved_quantity) }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="metric"><span>Szervizben</span><strong>{{ format_number(location_summary.service_quantity) }}</strong></div></div>
   {% if can_view_finance %}
   <div class="col-6 col-xl-3"><div class="metric"><span>Összes nettó érték (HUF)</span><strong>{{ format_number(location_summary.net_huf) }}</strong></div></div>
   <div class="col-6 col-xl-3"><div class="metric"><span>Összes nettó érték (EUR)</span><strong>{{ format_number(location_summary.net_eur) }}</strong></div></div>
@@ -53,12 +56,12 @@
 </div>
 
 <section class="data-section mb-4">
-  <div class="section-title"><h2>Jelenlegi eszközök</h2></div>
+  <div class="section-title"><h2>Szabad bulk készlet</h2></div>
   <div class="table-responsive">
     <table class="table table-hover align-middle">
       <thead><tr><th>Azonosító</th><th>Termék</th><th>Mennyiség</th>{% if can_view_finance %}<th>Deviza</th><th>Egység nettó</th><th>Összes nettó</th><th>ÁFA</th><th>Egység bruttó</th><th>Összes bruttó</th>{% endif %}<th>Státusz</th><th>Projekt</th><th></th></tr></thead>
       <tbody>
-        {% for balance in bulk_balances %}
+        {% for balance in free_bulk_balances %}
           {% set device = balance.device %}
           <tr>
             <td class="fw-semibold">{{ device.asset_tag }}</td>
@@ -92,20 +95,86 @@
   </div>
 </section>
 
-{% if units %}
+{% if free_units %}
 <section class="data-section mb-4">
-  <div class="section-title"><h2>Egyedi eszközpéldányok ezen a készlethelyen</h2></div>
+  <div class="section-title"><h2>Szabad egyedi eszközpéldányok</h2></div>
   <div class="table-responsive">
     <table class="table table-hover align-middle">
       <thead><tr><th>Példány</th><th>Terméktétel</th><th>Státusz</th><th>Projekt</th><th></th></tr></thead>
       <tbody>
-        {% for unit in units %}
+        {% for unit in free_units %}
           <tr>
             <td class="fw-semibold">{{ unit.unit_code }}</td>
             <td>{{ device_primary_label(unit.device) }}</td>
             <td><span class="status-badge {{ status_badge_class(unit.status) }}">{{ status_label(unit.status) }}</span></td>
             <td>{{ unit.project.code if unit.project else "-" }}</td>
             <td><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_unit_detail', unit_id=unit.id) }}">Példány részletei</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="data-section mb-4">
+  <div class="section-title"><h2>Projektre előfoglalt készlet</h2><span class="text-secondary small">Fizikailag itt található, de nem szabad készlet</span></div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Tétel / példány</th><th>Termék</th><th>Mennyiség</th><th>Projekt</th><th>Státusz</th><th></th></tr></thead>
+      <tbody>
+        {% for balance in reserved_bulk_balances %}
+          <tr>
+            <td class="fw-semibold">{{ balance.device.asset_tag }}</td>
+            <td>{{ device_primary_label(balance.device) }}</td>
+            <td>{{ format_number(balance.quantity) }}</td>
+            <td>{{ balance.project.code if balance.project else "-" }}</td>
+            <td><span class="status-badge status-reserved">Projektre lefoglalva</span></td>
+            <td><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_detail', device_id=balance.device_id) }}">Részletek</a></td>
+          </tr>
+        {% endfor %}
+        {% for unit in reserved_units %}
+          <tr>
+            <td class="fw-semibold">{{ unit.unit_code }}</td>
+            <td>{{ device_primary_label(unit.device) }}</td>
+            <td>1</td>
+            <td>{{ unit.project.code if unit.project else "-" }}</td>
+            <td><span class="status-badge status-reserved">Projektre lefoglalva</span></td>
+            <td><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_unit_detail', unit_id=unit.id) }}">Részletek</a></td>
+          </tr>
+        {% else %}
+          {% if not reserved_bulk_balances %}
+          <tr><td colspan="6"><div class="empty-state"><strong>Nincs projektre előfoglalt készlet ezen a helyen.</strong></div></td></tr>
+          {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if service_bulk_balances or service_units %}
+<section class="data-section mb-4">
+  <div class="section-title"><h2>Szervizben lévő készlet</h2><span class="text-secondary small">Fizikailag itt található, de nem kiadható szabad készlet</span></div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Tétel / példány</th><th>Termék</th><th>Mennyiség</th><th>Státusz</th><th></th></tr></thead>
+      <tbody>
+        {% for balance in service_bulk_balances %}
+          <tr>
+            <td class="fw-semibold">{{ balance.device.asset_tag }}</td>
+            <td>{{ device_primary_label(balance.device) }}</td>
+            <td>{{ format_number(balance.quantity) }}</td>
+            <td><span class="status-badge {{ status_badge_class(balance.status) }}">{{ status_label(balance.status) }}</span></td>
+            <td><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_detail', device_id=balance.device_id) }}">Részletek</a></td>
+          </tr>
+        {% endfor %}
+        {% for unit in service_units %}
+          <tr>
+            <td class="fw-semibold">{{ unit.unit_code }}</td>
+            <td>{{ device_primary_label(unit.device) }}</td>
+            <td>1</td>
+            <td><span class="status-badge {{ status_badge_class(unit.status) }}">{{ status_label(unit.status) }}</span></td>
+            <td><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_unit_detail', unit_id=unit.id) }}">Részletek</a></td>
           </tr>
         {% endfor %}
       </tbody>

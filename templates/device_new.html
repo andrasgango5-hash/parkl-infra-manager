@@ -65,15 +65,12 @@
     <div class="col-md-4"><label class="form-label" for="total_gross_price_preview">Összes bruttó érték</label><input class="form-control" id="total_gross_price_preview" data-price-output="total-gross" readonly></div>
   </div>
 
-  <h3 class="form-section-title">Projekt és készlethely</h3>
+  <h3 class="form-section-title">Kezdő készlethely</h3>
   <div class="row g-3">
     <div class="col-md-6">
       <label class="form-label" for="location_id">Kezdő készlethely</label>
-      <select class="form-select" id="location_id" name="location_id"><option value="">Nincs megadva</option>{% for location in locations %}<option value="{{ location.id }}">{{ location.name }}</option>{% endfor %}</select>
-    </div>
-    <div class="col-md-6">
-      <label class="form-label" for="project_id">Projekt</label>
-      <select class="form-select" id="project_id" name="project_id"><option value="">Nincs</option>{% for project in projects %}<option value="{{ project.id }}">{{ project.code }} - {{ project.name }}</option>{% endfor %}</select>
+      <select class="form-select" id="location_id" name="location_id" required><option value="">Válassz készlethelyet...</option>{% for location in locations %}<option value="{{ location.id }}">{{ location.name }}</option>{% endfor %}</select>
+      <div class="form-text">Projekt-hozzárendelés előfoglalás, kiadás vagy telepítés készletmozgással történik.</div>
     </div>
     <div class="col-md-4"><label class="form-label" for="assignment_quantity">Hozzárendelt mennyiség</label><input class="form-control" id="assignment_quantity" name="assignment_quantity" type="number" step="0.01" min="0"></div>
     <div class="col-md-8"><label class="form-label" for="assignment_notes">Hozzárendelési megjegyzés</label><input class="form-control" id="assignment_notes" name="assignment_notes"></div>

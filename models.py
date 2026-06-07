@@ -24,6 +24,7 @@ MOVEMENT_TYPES = (
     "SERVICE",
     "SCRAP",
     "TRANSFER",
+    "RELEASE",
 )
 
 DEVICE_CATEGORIES = (
@@ -307,17 +308,53 @@ class Device(db.Model):
         identifier = self.asset_tag or self.serial_number or f"#{self.id}"
         product = self.product_name or self.model
         category = DEVICE_CATEGORY_LABELS.get(self.device_type, self.device_type)
-        project_name = None
-        if self.project:
-            project_name = self.project.code or self.project.name
-        status = DEVICE_STATUS_LABELS.get(self.status, self.status)
-        location_name = self.location.name if self.location else None
+        subjects = (
+            [unit for unit in self.units if unit.archived_at is None]
+            if self.tracking_mode == "unit"
+            else [
+                balance
+                for balance in self.bulk_balances
+                if balance.quantity is not None and balance.quantity > 1e-9
+            ]
+        )
+        project_names = sorted(
+            {
+                subject.project.code or subject.project.name
+                for subject in subjects
+                if subject.project is not None
+            }
+        )
+        statuses = sorted(
+            {DEVICE_STATUS_LABELS.get(subject.status, subject.status) for subject in subjects}
+        )
+        location_names = sorted(
+            {
+                subject.location.name
+                for subject in subjects
+                if subject.location is not None
+            }
+        )
 
-        for value in (identifier, product, category, project_name, status, location_name):
+        for value in (
+            identifier,
+            product,
+            category,
+            self._summary_label(project_names, "projekt"),
+            self._summary_label(statuses, "státusz"),
+            self._summary_label(location_names, "lokáció"),
+        ):
             if value and value not in parts:
                 parts.append(value)
 
         return " – ".join(parts) if parts else f"Eszköz #{self.id}"
+
+    @staticmethod
+    def _summary_label(values, suffix):
+        if len(values) == 1:
+            return values[0]
+        if len(values) > 1:
+            return f"{len(values)} {suffix}"
+        return None
 
     @property
     def primary_label(self):

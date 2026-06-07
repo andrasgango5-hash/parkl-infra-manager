@@ -153,7 +153,7 @@ Használat:
 4. A munkalap részletein generáld a `MUNKALAP_<azonosító>.pdf` hivatalos jegyzőkönyvet.
 5. A lezárt vagy régi munkalapokat archiváld; ezek nem törlődnek fizikailag.
 
-Helyi kipróbáláshoz érdemes a `reset-demo-data` paranccsal indulni. A demo két projektet hoz létre (`PRK-001 - Arena EV Upgrade`, `PRK-002 - Office Park Sorompó projekt`), öt hasznos készlethelyet, hat érthető eszközt, hozzájuk tartozó bevételezési/készletmozgási naplót és két gazdátlan számlasort.
+Helyi kipróbáláshoz érdemes a `reset-demo-data` paranccsal indulni. A demo két projektet, öt készlethelyet, egy három példányos EV-töltő tételt és egy 50 darabos bulk matrica tételt hoz létre. Egy töltőpéldány és 20 matrica a `PRK-001` projektre van előfoglalva, így a projekt- és raktárnézetek azonnal ellenőrizhetők. A parancs két gazdátlan számlasort is létrehoz.
 
 A törlés jellegű műveletek alapértelmezés szerint archiválnak. Aktív készlettel, projekthez rendelt példánnyal vagy nem selejtezett állománnyal rendelkező rekord nem archiválható; a felület felsorolja a rendezendő blokkoló tételeket.
 
@@ -164,6 +164,21 @@ Workflow fókuszú nézetek:
 - A `Figyelmet igényel` oldal összegyűjti a problémás eszközöket és gazdátlan számlasorokat, például lejárt tervezett érkezést, nyitott számlát, hiányos projektadatot vagy hiányzó importált mezőt.
 - A projekt részletező oldal a fő munkalap: megmutatja a projekthez tartozó eszközöket, HUF értéket, kiadott/telepített/visszavett darabszámokat, nyitott beszállítói számlákat, beérkezésre váró tételeket, mozgástörténetet és PDF dokumentumokat generál.
 - A projekt részletező oldalon a `Rajzok` tabon parkoló- vagy alaprajz képre készíthető egyszerű megvalósítási vázlat. A szerkesztő Fabric.js-t használ, támogatja a zoomot, pan módot, infrastruktúra ikonokat, kábelvonalakat, címkéket, JSON mentést és PNG/PDF exportot.
+
+## Készletállapot és foglalás
+
+A `Device` a termék- vagy beszerzési tétel. Egyedi követésnél a fizikai állapotot a `DeviceUnit`, mennyiségi követésnél a `BulkStockBalance` tartalmazza. Projekt- és készlethely-összesítés nem a legacy `Device.project_id` vagy `Device.location_id` mezőkből készül.
+
+- `Raktáron`: készlethely kötelező, aktív projekt nincs.
+- `Előjegyezve`: fizikailag készlethelyen marad, de projekthez foglalt és nem számít szabad készletnek.
+- `Kiadva` és `Telepítve`: projekt kötelező, aktív készlethely nincs.
+- `Visszavéve`: újra készlethelyen van, aktív projekt nincs; raktárra vétellel `Raktáron` állapotba tehető.
+- `Szervizben`: szerviz vagy raktár típusú helyen fizikailag megtalálható, de nem számít szabad készletnek.
+- `Selejtezve`: sem aktív projektje, sem aktív készlethelye nincs, és tovább nem mozgatható.
+
+Előfoglalásból csak ugyanarra a projektre indítható kiadás. Másik projekthez történő kiadás előtt a `Foglalás feloldása` auditált készletmozgást kell használni. A mozgások nem módosíthatók és nem törölhetők; hibás mozgás csak külön ellenmozgással vonható vissza. Az állapot pontos visszaállítása érdekében csak az adott példány vagy bulk tétel legutolsó mozgása vonható vissza.
+
+Az egyszerű Device export egy sorban tartja a terméktörzset. Ha a tétel példányai vagy bulk egyenlegei több projekt, lokáció vagy státusz között oszlanak meg, az export `MIXED` jelzést ír az érintett mezőbe. Ez szándékosan nem importálható vissza automatikusan: előbb egyértelmű allokációra vagy későbbi, példány-/egyenlegsoros exportformátumra van szükség.
 
 PDF dokumentumok projekt oldalról:
 

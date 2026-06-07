@@ -54,7 +54,7 @@
 {% include "_qr_card.html" %}
 
 <div class="row g-3 mb-4">
-  <div class="col-6 col-xl-3"><div class="metric"><span>Eszközök</span><strong>{{ finance_summary.device_count }}</strong></div></div>
+  <div class="col-6 col-xl-3"><div class="metric"><span>Projektkészlet</span><strong>{{ format_number(finance_summary.device_count) }} db</strong></div></div>
   {% if can_view_finance %}
   <div class="col-6 col-xl-3"><div class="metric"><span>Összes nettó érték (HUF)</span><strong>{{ format_number(finance_summary.net_huf) }}</strong></div></div>
   <div class="col-6 col-xl-3"><div class="metric"><span>Összes nettó érték (EUR)</span><strong>{{ format_number(finance_summary.net_eur) }}</strong></div></div>
@@ -88,13 +88,18 @@
   </div>
 </section>
 
+{% for section_title, section_units, empty_text in [
+  ("Előfoglalások", reserved_units, "Nincs előfoglalva egyedi példány ehhez a projekthez."),
+  ("Kiadott egyedi eszközök", issued_units, "Nincs kiadott egyedi példány."),
+  ("Telepített egyedi eszközök", installed_units, "Nincs telepített egyedi példány.")
+] %}
 <section class="data-section mb-4">
-  <div class="section-title"><h2>Egyedi DeviceUnit példányok</h2><span class="text-secondary small">{{ units|length }} követett fizikai példány</span></div>
+  <div class="section-title"><h2>{{ section_title }}</h2><span class="text-secondary small">{{ section_units|length }} példány</span></div>
   <div class="table-responsive">
     <table class="table table-hover align-middle">
       <thead><tr><th>Példány</th><th>Terméktétel</th><th>Státusz</th><th>Készlethely</th><th>Műveletek</th></tr></thead>
       <tbody>
-        {% for unit in units %}
+        {% for unit in section_units %}
           <tr>
             <td class="fw-semibold">{{ unit.unit_code }}</td>
             <td>{{ device_primary_label(unit.device) }}</td>
@@ -103,6 +108,12 @@
             <td>
               <div class="d-flex flex-wrap gap-2">
                 <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_unit_detail', unit_id=unit.id) }}">Részletek</a>
+                {% if can_write and "RELEASE" in available_device_movements(unit) %}
+                <form method="post" action="{{ url_for('device_unit_action', unit_id=unit.id) }}">
+                  <input type="hidden" name="movement_type" value="RELEASE">
+                  <button class="btn btn-outline-secondary btn-sm text-nowrap" type="submit" data-confirm="Feloldod ezt a projektfoglalást?">Foglalás feloldása</button>
+                </form>
+                {% endif %}
                 {% if can_write and "RETURN" in available_device_movements(unit) %}
                 <form method="post" action="{{ url_for('project_unit_return', project_id=project.id, unit_id=unit.id) }}" class="d-flex gap-2">
                   <select class="form-select form-select-sm" name="to_location_id" required aria-label="Célraktár">
@@ -116,12 +127,13 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="5"><div class="empty-state"><strong>Nincs egyedi példány a projekten.</strong><span>Az egyedi QR-követésű fizikai eszközök itt jelennek meg.</span></div></td></tr>
+          <tr><td colspan="5"><div class="empty-state"><strong>{{ empty_text }}</strong></div></td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </section>
+{% endfor %}
 
 <section class="data-section mb-4">
   <div class="section-title"><h2>Figyelmet igénylő projekt tételek</h2></div>
@@ -174,6 +186,14 @@
             <td>
               <div class="d-flex flex-wrap gap-2">
                 <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_detail', device_id=device.id) }}">Részletek</a>
+                {% if can_write and "RELEASE" in available_device_movements(balance) %}
+                <form method="post" action="{{ url_for('device_action', device_id=device.id) }}" class="d-flex gap-2">
+                  <input type="hidden" name="source_balance_id" value="{{ balance.id }}">
+                  <input type="hidden" name="movement_type" value="RELEASE">
+                  <input class="form-control form-control-sm" name="quantity" type="number" min="0.01" max="{{ balance.quantity }}" step="0.01" value="{{ balance.quantity }}" required aria-label="Feloldott mennyiség" style="width: 7rem;">
+                  <button class="btn btn-outline-secondary btn-sm text-nowrap" type="submit" data-confirm="Feloldod a megadott projektfoglalást?">Foglalás feloldása</button>
+                </form>
+                {% endif %}
                 {% if can_write and "RETURN" in available_device_movements(balance) %}
                 <form method="post" action="{{ url_for('project_bulk_return', project_id=project.id, balance_id=balance.id) }}" class="d-flex flex-wrap gap-2">
                   <input class="form-control form-control-sm" name="quantity" type="number" min="0.01" max="{{ balance.quantity }}" step="0.01" value="{{ balance.quantity }}" required aria-label="Visszavett mennyiség" style="width: 7rem;">

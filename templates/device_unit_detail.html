@@ -93,6 +93,7 @@
         {% if "RETURN" in allowed_movements %}<button class="btn btn-outline-secondary btn-move-return btn-sm" name="movement_type" value="RETURN" type="submit">Visszavétel</button>{% endif %}
         {% if "SERVICE" in allowed_movements %}<button class="btn btn-outline-secondary btn-move-service btn-sm" name="movement_type" value="SERVICE" type="submit">Szervizbe küldés</button>{% endif %}
         {% if "TRANSFER" in allowed_movements %}<button class="btn btn-outline-secondary btn-move-transfer btn-sm" name="movement_type" value="TRANSFER" type="submit">Áthelyezés</button>{% endif %}
+        {% if "RELEASE" in allowed_movements %}<button class="btn btn-outline-secondary btn-sm" name="movement_type" value="RELEASE" type="submit" data-confirm="Feloldod a példány projektfoglalását?">Foglalás feloldása</button>{% endif %}
         {% if "SCRAP" in allowed_movements %}<button class="btn btn-outline-danger btn-sm" name="movement_type" value="SCRAP" type="submit" data-confirm="Biztosan selejtezed ezt a példányt?">Selejtezés</button>{% endif %}
       </div>
     </div>

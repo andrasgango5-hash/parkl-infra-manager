@@ -57,7 +57,18 @@
             <td>{{ format_vat_rate(device.vat_rate) }}</td>
             <td>{{ device_money_text(device, "unit_gross") }}</td>
             <td>{{ device_money_text(device, "total_gross") }}</td>
-            <td><span class="status-badge {{ 'status-neutral' if device.archived_at else status_badge_class(device.status) }}">{{ "Archiválva" if device.archived_at else status_label(device.status) }}</span></td>
+            <td>
+              {% if device.archived_at %}
+                <span class="status-badge status-neutral">Archiválva</span>
+              {% else %}
+                {% set inventory_statuses = device_inventory_values(device, "status") %}
+                {% for inventory_status in inventory_statuses %}
+                  <span class="status-badge {{ status_badge_class(inventory_status) }}">{{ status_label(inventory_status) }}</span>
+                {% else %}
+                  <span class="text-secondary">Nincs aktív készlet</span>
+                {% endfor %}
+              {% endif %}
+            </td>
             <td><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('device_detail', device_id=device.id) }}">Részletek</a></td>
           </tr>
         {% else %}

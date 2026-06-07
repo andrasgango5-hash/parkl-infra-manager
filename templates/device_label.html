@@ -32,7 +32,8 @@
               <div><dt>Eszközazonosító</dt><dd>{{ device.asset_tag }}</dd></div>
               <div><dt>Típus</dt><dd>{{ category_label(device.device_type) }}</dd></div>
               <div><dt>Sorozatszám</dt><dd>{{ device.serial_number or "-" }}</dd></div>
-              <div><dt>Projekt</dt><dd>{{ device.project.name if device.project else "-" }}</dd></div>
+              {% set project_codes = device_inventory_values(device, "project") %}
+              <div><dt>Projekt</dt><dd>{{ project_codes|join(", ") if project_codes else "-" }}</dd></div>
             </dl>
           </div>
           <img class="device-label-qr" src="{{ url_for('device_qr', device_id=device.id) }}" alt="{{ device.asset_tag }} QR-kódja">

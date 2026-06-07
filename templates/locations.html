@@ -55,7 +55,11 @@
                 <td class="fw-semibold"><span class="table-item-with-icon"><span class="table-item-icon"><i class="bi bi-geo-alt"></i></span>{{ location.name }}</span></td>
                 <td><span class="status-badge status-neutral">{{ location_type_label(location.location_type) }}</span></td>
                 <td class="mobile-hide">{{ location.address or "-" }}</td>
-                <td class="mobile-hide">{{ location.devices|length }}</td>
+                {% set inventory = location_inventory[location.id] %}
+                <td class="mobile-hide">
+                  {{ format_number(inventory.physical) }} db
+                  {% if inventory.reserved %}<div class="small text-secondary">{{ format_number(inventory.reserved) }} foglalt</div>{% endif %}
+                </td>
                 <td class="text-nowrap">
                   <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('location_detail', location_id=location.id) }}" data-bs-toggle="tooltip" data-bs-title="Készlethely megnyitása"><i class="bi bi-eye"></i> Részletek</a>
                   {% if can_write %}

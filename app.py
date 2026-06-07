@@ -71,6 +71,7 @@ MOVEMENT_TYPE_LABELS = {
     "SERVICE": "Szervizbe küldés",
     "SCRAP": "Selejtezés",
     "TRANSFER": "Áthelyezés",
+    "RELEASE": "Foglalás feloldása",
     "REVERSAL": "Mozgás visszavonása",
 }
 
@@ -126,6 +127,10 @@ DEVICE_QR_MODE_LABELS = {
     "group": "Csoport QR",
     "individual": "Egyedi QR példányonként",
 }
+
+PHYSICAL_LOCATION_STATUSES = {"IN_STOCK", "RESERVED", "RETURNED", "IN_SERVICE"}
+FREE_STOCK_STATUSES = {"IN_STOCK", "RETURNED"}
+PROJECT_ACTIVE_STATUSES = {"RESERVED", "ISSUED", "INSTALLED"}
 
 TEMPLATE_PROJECT_HEADERS = [
     "project_code", "project_name", "customer_name", "site_name", "address", "status", "notes"
@@ -415,6 +420,7 @@ def create_app(config_class=Config):
             "device_qr_mode_label": device_qr_mode_label,
             "tracking_mode_label": tracking_mode_label,
             "bulk_balance_summary": bulk_balance_summary,
+            "device_inventory_values": device_inventory_values,
             "status_badge_class": status_badge_class,
             "movement_badge_class": movement_badge_class,
             "work_order_type_label": work_order_type_label,
@@ -706,7 +712,11 @@ def create_app(config_class=Config):
         click.echo(
             "Demo adatbázis újraépítve: "
             f"{summary['projects']} projekt, {summary['locations']} készlethely, "
-            f"{summary['devices']} eszköz, {summary['movements']} mozgás, "
+            f"{summary['devices']} terméktétel, {summary['device_units']} egyedi példány, "
+            f"{summary['bulk_physical']} db bulk készlet "
+            f"({summary['bulk_reserved']} db foglalt), "
+            f"{summary['unit_reserved']} foglalt példány, "
+            f"{summary['movements']} mozgás, "
             f"{summary['invoice_items']} gazdátlan számlasor."
         )
 
@@ -1366,9 +1376,13 @@ def create_app(config_class=Config):
             project_query = project_query.filter(Project.status == selected_status)
 
         project_list = project_query.order_by(Project.created_at.desc()).all()
+        project_inventory = {
+            project.id: project_inventory_summary(project) for project in project_list
+        }
         return render_template(
             "projects.html",
             projects=project_list,
+            project_inventory=project_inventory,
             project_statuses=PROJECT_STATUS_LABELS,
             search=search,
             selected_status=selected_status,
@@ -1417,6 +1431,7 @@ def create_app(config_class=Config):
             .filter(
                 BulkStockBalance.project_id == project.id,
                 BulkStockBalance.quantity > 0,
+                BulkStockBalance.status.in_(PROJECT_ACTIVE_STATUSES),
                 Device.archived_at.is_(None),
                 Device.tracking_mode == "bulk",
             )
@@ -1428,6 +1443,7 @@ def create_app(config_class=Config):
             BulkStockBalance.query.filter(
                 BulkStockBalance.project_id == project.id,
                 BulkStockBalance.quantity > 0,
+                BulkStockBalance.status.in_(PROJECT_ACTIVE_STATUSES),
             )
             .join(Device)
             .filter(Device.archived_at.is_(None), Device.tracking_mode == "bulk")
@@ -1436,11 +1452,39 @@ def create_app(config_class=Config):
         )
         units = (
             DeviceUnit.query.filter_by(project_id=project.id)
-            .filter(DeviceUnit.archived_at.is_(None))
+            .filter(
+                DeviceUnit.archived_at.is_(None),
+                DeviceUnit.status.in_(PROJECT_ACTIVE_STATUSES),
+            )
             .join(Device)
             .filter(Device.archived_at.is_(None), Device.tracking_mode == "unit")
             .order_by(DeviceUnit.unit_code.asc())
             .all()
+        )
+        reserved_units = [unit for unit in units if unit.status == "RESERVED"]
+        issued_units = [unit for unit in units if unit.status == "ISSUED"]
+        installed_units = [unit for unit in units if unit.status == "INSTALLED"]
+        inventory_rows = [
+            {
+                "device": balance.device,
+                "unit": None,
+                "quantity": balance.quantity,
+                "status": balance.status,
+                "location": balance.location,
+            }
+            for balance in bulk_balances
+        ] + [
+            {
+                "device": unit.device,
+                "unit": unit,
+                "quantity": 1,
+                "status": unit.status,
+                "location": unit.location,
+            }
+            for unit in units
+        ]
+        project_devices = list(
+            {row["device"].id: row["device"] for row in inventory_rows}.values()
         )
         movements = (
             StockMovement.query.filter(
@@ -1460,13 +1504,13 @@ def create_app(config_class=Config):
             .all()
         )
         finance_summary = {
-            "device_count": len(devices) + len(units),
+            "device_count": sum(balance.quantity for balance in bulk_balances) + len(units),
             "quantity": sum(balance.quantity for balance in bulk_balances) + len(units),
             "bulk_quantity": sum(balance.quantity for balance in bulk_balances),
-            **device_currency_totals(devices),
-            "invoice_value": sum(device.invoice_value or 0 for device in devices),
-            "ordered": sum(1 for device in devices if device.is_ordered),
-            "arrived": sum(1 for device in devices if device.has_arrived),
+            **inventory_rows_currency_totals(inventory_rows),
+            "invoice_value": sum(device.invoice_value or 0 for device in project_devices),
+            "ordered": sum(1 for device in project_devices if device.is_ordered),
+            "arrived": sum(1 for device in project_devices if device.has_arrived),
             "issued": sum(balance.quantity for balance in bulk_balances if balance.status == "ISSUED")
             + sum(1 for unit in units if unit.status == "ISSUED"),
             "installed": sum(balance.quantity for balance in bulk_balances if balance.status == "INSTALLED")
@@ -1475,10 +1519,12 @@ def create_app(config_class=Config):
             + sum(1 for unit in units if unit.status == "RETURNED"),
             "unpaid_supplier_invoice_count": sum(
                 1
-                for device in devices
+                for device in project_devices
                 if device.supplier_invoice_number and device.supplier_invoice_paid is not True
             ),
-            "awaiting_arrival_count": sum(1 for device in devices if is_awaiting_arrival(device)),
+            "awaiting_arrival_count": sum(
+                1 for device in project_devices if is_awaiting_arrival(device)
+            ),
         }
         finance_visible = user_can("admin", "manager")
         attention_items = [
@@ -1486,7 +1532,7 @@ def create_app(config_class=Config):
                 "device": device,
                 "reasons": device_attention_reasons(device, include_finance=finance_visible),
             }
-            for device in devices
+            for device in project_devices
             if device_attention_reasons(device, include_finance=finance_visible)
         ]
         warehouses = (
@@ -1500,9 +1546,12 @@ def create_app(config_class=Config):
         return render_template(
             "project_detail.html",
             project=project,
-            devices=devices,
+            devices=project_devices,
             bulk_balances=bulk_balances,
             units=units,
+            reserved_units=reserved_units,
+            issued_units=issued_units,
+            installed_units=installed_units,
             movements=movements,
             drawings=drawings,
             finance_summary=finance_summary,
@@ -1627,16 +1676,14 @@ def create_app(config_class=Config):
     @export_required
     def project_pdf(project_id, pdf_type):
         project = Project.query.get_or_404(project_id)
-        devices = (
-            Device.query.filter_by(project_id=project.id)
-            .filter(Device.archived_at.is_(None))
-            .order_by(Device.asset_tag.asc())
-            .all()
-        )
         if pdf_type not in {"equipment", "issue", "installation", "finance"}:
             abort(404)
 
-        pdf_buffer = build_project_pdf(project, devices, pdf_type)
+        pdf_buffer = build_project_pdf(
+            project,
+            project_inventory_rows(project),
+            pdf_type,
+        )
         filenames = {
             "equipment": "projekt-eszkozlista",
             "issue": "kiadasi-lista",
@@ -1804,7 +1851,6 @@ def create_app(config_class=Config):
                     Device.asset_tag.ilike(term),
                     Device.serial_number.ilike(term),
                     Device.supplier_manufacturer.ilike(term),
-                    Device.project.has(Project.code.ilike(term)),
                     Device.units.any(
                         and_(
                             DeviceUnit.archived_at.is_(None),
@@ -1854,6 +1900,7 @@ def create_app(config_class=Config):
                             and_(
                                 BulkStockBalance.quantity > 0,
                                 BulkStockBalance.project_id == selected_project_id,
+                                BulkStockBalance.status.in_(PROJECT_ACTIVE_STATUSES),
                             )
                         ),
                     ),
@@ -1863,6 +1910,7 @@ def create_app(config_class=Config):
                             and_(
                                 DeviceUnit.archived_at.is_(None),
                                 DeviceUnit.project_id == selected_project_id,
+                                DeviceUnit.status.in_(PROJECT_ACTIVE_STATUSES),
                             )
                         ),
                     ),
@@ -1877,6 +1925,7 @@ def create_app(config_class=Config):
                             and_(
                                 BulkStockBalance.quantity > 0,
                                 BulkStockBalance.location_id == selected_location_id,
+                                BulkStockBalance.status.in_(PHYSICAL_LOCATION_STATUSES),
                             )
                         ),
                     ),
@@ -1886,6 +1935,7 @@ def create_app(config_class=Config):
                             and_(
                                 DeviceUnit.archived_at.is_(None),
                                 DeviceUnit.location_id == selected_location_id,
+                                DeviceUnit.status.in_(PHYSICAL_LOCATION_STATUSES),
                             )
                         ),
                     ),
@@ -1968,9 +2018,12 @@ def create_app(config_class=Config):
                 flash("Pozitív mennyiség megadása kötelező.", "danger")
             elif data["tracking_mode"] == "unit" and not float(data["quantity"]).is_integer():
                 flash("Egyedi példánykövetésnél a mennyiség csak egész szám lehet.", "danger")
+            elif not data["location_id"]:
+                flash("A kezdő készlethely megadása kötelező.", "danger")
             elif Device.query.filter_by(asset_tag=data["asset_tag"]).first():
                 flash("Ezzel az eszközazonosítóval már létezik eszköz.", "danger")
             else:
+                data["project_id"] = None
                 device = Device(**data, status="IN_STOCK")
                 db.session.add(device)
                 db.session.flush()
@@ -2046,6 +2099,8 @@ def create_app(config_class=Config):
         locations = Location.query.filter(Location.archived_at.is_(None)).order_by(Location.name.asc()).all()
         if request.method == "POST":
             data = device_form_data(request.form)
+            data.pop("project_id", None)
+            data.pop("location_id", None)
             if not data["asset_tag"] or not data["device_type"]:
                 flash("Az eszközazonosító és a kategória kötelező.", "danger")
             elif data["device_type"] not in DEVICE_CATEGORIES:
@@ -2358,7 +2413,7 @@ def create_app(config_class=Config):
         project_id = optional_int(request.form.get("project_id"))
         quantity = optional_float(request.form.get("quantity"))
         notes = request.form.get("notes", "").strip()
-        from_location_id = device.location_id
+        from_location_id = source_balance.location_id if source_balance else None
         if movement_type not in MOVEMENT_TYPES:
             flash("Érvénytelen készletművelet.", "danger")
             return redirect(url_for("device_detail", device_id=device.id))
@@ -2704,6 +2759,10 @@ def create_app(config_class=Config):
         return render_template(
             "locations.html",
             locations=location_list,
+            location_inventory={
+                location.id: location_inventory_summary(location)
+                for location in location_list
+            },
             location_types=LOCATION_TYPE_LABELS,
             selected_type=selected_type,
         )
@@ -2747,6 +2806,7 @@ def create_app(config_class=Config):
             .filter(
                 BulkStockBalance.location_id == location.id,
                 BulkStockBalance.quantity > 0,
+                BulkStockBalance.status.in_(PHYSICAL_LOCATION_STATUSES),
                 Device.archived_at.is_(None),
                 Device.tracking_mode == "bulk",
             )
@@ -2758,6 +2818,7 @@ def create_app(config_class=Config):
             BulkStockBalance.query.filter(
                 BulkStockBalance.location_id == location.id,
                 BulkStockBalance.quantity > 0,
+                BulkStockBalance.status.in_(PHYSICAL_LOCATION_STATUSES),
             )
             .join(Device)
             .filter(Device.archived_at.is_(None), Device.tracking_mode == "bulk")
@@ -2766,7 +2827,10 @@ def create_app(config_class=Config):
         )
         units = (
             DeviceUnit.query.filter_by(location_id=location.id)
-            .filter(DeviceUnit.archived_at.is_(None))
+            .filter(
+                DeviceUnit.archived_at.is_(None),
+                DeviceUnit.status.in_(PHYSICAL_LOCATION_STATUSES),
+            )
             .join(Device)
             .filter(Device.archived_at.is_(None), Device.tracking_mode == "unit")
             .order_by(DeviceUnit.unit_code.asc())
@@ -2783,16 +2847,65 @@ def create_app(config_class=Config):
             .limit(50)
             .all()
         )
+        free_bulk_balances = [
+            balance for balance in bulk_balances if balance.status in FREE_STOCK_STATUSES
+        ]
+        reserved_bulk_balances = [
+            balance for balance in bulk_balances if balance.status == "RESERVED"
+        ]
+        service_bulk_balances = [
+            balance for balance in bulk_balances if balance.status == "IN_SERVICE"
+        ]
+        free_units = [unit for unit in units if unit.status in FREE_STOCK_STATUSES]
+        reserved_units = [unit for unit in units if unit.status == "RESERVED"]
+        service_units = [unit for unit in units if unit.status == "IN_SERVICE"]
+        location_inventory_rows = [
+            {
+                "device": balance.device,
+                "unit": None,
+                "quantity": balance.quantity,
+                "status": balance.status,
+                "location": location,
+            }
+            for balance in bulk_balances
+        ] + [
+            {
+                "device": unit.device,
+                "unit": unit,
+                "quantity": 1,
+                "status": unit.status,
+                "location": location,
+            }
+            for unit in units
+        ]
         return render_template(
             "location_detail.html",
             location=location,
             devices=devices,
             units=units,
             bulk_balances=bulk_balances,
+            free_bulk_balances=free_bulk_balances,
+            reserved_bulk_balances=reserved_bulk_balances,
+            service_bulk_balances=service_bulk_balances,
+            free_units=free_units,
+            reserved_units=reserved_units,
+            service_units=service_units,
             movements=movements,
             location_summary={
                 "quantity": sum(balance.quantity for balance in bulk_balances) + len(units),
-                **device_currency_totals(devices),
+                "free_quantity": sum(
+                    balance.quantity for balance in free_bulk_balances
+                )
+                + len(free_units),
+                "reserved_quantity": sum(
+                    balance.quantity for balance in reserved_bulk_balances
+                )
+                + len(reserved_units),
+                "service_quantity": sum(
+                    balance.quantity for balance in service_bulk_balances
+                )
+                + len(service_units),
+                **inventory_rows_currency_totals(location_inventory_rows),
             },
             archive_blockers=location_archive_blockers(location),
         )
@@ -3064,55 +3177,17 @@ def reset_demo_dataset(
     db.session.flush()
 
     devices = {
-        "EV-001": Device(
-            asset_tag="EV-001",
+        "EV-BATCH": Device(
+            asset_tag="EV-BATCH",
             device_type="EV charger",
-            product_name="ABB Terra AC 22 kW charger",
-            manufacturer="ABB",
-            model="Terra AC 22 kW",
-            quantity=1,
+            product_name="Schneider EVlink Pro AC",
+            manufacturer="Schneider",
+            model="EVlink Pro AC",
+            quantity=3,
             currency="HUF",
-            huf_value=420000,
-        ),
-        "NET-001": Device(
-            asset_tag="NET-001",
-            device_type="Router",
-            product_name="Teltonika RUTX11 router",
-            manufacturer="Teltonika",
-            model="RUTX11",
-            quantity=1,
-            currency="HUF",
-            huf_value=89000,
-        ),
-        "BOX-001": Device(
-            asset_tag="BOX-001",
-            device_type="Parkl box",
-            product_name="Parkl Gate Controller Box",
-            manufacturer="Parkl",
-            model="Gate Controller Box",
-            quantity=1,
-            currency="HUF",
-            huf_value=180000,
-        ),
-        "BAR-001": Device(
-            asset_tag="BAR-001",
-            device_type="Barrier gate",
-            product_name="Sorompó vezérlő",
-            manufacturer="Parkl",
-            model="Sorompó vezérlő",
-            quantity=1,
-            currency="HUF",
-            huf_value=240000,
-        ),
-        "CAM-001": Device(
-            asset_tag="CAM-001",
-            device_type="Camera",
-            product_name="Hikvision ANPR kamera",
-            manufacturer="Hikvision",
-            model="ANPR",
-            quantity=1,
-            currency="HUF",
-            huf_value=160000,
+            unit_net_price=350000,
+            tracking_mode="unit",
+            qr_mode="individual",
         ),
         "MAT-001": Device(
             asset_tag="MAT-001",
@@ -3122,71 +3197,86 @@ def reset_demo_dataset(
             model="Matrica csomag",
             quantity=50,
             currency="HUF",
-            huf_value=25000,
+            unit_net_price=500,
+            tracking_mode="bulk",
         ),
     }
     db.session.add_all(devices.values())
     db.session.flush()
 
     warehouse_id = locations["warehouse"].id
-    for device in devices.values():
-        create_movement(
-            device=device,
-            movement_type="INBOUND",
-            to_location_id=warehouse_id,
-            notes="Demo kezdő bevételezés.",
-            user_id=user.id,
-        )
-        apply_device_state(device, "INBOUND", warehouse_id, None)
+    sticker = devices["MAT-001"]
+    create_movement(
+        device=sticker,
+        movement_type="INBOUND",
+        quantity=50,
+        to_location_id=warehouse_id,
+        notes="Demo kezdő bevételezés: 50 db matrica.",
+        user_id=user.id,
+    )
+    apply_device_state(sticker, "INBOUND", warehouse_id, None, quantity=50)
 
-    demo_actions = [
-        (
-            devices["NET-001"],
-            "RESERVE",
-            warehouse_id,
-            projects["PRK-001"].id,
-            "Demo előjegyzés Arena projektre.",
-        ),
-        (
-            devices["BOX-001"],
-            "ISSUE",
-            locations["service_car"].id,
-            projects["PRK-002"].id,
-            "Demo kiadás szervizautóra.",
-        ),
-        (
-            devices["BAR-001"],
-            "ISSUE",
-            locations["office"].id,
-            projects["PRK-002"].id,
-            "Demo kiadás telepítés előkészítéséhez.",
-        ),
-        (
-            devices["BAR-001"],
-            "INSTALL",
-            locations["office"].id,
-            projects["PRK-002"].id,
-            "Demo telepítés Office Park helyszínen.",
-        ),
-        (
-            devices["CAM-001"],
-            "SERVICE",
-            locations["service"].id,
-            None,
-            "Demo szervizbe küldés.",
-        ),
-    ]
-    for device, movement_type, to_location_id, project_id, notes in demo_actions:
+    charger = devices["EV-BATCH"]
+    charger.location_id = None
+    charger.project_id = None
+    units = []
+    for number in range(1, 4):
+        unit = DeviceUnit(
+            device=charger,
+            unit_code=f"SCH-EV-{number:03d}",
+            asset_tag=f"SCH-EV-{number:03d}",
+            status="IN_STOCK",
+            location_id=warehouse_id,
+        )
+        db.session.add(unit)
+        db.session.flush()
         create_movement(
-            device=device,
-            movement_type=movement_type,
-            from_location_id=device.location_id,
-            to_location_id=to_location_id,
-            project_id=project_id,
-            notes=notes,
+            device=charger,
+            unit=unit,
+            movement_type="INBOUND",
+            quantity=1,
+            to_location_id=warehouse_id,
+            notes="Demo egyedi példány kezdő bevételezése.",
             user_id=user.id,
         )
-        apply_device_state(device, movement_type, to_location_id, project_id)
+        units.append(unit)
+
+    reserved_unit = units[0]
+    create_movement(
+        device=charger,
+        unit=reserved_unit,
+        movement_type="RESERVE",
+        quantity=1,
+        project_id=projects["PRK-001"].id,
+        notes="Demo: egy töltő előfoglalása PRK-001 projektre.",
+        user_id=user.id,
+    )
+    apply_device_state(
+        charger,
+        "RESERVE",
+        None,
+        projects["PRK-001"].id,
+        unit=reserved_unit,
+    )
+
+    sticker_source = infer_bulk_source_balance(sticker, "RESERVE", 20)
+    create_movement(
+        device=sticker,
+        movement_type="RESERVE",
+        quantity=20,
+        project_id=projects["PRK-001"].id,
+        source_balance=sticker_source,
+        notes="Demo: 20 db matrica előfoglalása PRK-001 projektre.",
+        user_id=user.id,
+    )
+    apply_device_state(
+        sticker,
+        "RESERVE",
+        None,
+        projects["PRK-001"].id,
+        quantity=20,
+        source_balance=sticker_source,
+    )
 
     invoice_items = [
         UnassignedInvoiceItem(
@@ -3229,6 +3319,10 @@ def reset_demo_dataset(
         "projects": len(projects),
         "locations": len(locations),
         "devices": len(devices),
+        "device_units": len(units),
+        "bulk_physical": 50,
+        "bulk_reserved": 20,
+        "unit_reserved": 1,
         "movements": StockMovement.query.count(),
         "invoice_items": len(invoice_items),
     }
@@ -3663,11 +3757,60 @@ def bulk_balance_summary(device, field):
     return next(iter(values)) if len(values) == 1 else f"{len(values)} féle"
 
 
+def device_inventory_subjects(device):
+    if device.tracking_mode == "unit":
+        return active_device_units(device)
+    return [
+        balance
+        for balance in device.bulk_balances
+        if balance.quantity is not None and balance.quantity > 1e-9
+    ]
+
+
+def device_inventory_values(device, field):
+    subjects = device_inventory_subjects(device)
+
+    if field == "project":
+        values = {
+            subject.project.code
+            for subject in subjects
+            if subject.project is not None
+            and subject.status in PROJECT_ACTIVE_STATUSES
+        }
+    elif field == "location":
+        values = {
+            subject.location.name
+            for subject in subjects
+            if subject.location is not None
+            and subject.status in PHYSICAL_LOCATION_STATUSES
+        }
+    elif field == "status":
+        values = {subject.status for subject in subjects}
+    else:
+        values = set()
+    return sorted(values)
+
+
+def device_inventory_export_value(device, field):
+    subjects = device_inventory_subjects(device)
+    values = device_inventory_values(device, field)
+    if field == "status":
+        if len(values) == 1:
+            return values[0]
+        return f"MIXED: {'; '.join(values)}" if values else ""
+
+    attribute = "project_id" if field == "project" else "location_id"
+    raw_values = {getattr(subject, attribute) for subject in subjects}
+    if len(raw_values) == 1:
+        return values[0] if values else ""
+    return "MIXED"
+
+
 def available_device_movements(device):
     transitions = {
         "IN_STOCK": ["RESERVE", "ISSUE", "TRANSFER", "SERVICE", "SCRAP"],
-        "RESERVED": ["ISSUE", "RETURN", "SCRAP"],
-        "ISSUED": ["INSTALL", "RETURN", "TRANSFER"],
+        "RESERVED": ["ISSUE", "RELEASE", "SCRAP"],
+        "ISSUED": ["INSTALL", "RETURN"],
         "INSTALLED": ["RETURN", "SERVICE", "SCRAP"],
         "RETURNED": ["INBOUND", "TRANSFER", "ISSUE", "INSTALL"],
         "IN_SERVICE": ["RETURN", "SCRAP"],
@@ -3682,10 +3825,11 @@ def movement_allowed_statuses():
         "RESERVE": {"IN_STOCK"},
         "ISSUE": {"IN_STOCK", "RESERVED", "RETURNED"},
         "INSTALL": {"ISSUED", "RETURNED"},
-        "RETURN": {"RESERVED", "ISSUED", "INSTALLED", "IN_SERVICE"},
+        "RETURN": {"ISSUED", "INSTALLED", "IN_SERVICE"},
         "SERVICE": {"IN_STOCK", "RETURNED", "ISSUED", "INSTALLED"},
         "SCRAP": None,
-        "TRANSFER": {"IN_STOCK", "RETURNED", "ISSUED"},
+        "TRANSFER": {"IN_STOCK", "RETURNED"},
+        "RELEASE": {"RESERVED"},
     }
 
 
@@ -3729,6 +3873,15 @@ def movement_reversal_blockers(movement):
         blockers.append("Az eszköztétel archiválva van.")
 
     if movement.unit_id is not None:
+        if StockMovement.query.filter(
+            StockMovement.unit_id == movement.unit_id,
+            StockMovement.id > movement.id,
+        ).first():
+            blockers.append(
+                "Csak a példány legutolsó mozgása vonható vissza; későbbi "
+                "mozgás már épül erre az állapotra."
+            )
+            return blockers
         unit = movement.unit
         if unit is None or unit.archived_at is not None:
             blockers.append("Az érintett eszközpéldány nem aktív.")
@@ -3748,6 +3901,16 @@ def movement_reversal_blockers(movement):
 
     if movement.device.tracking_mode != "bulk":
         blockers.append("A mozgás nem köthető egyértelműen bulk készlethez vagy példányhoz.")
+        return blockers
+    if StockMovement.query.filter(
+        StockMovement.device_id == movement.device_id,
+        StockMovement.unit_id.is_(None),
+        StockMovement.id > movement.id,
+    ).first():
+        blockers.append(
+            "Csak a bulk tétel legutolsó mozgása vonható vissza; későbbi "
+            "mennyiségi mozgás már épül az egyenlegekre."
+        )
         return blockers
     target_balance = BulkStockBalance.query.filter_by(
         device_id=movement.device_id,
@@ -4028,6 +4191,7 @@ def movement_badge_class(value):
         "SERVICE": "movement-service",
         "SCRAP": "movement-scrap",
         "TRANSFER": "movement-transfer",
+        "RELEASE": "movement-release",
         "REVERSAL": "movement-reversal",
     }.get(value, "movement-neutral")
 
@@ -4121,11 +4285,137 @@ def device_has_status(device, status):
 
 def device_has_project(device):
     if device.tracking_mode == "unit":
-        return any(unit.project_id is not None for unit in active_device_units(device))
+        return any(
+            unit.project_id is not None and unit.status in PROJECT_ACTIVE_STATUSES
+            for unit in active_device_units(device)
+        )
     return any(
-        balance.project_id is not None and balance.quantity > 1e-9
+        balance.project_id is not None
+        and balance.quantity > 1e-9
+        and balance.status in PROJECT_ACTIVE_STATUSES
         for balance in device.bulk_balances
     )
+
+
+def project_inventory_rows(project):
+    from models import BulkStockBalance, Device, DeviceUnit
+
+    rows = []
+    for balance in BulkStockBalance.query.filter(
+        BulkStockBalance.project_id == project.id,
+        BulkStockBalance.quantity > 1e-9,
+        BulkStockBalance.status.in_(PROJECT_ACTIVE_STATUSES),
+    ).join(Device).filter(Device.archived_at.is_(None)).all():
+        rows.append(
+            {
+                "device": balance.device,
+                "unit": None,
+                "quantity": balance.quantity,
+                "status": balance.status,
+                "location": balance.location,
+            }
+        )
+    for unit in (
+        DeviceUnit.query.filter(
+            DeviceUnit.project_id == project.id,
+            DeviceUnit.archived_at.is_(None),
+            DeviceUnit.status.in_(PROJECT_ACTIVE_STATUSES),
+        )
+        .join(Device)
+        .filter(Device.archived_at.is_(None))
+        .all()
+    ):
+        rows.append(
+            {
+                "device": unit.device,
+                "unit": unit,
+                "quantity": 1,
+                "status": unit.status,
+                "location": unit.location,
+            }
+        )
+    return rows
+
+
+def project_inventory_summary(project):
+    rows = project_inventory_rows(project)
+    return {
+        "quantity": sum(row["quantity"] for row in rows),
+        "unit_count": sum(1 for row in rows if row["unit"] is not None),
+        "bulk_quantity": sum(
+            row["quantity"] for row in rows if row["unit"] is None
+        ),
+        "reserved": sum(
+            row["quantity"] for row in rows if row["status"] == "RESERVED"
+        ),
+        "issued": sum(
+            row["quantity"] for row in rows if row["status"] == "ISSUED"
+        ),
+        "installed": sum(
+            row["quantity"] for row in rows if row["status"] == "INSTALLED"
+        ),
+    }
+
+
+def location_inventory_summary(location):
+    bulk_balances = [
+        balance
+        for balance in location.bulk_balances
+        if balance.quantity > 1e-9
+        and balance.status in PHYSICAL_LOCATION_STATUSES
+        and balance.device.archived_at is None
+    ]
+    units = [
+        unit
+        for unit in location.device_units
+        if unit.archived_at is None
+        and unit.status in PHYSICAL_LOCATION_STATUSES
+        and unit.device.archived_at is None
+    ]
+    reserved = sum(
+        balance.quantity
+        for balance in bulk_balances
+        if balance.status == "RESERVED"
+    ) + sum(1 for unit in units if unit.status == "RESERVED")
+    total = sum(balance.quantity for balance in bulk_balances) + len(units)
+    free = sum(
+        balance.quantity
+        for balance in bulk_balances
+        if balance.status in FREE_STOCK_STATUSES
+    ) + sum(1 for unit in units if unit.status in FREE_STOCK_STATUSES)
+    service = sum(
+        balance.quantity
+        for balance in bulk_balances
+        if balance.status == "IN_SERVICE"
+    ) + sum(1 for unit in units if unit.status == "IN_SERVICE")
+    return {
+        "physical": total,
+        "reserved": reserved,
+        "free": free,
+        "service": service,
+    }
+
+
+def inventory_rows_currency_totals(rows):
+    totals = {
+        "net_huf": 0,
+        "net_eur": 0,
+        "gross_huf": 0,
+        "gross_eur": 0,
+        "missing_currency_count": 0,
+    }
+    for row in rows:
+        device = row["device"]
+        quantity = row["quantity"]
+        if device.currency not in {"HUF", "EUR"}:
+            totals["missing_currency_count"] += 1
+            continue
+        currency_key = device.currency.lower()
+        if device.unit_net_price is not None:
+            totals[f"net_{currency_key}"] += device.unit_net_price * quantity
+        if device.unit_gross_price is not None:
+            totals[f"gross_{currency_key}"] += device.unit_gross_price * quantity
+    return totals
 
 
 def inventory_status_quantity(devices, units, status):
@@ -4153,7 +4443,7 @@ def is_arrived_unassigned(device):
         return device.has_arrived is True and all(
             not balance.project_id and not balance.location_id for balance in balances
         )
-    return device.has_arrived is True and not device.project_id and not device.location_id
+    return device.has_arrived is True
 
 
 def is_financially_open(device):
@@ -4204,20 +4494,28 @@ def device_attention_reasons(device, include_finance=True):
         for unit in active_device_units(device):
             if unit.status not in STATUS_LABELS:
                 reasons.append(f"{unit.unit_code}: ismeretlen példánystátusz.")
-            if unit.status == "INSTALLED" and not unit.project_id:
-                reasons.append(f"{unit.unit_code}: telepítve, de nincs projekthez rendelve.")
-            if unit.status in {"ISSUED", "INSTALLED"} and not unit.location_id:
-                reasons.append(f"{unit.unit_code}: kiadott vagy telepített, de nincs lokációja.")
+                continue
+            state_error = inventory_state_error(
+                unit.status,
+                unit.location_id,
+                unit.project_id,
+            )
+            if state_error:
+                reasons.append(f"{unit.unit_code}: {state_error}.")
     else:
         for balance in device.bulk_balances:
             if balance.quantity <= 1e-9:
                 continue
             if balance.status not in STATUS_LABELS:
                 reasons.append("Ismeretlen bulk készletstátusz.")
-            if balance.status == "INSTALLED" and not balance.project_id:
-                reasons.append("Telepített bulk mennyiség projekthozzárendelés nélkül.")
-            if balance.status in {"ISSUED", "INSTALLED"} and not balance.location_id:
-                reasons.append("Kiadott vagy telepített bulk mennyiség lokáció nélkül.")
+                continue
+            state_error = inventory_state_error(
+                balance.status,
+                balance.location_id,
+                balance.project_id,
+            )
+            if state_error:
+                reasons.append(f"Bulk egyenleg: {state_error}.")
     return reasons
 
 
@@ -4241,12 +4539,13 @@ def build_attention_items(devices, invoice_items, include_finance=True):
     for device in devices:
         reasons = device_attention_reasons(device, include_finance=include_finance)
         if reasons:
+            project_codes = device_inventory_values(device, "project")
             items.append(
                 {
                     "type": "Eszköz",
                     "name": device_primary_label(device),
                     "reasons": reasons,
-                    "project": device.project.code if device.project else "-",
+                    "project": ", ".join(project_codes) if project_codes else "-",
                     "supplier": device.supplier_manufacturer or device.manufacturer or "-",
                     "invoice": (
                         device.supplier_invoice_number
@@ -4279,7 +4578,7 @@ def build_attention_items(devices, invoice_items, include_finance=True):
     return items
 
 
-def build_project_pdf(project, devices, pdf_type):
+def build_project_pdf(project, inventory_rows, pdf_type):
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -4319,41 +4618,56 @@ def build_project_pdf(project, devices, pdf_type):
                 "Megjegyzés",
             ]
         ]
-        pdf_devices = devices
-        for device in pdf_devices:
+        pdf_rows = inventory_rows
+        for item in pdf_rows:
+            device = item["device"]
+            unit = item["unit"]
+            quantity = item["quantity"]
             rows.append(
                 [
-                    device_primary_label(device),
-                    format_number(device.quantity),
+                    unit.unit_code if unit else device_primary_label(device),
+                    format_number(quantity),
                     device.currency or "hiányzik",
                     device_money_text(device, "unit_net"),
-                    device_money_text(device, "total_net"),
+                    (
+                        f"{format_number(device.unit_net_price * quantity)} {device.currency}"
+                        if device.unit_net_price is not None and device.currency
+                        else "Nem számolható"
+                    ),
                     format_vat_rate(device.vat_rate),
                     device_money_text(device, "unit_gross"),
-                    device_money_text(device, "total_gross"),
-                    status_label(device.status),
-                    device.location.name if device.location else "-",
+                    (
+                        f"{format_number(device.unit_gross_price * quantity)} {device.currency}"
+                        if device.unit_gross_price is not None and device.currency
+                        else "Nem számolható"
+                    ),
+                    status_label(item["status"]),
+                    item["location"].name if item["location"] else "-",
                     device.assignment_notes or device.subtype_note or "-",
                 ]
             )
     elif pdf_type in {"issue", "installation"}:
         wanted_status = "ISSUED" if pdf_type == "issue" else "INSTALLED"
         rows = [["Azonosító", "Termék", "Mennyiség", "Lokáció", "Megjegyzés"]]
-        pdf_devices = [device for device in devices if device.status == wanted_status]
-        for device in pdf_devices:
+        pdf_rows = [item for item in inventory_rows if item["status"] == wanted_status]
+        for item in pdf_rows:
+            device = item["device"]
+            unit = item["unit"]
             rows.append(
                 [
-                    device.asset_tag or "-",
+                    unit.unit_code if unit else device.asset_tag or "-",
                     device.product_name or device.model or "-",
-                    format_number(device.quantity),
-                    device.location.name if device.location else "-",
+                    format_number(item["quantity"]),
+                    item["location"].name if item["location"] else "-",
                     device.assignment_notes or device.subtype_note or "-",
                 ]
             )
     else:
         rows = [["Beszállító", "Számlaszám", "Fizetve", "Deviza", "Egység nettó", "Összes nettó", "ÁFA %", "Egység bruttó", "Összes bruttó", "Tétel"]]
-        pdf_devices = devices
-        for device in pdf_devices:
+        pdf_rows = inventory_rows
+        for item in pdf_rows:
+            device = item["device"]
+            quantity = item["quantity"]
             invoice_number = device.supplier_invoice_number or device.shipping_invoice_number or "-"
             paid = "Igen" if (device.supplier_invoice_paid or device.shipping_invoice_paid) else "Nem"
             rows.append(
@@ -4363,15 +4677,29 @@ def build_project_pdf(project, devices, pdf_type):
                     paid,
                     device.currency or "hiányzik",
                     device_money_text(device, "unit_net"),
-                    device_money_text(device, "total_net"),
+                    (
+                        f"{format_number(device.unit_net_price * quantity)} {device.currency}"
+                        if device.unit_net_price is not None and device.currency
+                        else "Nem számolható"
+                    ),
                     format_vat_rate(device.vat_rate),
                     device_money_text(device, "unit_gross"),
-                    device_money_text(device, "total_gross"),
+                    (
+                        f"{format_number(device.unit_gross_price * quantity)} {device.currency}"
+                        if device.unit_gross_price is not None and device.currency
+                        else "Nem számolható"
+                    ),
                     device.product_name or device.model or device.asset_tag or "-",
                 ]
             )
-        totals = device_currency_totals(devices)
-        unpaid_count = sum(1 for device in devices if is_financially_open(device))
+        totals = inventory_rows_currency_totals(inventory_rows)
+        unpaid_count = len(
+            {
+                item["device"].id
+                for item in inventory_rows
+                if is_financially_open(item["device"])
+            }
+        )
         story.append(
             Paragraph(
                 pdf_escape(
@@ -4935,7 +5263,7 @@ def build_data_export_workbook(export_type, Project, Device, Location):
         sheet.append(TEMPLATE_DEVICE_HEADERS)
         for device in Device.query.filter(Device.archived_at.is_(None)).order_by(Device.asset_tag).all():
             sheet.append([
-                device.project.code if device.project else "",
+                device_inventory_export_value(device, "project"),
                 device.device_type,
                 device.product_name or "",
                 device.manufacturer,
@@ -4949,8 +5277,8 @@ def build_data_export_workbook(export_type, Project, Device, Location):
                 device.vat_rate,
                 device.unit_gross_price,
                 device.total_gross_price,
-                device.location.name if device.location else "",
-                device.status,
+                device_inventory_export_value(device, "location"),
+                device_inventory_export_value(device, "status"),
                 device.subtype_note or "",
             ])
     style_workbook_headers(workbook)
@@ -5221,6 +5549,15 @@ def import_template_workbook(summary, Project, Device, Location, user_id):
                 db.session.flush()
                 locations[key] = location
                 result["locations_created"] += 1
+        if location is None:
+            location = locations.get("fő raktár")
+            if location is None:
+                location = Location(name="Fő raktár", location_type="warehouse")
+                db.session.add(location)
+                db.session.flush()
+                locations["fő raktár"] = location
+                result["locations_created"] += 1
+        project = projects[row["project_code"]]
         asset_tag = row.get("asset_tag") or unique_import_asset_tag(Device)
         device = Device(
             asset_tag=asset_tag,
@@ -5236,7 +5573,6 @@ def import_template_workbook(summary, Project, Device, Location, user_id):
             huf_value=row.get("total_net_price") if row.get("currency") == "HUF" else None,
             vat_rate=row.get("vat_rate"),
             status="IN_STOCK",
-            project=projects[row["project_code"]],
             location=location,
         )
         db.session.add(device)
@@ -5246,7 +5582,6 @@ def import_template_workbook(summary, Project, Device, Location, user_id):
             movement_type="INBOUND",
             quantity=device.quantity,
             to_location_id=device.location_id,
-            project_id=device.project_id,
             notes="Sablon alapú import.",
             user_id=user_id,
         )
@@ -5254,15 +5589,27 @@ def import_template_workbook(summary, Project, Device, Location, user_id):
             device,
             "INBOUND",
             device.location_id,
-            device.project_id,
+            None,
             quantity=device.quantity,
         )
-        apply_imported_device_status(device, row.get("status") or "IN_STOCK", user_id)
+        apply_imported_device_status(
+            device,
+            row.get("status") or "IN_STOCK",
+            user_id,
+            project_id=project.id,
+            stock_location_id=location.id,
+        )
         result["devices_created"] += 1
     return result
 
 
-def apply_imported_device_status(device, target_status, user_id):
+def apply_imported_device_status(
+    device,
+    target_status,
+    user_id,
+    project_id=None,
+    stock_location_id=None,
+):
     movement_path = {
         "IN_STOCK": [],
         "RESERVED": ["RESERVE"],
@@ -5273,16 +5620,31 @@ def apply_imported_device_status(device, target_status, user_id):
         "SCRAPPED": ["SCRAP"],
     }
     for movement_type in movement_path.get(target_status, []):
+        target_location_id = (
+            stock_location_id
+            if movement_type in {"RETURN", "SERVICE", "INBOUND", "TRANSFER"}
+            else None
+        )
+        target_project_id = (
+            project_id
+            if movement_type in {"RESERVE", "ISSUE", "INSTALL"}
+            else None
+        )
         create_movement(
             device=device,
             movement_type=movement_type,
             from_location_id=device.location_id,
-            to_location_id=device.location_id,
-            project_id=device.project_id,
+            to_location_id=target_location_id,
+            project_id=target_project_id,
             notes="Sablon alapú import státuszbeállítás.",
             user_id=user_id,
         )
-        apply_device_state(device, movement_type, device.location_id, device.project_id)
+        apply_device_state(
+            device,
+            movement_type,
+            target_location_id,
+            target_project_id,
+        )
 
 
 def unique_import_asset_tag(Device):
@@ -5580,12 +5942,20 @@ def parse_unassigned_invoice_row(sheet_name, row_number, row, header_map):
 
 
 def import_parsed_workbook(summary, import_batch_id, user_id):
-    from models import Device, Project, UnassignedInvoiceItem
+    from models import Device, Location, Project, UnassignedInvoiceItem
 
     created = 0
     skipped = 0
     updated = 0
     imported_at = datetime.now(timezone.utc)
+    warehouse = Location.query.filter_by(
+        name="Fő raktár",
+        archived_at=None,
+    ).first()
+    if warehouse is None:
+        warehouse = Location(name="Fő raktár", location_type="warehouse")
+        db.session.add(warehouse)
+        db.session.flush()
 
     for row in summary["inventory_rows"]:
         existing = Device.query.filter_by(
@@ -5630,7 +6000,7 @@ def import_parsed_workbook(summary, import_batch_id, user_id):
             invoice_value=row["invoice_value"],
             shipping_invoice_number=row["shipping_invoice_number"],
             shipping_invoice_paid=row["shipping_invoice_paid"],
-            project_id=project.id if project else None,
+            location_id=warehouse.id,
             status="IN_STOCK",
             source_sheet=row["source_sheet"],
             source_row_number=row["source_row_number"],
@@ -5643,17 +6013,40 @@ def import_parsed_workbook(summary, import_batch_id, user_id):
             device=device,
             movement_type="INBOUND",
             quantity=device.quantity,
-            project_id=device.project_id,
+            to_location_id=warehouse.id,
             notes=f"Excel import: {row['source_sheet']} #{row['source_row_number']}",
             user_id=user_id,
         )
         apply_device_state(
             device,
             "INBOUND",
-            device.location_id,
-            device.project_id,
+            warehouse.id,
+            None,
             quantity=device.quantity,
         )
+        if project is not None:
+            source_balance = infer_bulk_source_balance(
+                device,
+                "RESERVE",
+                device.quantity,
+            )
+            create_movement(
+                device=device,
+                movement_type="RESERVE",
+                quantity=device.quantity,
+                project_id=project.id,
+                source_balance=source_balance,
+                notes=f"Excel import projektfoglalás: {project.code}",
+                user_id=user_id,
+            )
+            apply_device_state(
+                device,
+                "RESERVE",
+                None,
+                project.id,
+                quantity=device.quantity,
+                source_balance=source_balance,
+            )
         created += 1
 
     for row in summary["invoice_rows"]:
@@ -5918,8 +6311,6 @@ def create_movement(
         to_location_id,
         project_id if to_project_id is None else to_project_id,
     )
-    if external_bulk_inbound and project_id is not None:
-        effective_project_id = project_id
     to_location_id = effective_location_id
     to_project_id = effective_project_id
 
@@ -6003,7 +6394,10 @@ def validate_movement(
         and subject.location_id != from_location_id
     ):
         return "A megadott forrás készlethely nem egyezik a tétel aktuális készlethelyével."
-    if to_location_id is not None and db.session.get(Location, to_location_id) is None:
+    target_location = (
+        db.session.get(Location, to_location_id) if to_location_id is not None else None
+    )
+    if to_location_id is not None and target_location is None:
         return "A megadott cél készlethely nem található."
     if project_id is not None and db.session.get(Project, project_id) is None:
         return "A megadott projekt nem található."
@@ -6013,6 +6407,14 @@ def validate_movement(
         current_status = subject.status
     if current_status == "SCRAPPED":
         return "Selejtezett eszköz nem mozgatható tovább."
+
+    state_error = inventory_state_error(
+        current_status,
+        subject.location_id,
+        subject.project_id,
+    )
+    if state_error:
+        return f"A jelenlegi készletállapot inkonzisztens: {state_error}"
 
     allowed_statuses = movement_allowed_statuses()
     allowed = allowed_statuses[movement_type]
@@ -6028,21 +6430,61 @@ def validate_movement(
             f"{status_label(current_status)}. Engedélyezett aktuális státusz: "
             f"{readable}."
         )
-    if movement_type in {"RETURN", "INBOUND", "TRANSFER"} and not to_location_id:
+    if movement_type in {"RETURN", "INBOUND", "TRANSFER", "SERVICE"} and not to_location_id:
         return f"A(z) {movement_type_label(movement_type)} művelethez cél készlethely megadása kötelező."
+    if movement_type == "RESERVE":
+        if not project_id:
+            return "Előfoglaláshoz projekt megadása kötelező."
+        if not subject.location_id:
+            return "Csak készlethelyen lévő eszköz vagy mennyiség foglalható elő."
     if movement_type == "ISSUE" and not (project_id or subject.project_id):
         return "Kiadáshoz projekt megadása kötelező."
+    if (
+        movement_type == "ISSUE"
+        and current_status == "RESERVED"
+        and project_id is not None
+        and project_id != subject.project_id
+    ):
+        return (
+            "Az előfoglalás másik projekthez tartozik. Előbb oldd fel a foglalást, "
+            "vagy add ki ugyanarra a projektre."
+        )
     if movement_type == "INSTALL":
         if not (project_id or subject.project_id):
             return "Telepítéshez projekt megadása kötelező."
-        if not to_location_id:
-            return "Telepítéshez cél helyszín / készlethely megadása kötelező."
+        if (
+            subject.project_id is not None
+            and project_id is not None
+            and project_id != subject.project_id
+        ):
+            return "Telepítéskor az eszköz nem vihető át másik projektre."
+    if movement_type == "SERVICE" and target_location.location_type not in {
+        "warehouse",
+        "service",
+    }:
+        return "Szervizbe küldés célja csak raktár vagy szerviz típusú készlethely lehet."
+    if movement_type == "RELEASE" and project_id not in {None, subject.project_id}:
+        return "Foglalás feloldásakor nem választható másik projekt."
     if (
         movement_type == "TRANSFER"
         and to_location_id == subject.location_id
-        and (project_id is None or project_id == subject.project_id)
     ):
         return "Áthelyezéshez az aktuálistól eltérő cél készlethely szükséges."
+    target_status = movement_target_status(current_status, movement_type)
+    target_location_id, target_project_id = movement_target_dimensions(
+        movement_type,
+        subject.location_id,
+        subject.project_id,
+        to_location_id,
+        project_id,
+    )
+    target_error = inventory_state_error(
+        target_status,
+        target_location_id,
+        target_project_id,
+    )
+    if target_error:
+        return f"A művelet érvénytelen célállapotot hozna létre: {target_error}"
     return None
 
 
@@ -6075,53 +6517,17 @@ def apply_device_state(
     subject = unit or device
     subject.updated_at = datetime.now(timezone.utc)
 
-    status_by_movement = {
-        "INBOUND": "IN_STOCK",
-        "RESERVE": "RESERVED",
-        "ISSUE": "ISSUED",
-        "INSTALL": "INSTALLED",
-        "RETURN": "RETURNED",
-        "SERVICE": "IN_SERVICE",
-        "SCRAP": "SCRAPPED",
-    }
-    if movement_type in status_by_movement:
-        subject.status = status_by_movement[movement_type]
-
-    if movement_type == "RESERVE":
-        if project_id is not None:
-            subject.project_id = project_id
-        return
-
-    if movement_type == "ISSUE":
-        if project_id is not None:
-            subject.project_id = project_id
-        if to_location_id is not None:
-            subject.location_id = to_location_id
-        return
-
-    if movement_type == "INSTALL":
-        subject.project_id = project_id if project_id is not None else subject.project_id
-        subject.location_id = to_location_id
-        return
-
-    if movement_type in {"RETURN", "INBOUND"}:
-        subject.location_id = to_location_id
-        subject.project_id = None
-        return
-
-    if movement_type == "TRANSFER":
-        subject.location_id = to_location_id
-        if project_id is not None:
-            subject.project_id = project_id
-        return
-
-    if movement_type == "SERVICE":
-        if to_location_id is not None:
-            subject.location_id = to_location_id
-        return
-
-    if movement_type == "SCRAP":
-        return
+    target_status = movement_target_status(subject.status, movement_type)
+    target_location_id, target_project_id = movement_target_dimensions(
+        movement_type,
+        subject.location_id,
+        subject.project_id,
+        to_location_id,
+        project_id,
+    )
+    subject.status = target_status
+    subject.location_id = target_location_id
+    subject.project_id = target_project_id
 
 
 def movement_target_status(from_status, movement_type):
@@ -6133,6 +6539,7 @@ def movement_target_status(from_status, movement_type):
         "RETURN": "RETURNED",
         "SERVICE": "IN_SERVICE",
         "SCRAP": "SCRAPPED",
+        "RELEASE": "IN_STOCK",
     }
     return status_by_movement.get(movement_type, from_status)
 
@@ -6144,20 +6551,42 @@ def movement_target_dimensions(
     to_location_id,
     project_id,
 ):
-    target_location_id = (
-        to_location_id if to_location_id is not None else from_location_id
-    )
-    if movement_type in {"RETURN", "INBOUND"}:
-        target_project_id = None
-    elif movement_type in {"RESERVE", "ISSUE", "INSTALL"}:
-        target_project_id = (
-            project_id if project_id is not None else from_project_id
-        )
-    else:
-        target_project_id = (
-            project_id if project_id is not None else from_project_id
-        )
-    return target_location_id, target_project_id
+    if movement_type in {"INBOUND", "RETURN", "TRANSFER", "SERVICE"}:
+        return to_location_id, None
+    if movement_type == "RESERVE":
+        return from_location_id, project_id
+    if movement_type == "RELEASE":
+        return from_location_id, None
+    if movement_type in {"ISSUE", "INSTALL"}:
+        return None, project_id if project_id is not None else from_project_id
+    if movement_type == "SCRAP":
+        return None, None
+    return from_location_id, from_project_id
+
+
+def inventory_state_error(status, location_id, project_id):
+    if status == "IN_STOCK":
+        if location_id is None:
+            return "raktáron lévő tételhez készlethely szükséges"
+        if project_id is not None:
+            return "raktáron lévő tételhez nem tartozhat aktív projekt"
+    elif status == "RESERVED":
+        if location_id is None or project_id is None:
+            return "előfoglaláshoz készlethely és projekt is szükséges"
+    elif status in {"ISSUED", "INSTALLED"}:
+        if project_id is None:
+            return "kiadott vagy telepített tételhez projekt szükséges"
+        if location_id is not None:
+            return "kiadott vagy telepített tétel nem maradhat készlethelyen"
+    elif status in {"RETURNED", "IN_SERVICE"}:
+        if location_id is None:
+            return "visszavett vagy szervizben lévő tételhez készlethely szükséges"
+        if project_id is not None:
+            return "visszavett vagy szervizben lévő tételhez nem tartozhat aktív projekt"
+    elif status == "SCRAPPED":
+        if location_id is not None or project_id is not None:
+            return "selejtezett tételnek nem lehet aktív készlethelye vagy projektje"
+    return None
 
 
 def active_bulk_balances(device):
@@ -6273,9 +6702,6 @@ def apply_bulk_movement(
         to_location_id,
         project_id,
     )
-    if source_balance is None and movement_type == "INBOUND" and project_id is not None:
-        target_project_id = project_id
-
     target = find_or_create_bulk_balance(
         device,
         target_status,

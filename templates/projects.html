@@ -61,7 +61,11 @@
                 <td>{{ project.name }}</td>
                 <td class="mobile-hide">{{ project.customer or "-" }}</td>
                 <td><span class="status-badge status-neutral">{{ project_status_label(project.status) }}</span></td>
-                <td class="mobile-hide">{{ project.devices|length }}</td>
+                {% set inventory = project_inventory[project.id] %}
+                <td class="mobile-hide">
+                  <strong>{{ format_number(inventory.quantity) }} db</strong>
+                  {% if inventory.reserved %}<div class="small text-secondary">{{ format_number(inventory.reserved) }} előfoglalva</div>{% endif %}
+                </td>
                 <td class="text-nowrap">
                   <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('project_detail', project_id=project.id) }}" data-bs-toggle="tooltip" data-bs-title="Projekt megnyitása"><i class="bi bi-eye"></i> Részletek</a>
                   {% if can_write %}
