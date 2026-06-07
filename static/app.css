@@ -851,6 +851,30 @@ body {
   padding: 0.15rem 0.5rem;
 }
 
+.clarification-row td {
+  background: #faf7ff;
+  padding: 0;
+}
+
+.clarification-form {
+  align-items: end;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  padding: 1rem 1.25rem;
+}
+
+.clarification-notes {
+  grid-column: span 3;
+}
+
+.clarification-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .data-section {
   overflow: hidden;
 }
@@ -1741,11 +1765,16 @@ tr:hover .table-item-icon {
 
   .inventory-kind-grid,
   .initial-state-options,
-  .movement-filter-panel {
+  .movement-filter-panel,
+  .clarification-form {
     grid-template-columns: 1fr;
   }
 
   .movement-filter-search {
+    grid-column: auto;
+  }
+
+  .clarification-notes {
     grid-column: auto;
   }
 

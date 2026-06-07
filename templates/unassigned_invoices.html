@@ -6,191 +6,143 @@
 <div class="page-header">
   <div>
     <h1>Gazdátlan számlasorok</h1>
-    <p class="text-secondary mb-0">Számlasorok, amelyek még nincsenek egyértelműen projekthez vagy eszközhöz rendelve.</p>
+    <p class="text-secondary mb-0">Ez a pénzügyi tisztázólista azokat a számlasorokat mutatja, amelyek még nincsenek projekthez vagy eszközhöz rendelve.</p>
   </div>
+  <a class="btn btn-purple btn-icon" href="{{ url_for('unassigned_invoice_new') }}">
+    <i class="bi bi-plus-circle"></i> Manuális számlasor
+  </a>
 </div>
 
 <div class="help-box">
-  <strong>Pénzügyi tisztázólista.</strong> Ezek még nincsenek projekthez vagy eszközhöz rendelve. A cél, hogy minden számlasor kapjon felelőst, projektet vagy eszközkapcsolatot, mielőtt pénzügyileg lezártnak tekintjük.
+  <strong>Tisztázás, nem készletkezelés.</strong> Rendelj projektet vagy eszközt a sorhoz, jelölj ki felelőst, majd állítsd a megfelelő státuszra. Ezek a műveletek nem hoznak létre készletmozgást és nem módosítanak eszközstátuszt.
 </div>
 
-<div class="row g-4">
-  <div class="col-xl-4">
-    <form method="post" class="form-panel">
-      <h2>Számlasor létrehozása</h2>
-
-      <h3 class="form-section-title">Számla adatok</h3>
-      <div class="row g-3">
-        <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="invoice_number">Számlaszám</label>
-          <input class="form-control" id="invoice_number" name="invoice_number">
-        </div>
-        <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="partner">Partner</label>
-          <input class="form-control" id="partner" name="partner">
-        </div>
-        <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="invoice_date">Számla kelte</label>
-          <input class="form-control" id="invoice_date" name="invoice_date" type="date">
-        </div>
-        <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="accounting_fulfillment_date">Számviteli teljesítés</label>
-          <input class="form-control" id="accounting_fulfillment_date" name="accounting_fulfillment_date" type="date">
-        </div>
-        <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="payment_deadline">Fizetési határidő</label>
-          <input class="form-control" id="payment_deadline" name="payment_deadline" type="date">
-        </div>
-        <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="currency">Deviza</label>
-          <input class="form-control" id="currency" name="currency" placeholder="HUF">
-        </div>
-      </div>
-
-      <h3 class="form-section-title">Számlasor</h3>
-      <div class="row g-3">
-        <div class="col-12">
-          <label class="form-label" for="description">Megnevezés</label>
-          <textarea class="form-control" id="description" name="description" rows="2"></textarea>
-        </div>
-        <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="quantity">Mennyiség</label>
-          <input class="form-control" id="quantity" name="quantity" type="number" step="0.01" min="0">
-        </div>
-        <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="unit_price_huf">Egység nettó érték (HUF)</label>
-          <input class="form-control" id="unit_price_huf" name="unit_price_huf" type="number" step="0.01" min="0">
-        </div>
-        <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="net_amount_huf">Összes nettó érték (HUF)</label>
-          <input class="form-control" id="net_amount_huf" name="net_amount_huf" type="number" step="0.01" min="0">
-        </div>
-        <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="vat_amount_huf">Összes ÁFA (HUF)</label>
-          <input class="form-control" id="vat_amount_huf" name="vat_amount_huf" type="number" step="0.01" min="0">
-        </div>
-        <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="line_gross_amount_huf">Összes bruttó érték (HUF)</label>
-          <input class="form-control" id="line_gross_amount_huf" name="line_gross_amount_huf" type="number" step="0.01" min="0">
-        </div>
-        <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="gross_amount_huf">Számla bruttó összege (HUF)</label>
-          <input class="form-control" id="gross_amount_huf" name="gross_amount_huf" type="number" step="0.01" min="0">
-        </div>
-      </div>
-
-      <h3 class="form-section-title">Hozzárendelés</h3>
-      <div class="row g-3">
-        <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="assignment_status">Hozzárendelési státusz</label>
-          <select class="form-select" id="assignment_status" name="assignment_status">
-            {% for status, label in assignment_statuses.items() %}
-              <option value="{{ status }}">{{ label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="assigned_project_id">Projekt</label>
-          <select class="form-select" id="assigned_project_id" name="assigned_project_id">
-            <option value="">Nincs</option>
-            {% for project in projects %}
-              <option value="{{ project.id }}">{{ project.code }} - {{ project.name }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-md-6 col-xl-12">
-          <label class="form-label" for="assigned_device_id">Eszköz</label>
-          <select class="form-select" id="assigned_device_id" name="assigned_device_id">
-            <option value="">Nincs</option>
-            {% for device in devices %}
-              <option value="{{ device.id }}">{{ device_display_label(device) }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-12">
-          <label class="form-label" for="notes">Megjegyzés</label>
-          <textarea class="form-control" id="notes" name="notes" rows="2"></textarea>
-        </div>
-      </div>
-
-      <button class="btn btn-success mt-3 btn-icon" type="submit" data-bs-toggle="tooltip" data-bs-title="Új számlasor mentése"><i class="bi bi-plus-circle"></i> Létrehozás</button>
-    </form>
+<section class="data-section">
+  <div class="section-title">
+    <h2>Rendezésre váró és feldolgozott számlasorok</h2>
+    <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('finance_overview') }}">
+      <i class="bi bi-graph-up"></i> Pénzügyi áttekintés
+    </a>
   </div>
+  <form method="get" class="filter-bar">
+    <div>
+      <label class="form-label" for="q">Keresés</label>
+      <input class="form-control form-control-sm" id="q" name="q" value="{{ search }}" placeholder="Számlaszám, partner, megnevezés">
+    </div>
+    <div>
+      <label class="form-label" for="assignment_status_filter">Tisztázási státusz</label>
+      <select class="form-select form-select-sm" id="assignment_status_filter" name="assignment_status">
+        <option value="unassigned" {% if selected_assignment_status == "unassigned" %}selected{% endif %}>Rendezésre vár</option>
+        <option value="all" {% if selected_assignment_status == "all" %}selected{% endif %}>Minden státusz</option>
+        {% for status, label in assignment_statuses.items() %}
+          {% if status != "unassigned" %}
+            <option value="{{ status }}" {% if selected_assignment_status == status %}selected{% endif %}>{{ label }}</option>
+          {% endif %}
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filter-actions">
+      <button class="btn btn-purple btn-sm btn-icon" type="submit"><i class="bi bi-funnel"></i> Szűrés</button>
+      <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('unassigned_invoices') }}"><i class="bi bi-arrow-counterclockwise"></i> Alaphelyzet</a>
+    </div>
+  </form>
 
-  <div class="col-xl-8">
-    <section class="data-section">
-      <div class="section-title"><h2>Számlasor lista</h2></div>
-      <form method="get" class="filter-bar">
-        <div>
-          <label class="form-label" for="q">Keresés</label>
-          <input class="form-control form-control-sm" id="q" name="q" value="{{ search }}" placeholder="Számlaszám, partner, megnevezés">
-        </div>
-        <div>
-          <label class="form-label" for="assignment_status_filter">Hozzárendelési státusz</label>
-          <select class="form-select form-select-sm" id="assignment_status_filter" name="assignment_status">
-            <option value="">Minden státusz</option>
-            {% for status, label in assignment_statuses.items() %}
-              <option value="{{ status }}" {% if selected_assignment_status == status %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="filter-actions">
-          <button class="btn btn-purple btn-sm btn-icon" type="submit" data-bs-toggle="tooltip" data-bs-title="Számlasorok szűrése"><i class="bi bi-funnel"></i> Szűrés</button>
-          <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('unassigned_invoices') }}" data-bs-toggle="tooltip" data-bs-title="Szűrők törlése"><i class="bi bi-arrow-counterclockwise"></i> Alaphelyzet</a>
-        </div>
-      </form>
-      <div class="table-responsive">
-        <table class="table table-hover align-middle">
-          <thead>
-            <tr>
-              <th>Számlaszám</th>
-              <th>Partner</th>
-              <th class="mobile-hide">Kelte</th>
-              <th>Megnevezés</th>
-              <th class="mobile-hide">Mennyiség</th>
-              <th class="mobile-hide">Egység nettó HUF</th>
-              <th class="mobile-hide">Összes nettó HUF</th>
-              <th class="mobile-hide">Összes bruttó HUF</th>
-              <th>Státusz</th>
-              <th>Projekt</th>
-              <th>Műveletek</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for item in invoice_items %}
-              <tr>
-                <td class="fw-semibold"><span class="table-item-with-icon"><span class="table-item-icon"><i class="bi bi-receipt"></i></span>{{ item.invoice_number or "-" }}</span></td>
-                <td>{{ item.partner or "-" }}</td>
-                <td class="mobile-hide">{{ item.invoice_date.strftime("%Y-%m-%d") if item.invoice_date else "-" }}</td>
-                <td>{{ item.description or "-" }}</td>
-                <td class="mobile-hide">{{ format_number(item.quantity) }}</td>
-                <td class="mobile-hide">{{ format_number(item.unit_price_huf) }}</td>
-                <td class="mobile-hide">{{ format_number(line_net_amount(item)) }}</td>
-                <td class="mobile-hide">{{ format_number(item.line_gross_amount_huf if item.line_gross_amount_huf is not none else item.gross_amount_huf) }}</td>
-                <td><span class="status-badge status-reserved">{{ assignment_status_label(item.assignment_status) }}</span></td>
-                <td>{{ item.assigned_project.code if item.assigned_project else "-" }}</td>
-                <td class="text-nowrap">
-                  <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('unassigned_invoice_edit', item_id=item.id) }}" data-bs-toggle="tooltip" data-bs-title="Számlasor szerkesztése"><i class="bi bi-pencil"></i> Szerkesztés</a>
-                  <form method="post" action="{{ url_for('unassigned_invoice_archive', item_id=item.id) }}" class="d-inline">
-                    <button class="btn btn-outline-danger btn-sm btn-icon" type="submit" data-confirm="Biztosan archiválod ezt a számlasort?" data-bs-toggle="tooltip" data-bs-title="Számlasor archiválása"><i class="bi bi-trash"></i> Archiválás</button>
-                  </form>
-                </td>
-              </tr>
-            {% else %}
-              <tr>
-                <td colspan="11">
-                  <div class="empty-state">
-                    <strong>Nincs gazdátlan számlasor.</strong>
-                    <span>Importálhatsz Excelből, vagy kézzel rögzíthetsz olyan számlasort, amelyet még tisztázni kell.</span>
-                    <a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('import_export') }}"><i class="bi bi-arrow-down-up"></i> Import / Export</a>
-                  </div>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </section>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr>
+          <th>Számla / partner</th>
+          <th>Megnevezés</th>
+          <th class="mobile-hide">Érték</th>
+          <th>Státusz</th>
+          <th class="mobile-hide">Hozzárendelés</th>
+          <th class="mobile-hide">Felelős</th>
+          <th>Műveletek</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in invoice_items %}
+          <tr>
+            <td>
+              <strong>{{ item.invoice_number or "Nincs számlaszám" }}</strong>
+              <div class="small text-secondary">{{ item.partner or "Nincs partner" }}{% if item.invoice_date %} · {{ item.invoice_date.strftime("%Y-%m-%d") }}{% endif %}</div>
+            </td>
+            <td>{{ item.description or "-" }}</td>
+            <td class="mobile-hide">
+              <strong>{{ format_number(item.line_gross_amount_huf if item.line_gross_amount_huf is not none else line_net_amount(item)) }}</strong>
+              <div class="small text-secondary">{{ item.currency or "HUF" }}</div>
+            </td>
+            <td><span class="status-badge {% if item.assignment_status == 'assigned' %}status-in-stock{% elif item.assignment_status == 'ignored' %}status-neutral{% else %}status-reserved{% endif %}">{{ assignment_status_label(item.assignment_status) }}</span></td>
+            <td class="mobile-hide">
+              {% if item.assigned_project %}<div>{{ item.assigned_project.code }}</div>{% endif %}
+              {% if item.assigned_device %}<div class="small text-secondary">{{ device_primary_label(item.assigned_device) }}</div>{% endif %}
+              {% if not item.assigned_project and not item.assigned_device %}-{% endif %}
+            </td>
+            <td class="mobile-hide">{{ item.responsible_user.username if item.responsible_user else "-" }}</td>
+            <td class="text-nowrap">
+              <button class="btn btn-purple btn-sm btn-icon" type="button" data-bs-toggle="collapse" data-bs-target="#clarify-{{ item.id }}" aria-expanded="false">
+                <i class="bi bi-link-45deg"></i> Tisztázás
+              </button>
+              <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('unassigned_invoice_edit', item_id=item.id) }}" title="Teljes pénzügyi adatok szerkesztése"><i class="bi bi-pencil"></i></a>
+            </td>
+          </tr>
+          <tr class="collapse clarification-row" id="clarify-{{ item.id }}">
+            <td colspan="7">
+              <form method="post" action="{{ url_for('unassigned_invoice_clarify', item_id=item.id) }}" class="clarification-form">
+                <div>
+                  <label class="form-label" for="project-{{ item.id }}">Projekt</label>
+                  <select class="form-select form-select-sm" id="project-{{ item.id }}" name="assigned_project_id">
+                    <option value="">Nincs</option>
+                    {% for project in projects %}<option value="{{ project.id }}" {% if item.assigned_project_id == project.id %}selected{% endif %}>{{ project.code }} - {{ project.name }}</option>{% endfor %}
+                  </select>
+                </div>
+                <div>
+                  <label class="form-label" for="device-{{ item.id }}">Eszköz</label>
+                  <select class="form-select form-select-sm" id="device-{{ item.id }}" name="assigned_device_id">
+                    <option value="">Nincs</option>
+                    {% for device in devices %}<option value="{{ device.id }}" {% if item.assigned_device_id == device.id %}selected{% endif %}>{{ device_primary_label(device) }}</option>{% endfor %}
+                  </select>
+                </div>
+                <div>
+                  <label class="form-label" for="responsible-{{ item.id }}">Felelős</label>
+                  <select class="form-select form-select-sm" id="responsible-{{ item.id }}" name="responsible_user_id">
+                    <option value="">Nincs kijelölve</option>
+                    {% for user in responsible_users %}<option value="{{ user.id }}" {% if item.responsible_user_id == user.id %}selected{% endif %}>{{ user.username }}</option>{% endfor %}
+                  </select>
+                </div>
+                <div>
+                  <label class="form-label" for="status-{{ item.id }}">Státusz</label>
+                  <select class="form-select form-select-sm" id="status-{{ item.id }}" name="assignment_status">
+                    {% for status, label in assignment_statuses.items() %}<option value="{{ status }}" {% if item.assignment_status == status %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                  </select>
+                </div>
+                <div class="clarification-notes">
+                  <label class="form-label" for="notes-{{ item.id }}">Megjegyzés</label>
+                  <input class="form-control form-control-sm" id="notes-{{ item.id }}" name="notes" value="{{ item.notes or '' }}" placeholder="Tisztázás eredménye vagy következő lépés">
+                </div>
+                <div class="clarification-actions">
+                  <button class="btn btn-purple btn-sm btn-icon" type="submit"><i class="bi bi-save"></i> Mentés</button>
+                  <button class="btn btn-outline-danger btn-sm" type="submit" formmethod="post" formaction="{{ url_for('unassigned_invoice_archive', item_id=item.id) }}" data-confirm="Biztosan archiválod ezt a számlasort?">Archiválás</button>
+                </div>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="7">
+              <div class="empty-state">
+                <strong>{% if selected_assignment_status == "unassigned" %}Nincs rendezésre váró számlasor.{% else %}Nincs a szűrésnek megfelelő számlasor.{% endif %}</strong>
+                <span>Importálhatsz pénzügyi adatot Excelből, vagy kivételes esetben manuálisan is rögzíthetsz számlasort.</span>
+                <div class="d-flex flex-wrap gap-2">
+                  <a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('import_export') }}"><i class="bi bi-upload"></i> Import / Export</a>
+                  <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('unassigned_invoice_new') }}"><i class="bi bi-plus-circle"></i> Manuális számlasor</a>
+                </div>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
-</div>
+</section>
 {% endblock %}

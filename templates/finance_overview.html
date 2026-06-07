@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Pénzügyi áttekintés - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Pénzügyi áttekintés</h1>
+    <p class="text-secondary mb-0">Beszerzési értékek, nyitott számlák és tisztázandó pénzügyi adatok egy helyen.</p>
+  </div>
+  <a class="btn btn-purple btn-icon" href="{{ url_for('unassigned_invoices') }}"><i class="bi bi-receipt"></i> Gazdátlan számlasorok</a>
+</div>
+
+<div class="help-box">
+  <strong>Pénzügyi nézet.</strong> Az itt látható összesítések nem módosítják a készletet, az eszközstátuszokat vagy a mozgástörténetet.
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-xl-3"><div class="metric"><span>Összes nettó érték (HUF)</span><strong>{{ format_number(summary.net_huf) }}</strong></div></div>
+  <div class="col-sm-6 col-xl-3"><div class="metric"><span>Összes bruttó érték (HUF)</span><strong>{{ format_number(summary.gross_huf) }}</strong></div></div>
+  <div class="col-sm-6 col-xl-3"><div class="metric"><span>Összes nettó érték (EUR)</span><strong>{{ format_number(summary.net_eur) }}</strong></div></div>
+  <div class="col-sm-6 col-xl-3"><div class="metric"><span>Összes bruttó érték (EUR)</span><strong>{{ format_number(summary.gross_eur) }}</strong></div></div>
+  <div class="col-sm-6 col-xl-3"><div class="metric"><span>Fizetetlen beszállítói számlák</span><strong>{{ summary.unpaid_supplier_invoices }}</strong></div></div>
+  <div class="col-sm-6 col-xl-3"><div class="metric"><span>Gazdátlan számlasorok</span><strong>{{ summary.unassigned_invoice_count }}</strong></div></div>
+  <div class="col-sm-6 col-xl-3"><div class="metric"><span>Hiányos pénzügyi adatok</span><strong>{{ summary.missing_financial_data }}</strong></div></div>
+  <div class="col-sm-6 col-xl-3"><div class="metric"><span>Hiányzó deviza</span><strong>{{ summary.missing_currency_count }}</strong></div></div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <section class="data-section h-100">
+      <div class="section-title"><h2>Hozzárendelt számlasorértékek</h2></div>
+      <div class="p-3">
+        <div class="d-flex justify-content-between py-2 border-bottom"><span>Projekthez rendelt érték</span><strong>{{ format_number(summary.project_assigned_value_huf) }} HUF</strong></div>
+        <div class="d-flex justify-content-between py-2"><span>Eszközhöz rendelt érték</span><strong>{{ format_number(summary.device_assigned_value_huf) }} HUF</strong></div>
+        <p class="small text-secondary mb-0 mt-3">A számlasor bruttó értéke, ennek hiányában nettó értéke alapján.</p>
+      </div>
+    </section>
+  </div>
+  <div class="col-lg-6">
+    <section class="data-section h-100">
+      <div class="section-title"><h2>Következő pénzügyi nézetek</h2></div>
+      <div class="p-3">
+        <div class="list-group list-group-flush">
+          <div class="list-group-item px-0 d-flex justify-content-between"><span>Projekt pénzügy</span><span class="status-badge status-neutral">Előkészítve</span></div>
+          <div class="list-group-item px-0 d-flex justify-content-between"><span>Fizetetlen számlák</span><span class="status-badge status-neutral">Következő lépés</span></div>
+          <div class="list-group-item px-0 d-flex justify-content-between"><span>Pénzügyi exportok</span><span class="status-badge status-neutral">Következő lépés</span></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

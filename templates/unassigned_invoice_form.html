@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}{{ form_title }} - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ form_title }}</h1>
+    <p class="text-secondary mb-0">Kivételes kézi rögzítés. A normál folyamatban a számlasorok importból vagy pénzügyi adatforrásból érkeznek.</p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('unassigned_invoices') }}"><i class="bi bi-arrow-left"></i> Vissza a tisztázólistához</a>
+</div>
+<form method="post" class="form-panel">
+  {% include "_unassigned_invoice_fields.html" %}
+  <div class="mt-4 d-flex gap-2">
+    <button class="btn btn-purple btn-icon" type="submit"><i class="bi bi-save"></i> {{ submit_label }}</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('unassigned_invoices') }}">Mégse</a>
+  </div>
+</form>
+{% endblock %}

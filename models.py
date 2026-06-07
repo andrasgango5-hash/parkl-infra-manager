@@ -110,6 +110,11 @@ class User(db.Model):
     import_batches = db.relationship("ImportBatch", back_populates="imported_by")
     work_orders = db.relationship("WorkOrder", back_populates="created_by")
     audit_logs = db.relationship("AuditLog", back_populates="user")
+    responsible_invoice_items = db.relationship(
+        "UnassignedInvoiceItem",
+        back_populates="responsible_user",
+        foreign_keys="UnassignedInvoiceItem.responsible_user_id",
+    )
 
     def has_role(self, *roles):
         effective_role = "admin" if self.is_admin else self.role
@@ -591,6 +596,9 @@ class UnassignedInvoiceItem(db.Model):
         db.Integer, db.ForeignKey("project.id"), nullable=True
     )
     assigned_device_id = db.Column(db.Integer, db.ForeignKey("device.id"), nullable=True)
+    responsible_user_id = db.Column(
+        db.Integer, db.ForeignKey("user.id"), nullable=True, index=True
+    )
     source_sheet = db.Column(db.String(120), nullable=True)
     import_batch_id = db.Column(db.Integer, db.ForeignKey("import_batch.id"), nullable=True)
     source_row_number = db.Column(db.Integer, nullable=True)
@@ -613,6 +621,11 @@ class UnassignedInvoiceItem(db.Model):
     )
     assigned_device = db.relationship(
         "Device", back_populates="unassigned_invoice_items"
+    )
+    responsible_user = db.relationship(
+        "User",
+        back_populates="responsible_invoice_items",
+        foreign_keys=[responsible_user_id],
     )
     import_batch = db.relationship(
         "ImportBatch", back_populates="unassigned_invoice_items"

@@ -2619,7 +2619,60 @@ def create_app(config_class=Config):
         flash(f"Készletművelet rögzítve: {movement_type_label(movement_type)}.", "success")
         return redirect(url_for("device_detail", device_id=device.id))
 
-    @app.route("/unassigned-invoices", methods=["GET", "POST"])
+    @app.route("/finance")
+    @finance_required
+    def finance_overview():
+        devices = Device.query.filter(Device.archived_at.is_(None)).all()
+        invoice_items = UnassignedInvoiceItem.query.filter(
+            UnassignedInvoiceItem.archived_at.is_(None)
+        ).all()
+        currency_totals = device_currency_totals(devices)
+        unpaid_supplier_invoices = sum(
+            1
+            for device in devices
+            if device.supplier_invoice_number
+            and device.supplier_invoice_paid is not True
+        )
+        missing_financial_data = sum(
+            1
+            for device in devices
+            if device.quantity in (None, 0)
+            or not device.currency
+            or device.unit_net_price is None
+        )
+        return render_template(
+            "finance_overview.html",
+            summary={
+                **currency_totals,
+                "unpaid_supplier_invoices": unpaid_supplier_invoices,
+                "unassigned_invoice_count": sum(
+                    1
+                    for item in invoice_items
+                    if item.assignment_status == "unassigned"
+                ),
+                "project_assigned_value_huf": sum(
+                    (
+                        item.line_gross_amount_huf
+                        if item.line_gross_amount_huf is not None
+                        else line_net_amount(item) or 0
+                    )
+                    for item in invoice_items
+                    if item.assigned_project_id is not None
+                ),
+                "device_assigned_value_huf": sum(
+                    (
+                        item.line_gross_amount_huf
+                        if item.line_gross_amount_huf is not None
+                        else line_net_amount(item) or 0
+                    )
+                    for item in invoice_items
+                    if item.assigned_device_id is not None
+                ),
+                "missing_financial_data": missing_financial_data,
+            },
+        )
+
+    @app.route("/unassigned-invoices")
     @finance_required
     def unassigned_invoices():
         projects = Project.query.filter(Project.archived_at.is_(None)).order_by(Project.name.asc()).all()
@@ -2628,58 +2681,23 @@ def create_app(config_class=Config):
             .order_by(Device.device_type.asc(), Device.product_name.asc(), Device.asset_tag.asc())
             .all()
         )
-        selected_assignment_status = request.args.get("assignment_status", "").strip()
+        responsible_users = (
+            User.query.filter(
+                User.is_active.is_(True),
+                User.role.in_(("admin", "manager")),
+            )
+            .order_by(User.username.asc())
+            .all()
+        )
+        selected_assignment_status = request.args.get(
+            "assignment_status", "unassigned"
+        ).strip()
+        if selected_assignment_status not in {
+            "all",
+            *ASSIGNMENT_STATUS_LABELS.keys(),
+        }:
+            selected_assignment_status = "unassigned"
         search = request.args.get("q", "").strip()
-
-        if request.method == "POST":
-            invoice_number = request.form.get("invoice_number", "").strip()
-            partner = request.form.get("partner", "").strip()
-            description = request.form.get("description", "").strip()
-            assigned_project_id = optional_int(request.form.get("assigned_project_id"))
-            assigned_device_id = optional_int(request.form.get("assigned_device_id"))
-            assignment_status = request.form.get(
-                "assignment_status", "unassigned"
-            ).strip()
-            if assignment_status not in ASSIGNMENT_STATUS_LABELS:
-                assignment_status = "unassigned"
-            if assigned_project_id or assigned_device_id:
-                assignment_status = "assigned"
-
-            if not invoice_number and not description:
-                flash("A számlaszám vagy a megnevezés megadása kötelező.", "danger")
-            else:
-                quantity = optional_float(request.form.get("quantity"))
-                unit_price_huf = optional_float(request.form.get("unit_price_huf"))
-                net_amount_huf = optional_float(request.form.get("net_amount_huf"))
-                invoice_item = UnassignedInvoiceItem(
-                    invoice_number=invoice_number or None,
-                    partner=partner or None,
-                    invoice_date=optional_date(request.form.get("invoice_date")),
-                    accounting_fulfillment_date=optional_date(
-                        request.form.get("accounting_fulfillment_date")
-                    ),
-                    payment_deadline=optional_date(request.form.get("payment_deadline")),
-                    gross_amount_huf=optional_float(request.form.get("gross_amount_huf")),
-                    currency=request.form.get("currency", "").strip().upper() or None,
-                    description=description or None,
-                    quantity=quantity,
-                    unit_price_huf=unit_price_huf,
-                    net_amount_huf=net_amount_huf
-                    if net_amount_huf is not None
-                    else calculate_line_net_amount(quantity, unit_price_huf),
-                    vat_amount_huf=optional_float(request.form.get("vat_amount_huf")),
-                    line_gross_amount_huf=optional_float(
-                        request.form.get("line_gross_amount_huf")
-                    ),
-                    assignment_status=assignment_status,
-                    notes=request.form.get("notes", "").strip() or None,
-                    assigned_project_id=assigned_project_id,
-                    assigned_device_id=assigned_device_id,
-                )
-                db.session.add(invoice_item)
-                db.session.commit()
-                flash("A gazdátlan számlasor létrejött.", "success")
-                return redirect(url_for("unassigned_invoices"))
 
         invoice_query = UnassignedInvoiceItem.query.filter(
             UnassignedInvoiceItem.archived_at.is_(None)
@@ -2693,7 +2711,21 @@ def create_app(config_class=Config):
                     UnassignedInvoiceItem.description.ilike(term),
                 )
             )
-        if selected_assignment_status in ASSIGNMENT_STATUS_LABELS:
+        if selected_assignment_status == "unassigned":
+            invoice_query = invoice_query.filter(
+                UnassignedInvoiceItem.assignment_status == "unassigned",
+                UnassignedInvoiceItem.assigned_project_id.is_(None),
+                UnassignedInvoiceItem.assigned_device_id.is_(None),
+            )
+        elif selected_assignment_status == "assigned":
+            invoice_query = invoice_query.filter(
+                or_(
+                    UnassignedInvoiceItem.assignment_status == "assigned",
+                    UnassignedInvoiceItem.assigned_project_id.is_not(None),
+                    UnassignedInvoiceItem.assigned_device_id.is_not(None),
+                )
+            )
+        elif selected_assignment_status in ASSIGNMENT_STATUS_LABELS:
             invoice_query = invoice_query.filter(
                 UnassignedInvoiceItem.assignment_status
                 == selected_assignment_status
@@ -2706,10 +2738,88 @@ def create_app(config_class=Config):
             invoice_items=invoice_items,
             projects=projects,
             devices=devices,
+            responsible_users=responsible_users,
             assignment_statuses=ASSIGNMENT_STATUS_LABELS,
             selected_assignment_status=selected_assignment_status,
             search=search,
         )
+
+    @app.route("/unassigned-invoices/new", methods=["GET", "POST"])
+    @finance_required
+    def unassigned_invoice_new():
+        projects = Project.query.filter(Project.archived_at.is_(None)).order_by(Project.name.asc()).all()
+        devices = (
+            Device.query.filter(Device.archived_at.is_(None))
+            .order_by(Device.device_type.asc(), Device.product_name.asc(), Device.asset_tag.asc())
+            .all()
+        )
+        responsible_users = (
+            User.query.filter(
+                User.is_active.is_(True),
+                User.role.in_(("admin", "manager")),
+            )
+            .order_by(User.username.asc())
+            .all()
+        )
+        item = UnassignedInvoiceItem()
+        if request.method == "POST":
+            update_unassigned_invoice_from_form(item, request.form)
+            if not item.invoice_number and not item.description:
+                flash("A számlaszám vagy a megnevezés megadása kötelező.", "danger")
+            else:
+                db.session.add(item)
+                db.session.commit()
+                flash("A manuális számlasor létrejött.", "success")
+                return redirect(url_for("unassigned_invoices"))
+        return render_template(
+            "unassigned_invoice_form.html",
+            item=item,
+            projects=projects,
+            devices=devices,
+            responsible_users=responsible_users,
+            assignment_statuses=ASSIGNMENT_STATUS_LABELS,
+            form_title="Manuális számlasor hozzáadása",
+            submit_label="Számlasor mentése",
+        )
+
+    @app.route("/unassigned-invoices/<int:item_id>/clarify", methods=["POST"])
+    @finance_required
+    def unassigned_invoice_clarify(item_id):
+        item = UnassignedInvoiceItem.query.get_or_404(item_id)
+        assigned_project_id = optional_int(request.form.get("assigned_project_id"))
+        assigned_device_id = optional_int(request.form.get("assigned_device_id"))
+        responsible_user_id = optional_int(request.form.get("responsible_user_id"))
+        assignment_status = request.form.get("assignment_status", "unassigned").strip()
+        if assignment_status not in ASSIGNMENT_STATUS_LABELS:
+            flash("Érvénytelen hozzárendelési státusz.", "danger")
+            return redirect(url_for("unassigned_invoices"))
+        if assigned_project_id and db.session.get(Project, assigned_project_id) is None:
+            flash("A kiválasztott projekt nem található.", "danger")
+            return redirect(url_for("unassigned_invoices"))
+        if assigned_device_id and db.session.get(Device, assigned_device_id) is None:
+            flash("A kiválasztott eszköz nem található.", "danger")
+            return redirect(url_for("unassigned_invoices"))
+        responsible = (
+            db.session.get(User, responsible_user_id)
+            if responsible_user_id
+            else None
+        )
+        if responsible and (
+            not responsible.is_active
+            or responsible.effective_role not in {"admin", "manager"}
+        ):
+            flash("A kiválasztott felelős nem jogosult pénzügyi tisztázásra.", "danger")
+            return redirect(url_for("unassigned_invoices"))
+        if assigned_project_id or assigned_device_id:
+            assignment_status = "assigned"
+        item.assigned_project_id = assigned_project_id
+        item.assigned_device_id = assigned_device_id
+        item.responsible_user_id = responsible_user_id
+        item.assignment_status = assignment_status
+        item.notes = request.form.get("notes", "").strip() or None
+        db.session.commit()
+        flash("A számlasor tisztázási adatai frissültek.", "success")
+        return redirect(url_for("unassigned_invoices"))
 
     @app.route("/unassigned-invoices/<int:item_id>/edit", methods=["GET", "POST"])
     @finance_required
@@ -2719,6 +2829,14 @@ def create_app(config_class=Config):
         devices = (
             Device.query.filter(Device.archived_at.is_(None))
             .order_by(Device.device_type.asc(), Device.product_name.asc(), Device.asset_tag.asc())
+            .all()
+        )
+        responsible_users = (
+            User.query.filter(
+                User.is_active.is_(True),
+                User.role.in_(("admin", "manager")),
+            )
+            .order_by(User.username.asc())
             .all()
         )
         if request.method == "POST":
@@ -2731,6 +2849,7 @@ def create_app(config_class=Config):
             item=item,
             projects=projects,
             devices=devices,
+            responsible_users=responsible_users,
             assignment_statuses=ASSIGNMENT_STATUS_LABELS,
         )
 
@@ -5554,6 +5673,7 @@ def device_form_data(form):
 def update_unassigned_invoice_from_form(item, form):
     assigned_project_id = optional_int(form.get("assigned_project_id"))
     assigned_device_id = optional_int(form.get("assigned_device_id"))
+    responsible_user_id = optional_int(form.get("responsible_user_id"))
     assignment_status = form.get("assignment_status", "unassigned").strip()
     if assignment_status not in ASSIGNMENT_STATUS_LABELS:
         assignment_status = "unassigned"
@@ -5583,6 +5703,7 @@ def update_unassigned_invoice_from_form(item, form):
     item.notes = form.get("notes", "").strip() or None
     item.assigned_project_id = assigned_project_id
     item.assigned_device_id = assigned_device_id
+    item.responsible_user_id = responsible_user_id
 
 
 def build_import_template_workbook():

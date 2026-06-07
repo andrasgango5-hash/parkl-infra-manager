@@ -184,6 +184,12 @@ A `Project` az ügyfél és a telepítési hely gazdája. A projektben tárolhat
 
 A `Location` kizárólag logisztikai készlethely: raktár, szervizautó, szerviz/javítás, beszállító vagy alvállalkozói raktár. Az új sablon alapú import `Projects` lapjának `site_name` és `address` mezői közvetlenül a projektre kerülnek, és nem hoznak létre projekt-helyszín típusú készlethelyet.
 
+## Pénzügyi tisztázás
+
+Az adminisztrátorok és menedzserek külön `Pénzügy` menücsoportban érik el a pénzügyi áttekintést és a gazdátlan számlasorokat. A tisztázólistán egy számlasor projekthez, eszközhöz és felelős felhasználóhoz rendelhető, illetve nem relevánsnak jelölhető. Ezek a műveletek kizárólag pénzügyi kapcsolatokat módosítanak: készletmozgást és eszközstátusz-változást nem hoznak létre.
+
+A manuális számlasor-rögzítés kivételes folyamatként külön oldalon található. A normál működésben a számlasorok importból vagy későbbi pénzügyi adatkapcsolatból érkeznek.
+
 Az egyszerű Device export egy sorban tartja a terméktörzset. Ha a tétel példányai vagy bulk egyenlegei több projekt, lokáció vagy státusz között oszlanak meg, az export `MIXED` jelzést ír az érintett mezőbe. Ez szándékosan nem importálható vissza automatikusan: előbb egyértelmű allokációra vagy későbbi, példány-/egyenlegsoros exportformátumra van szükség.
 
 Az új sablonimport készletkövetési mezői:
