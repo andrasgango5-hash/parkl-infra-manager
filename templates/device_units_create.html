@@ -25,6 +25,16 @@
   <div class="row g-3">
     <div class="col-md-6"><label class="form-label" for="prefix">Példányazonosító előtag</label><input class="form-control" id="prefix" name="prefix" value="{{ prefix }}" required></div>
     <div class="col-md-3"><label class="form-label" for="start_number">Kezdő sorszám</label><input class="form-control" id="start_number" name="start_number" type="number" min="1" value="{{ start_number }}" required></div>
+    {% if not source_balance %}
+    <div class="col-md-6">
+      <label class="form-label" for="initial_location_id">Kezdő készlethely</label>
+      <select class="form-select" id="initial_location_id" name="initial_location_id" required>
+        <option value="">Válassz készlethelyet...</option>
+        {% for location in locations %}<option value="{{ location.id }}">{{ location.name }}</option>{% endfor %}
+      </select>
+      <div class="form-text">A létrejövő példányok itt lesznek raktáron, saját bevételezési mozgással.</div>
+    </div>
+    {% endif %}
   </div>
   <div class="mt-4">
     <h3 class="form-section-title">Létrejövő példányazonosítók</h3>

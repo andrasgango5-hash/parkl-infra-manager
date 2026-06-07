@@ -38,6 +38,45 @@
       <textarea class="form-control" id="notes" name="notes" rows="4">{{ project.notes if project else '' }}</textarea>
     </div>
   </div>
+
+  <hr class="my-4">
+  <div class="section-title mb-3"><h2>Helyszín</h2></div>
+  <p class="text-secondary small">A projekt telepítési helye. Ez nem készlethely: a kiadott és telepített eszközök a projekthez tartoznak.</p>
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label class="form-label" for="site_name">Helyszín neve</label>
+      <input class="form-control" id="site_name" name="site_name" value="{{ project.site_name if project and project.site_name else '' }}">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="address">Cím</label>
+      <input class="form-control" id="address" name="address" value="{{ project.address if project and project.address else '' }}">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="city">Város</label>
+      <input class="form-control" id="city" name="city" value="{{ project.city if project and project.city else '' }}">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="country">Ország</label>
+      <input class="form-control" id="country" name="country" value="{{ project.country if project and project.country else '' }}">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="latitude">Szélességi fok</label>
+      <input class="form-control" id="latitude" name="latitude" type="number" min="-90" max="90" step="0.000001" value="{{ project.latitude if project and project.latitude is not none else '' }}">
+    </div>
+    <div class="col-md-6">
+      <label class="form-label" for="longitude">Hosszúsági fok</label>
+      <input class="form-control" id="longitude" name="longitude" type="number" min="-180" max="180" step="0.000001" value="{{ project.longitude if project and project.longitude is not none else '' }}">
+    </div>
+    <div class="col-12">
+      <label class="form-label" for="google_maps_url">Google Maps link</label>
+      <input class="form-control" id="google_maps_url" name="google_maps_url" type="url" value="{{ project.google_maps_url if project and project.google_maps_url else '' }}">
+    </div>
+    <div class="col-12">
+      <label class="form-label" for="site_notes">Helyszín megjegyzés</label>
+      <textarea class="form-control" id="site_notes" name="site_notes" rows="3">{{ project.site_notes if project and project.site_notes else '' }}</textarea>
+    </div>
+  </div>
+
   <div class="mt-4 d-flex flex-wrap gap-2">
     <button class="btn btn-purple btn-icon" type="submit"><i class="bi bi-save"></i> {{ submit_label }}</button>
     <a class="btn btn-outline-secondary" href="{{ cancel_url }}">Mégse</a>

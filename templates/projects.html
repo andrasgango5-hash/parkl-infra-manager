@@ -17,7 +17,7 @@
 <form method="get" class="filter-bar mb-4">
   <div>
     <label class="form-label" for="q">Keresés</label>
-    <input class="form-control form-control-sm" id="q" name="q" value="{{ search }}" placeholder="Kód, név, ügyfél">
+    <input class="form-control form-control-sm" id="q" name="q" value="{{ search }}" placeholder="Kód, név, ügyfél, helyszín">
   </div>
   <div>
     <label class="form-label" for="status_filter">Státusz</label>
@@ -49,6 +49,7 @@
               <th>Kód</th>
               <th>Név</th>
               <th class="mobile-hide">Ügyfél</th>
+              <th class="mobile-hide">Helyszín</th>
               <th>Státusz</th>
               <th class="mobile-hide">Eszközök</th>
               <th>Műveletek</th>
@@ -60,6 +61,10 @@
                 <td class="fw-semibold"><span class="table-item-with-icon"><span class="table-item-icon"><i class="bi bi-building"></i></span>{{ project.code }}</span></td>
                 <td>{{ project.name }}</td>
                 <td class="mobile-hide">{{ project.customer or "-" }}</td>
+                <td class="mobile-hide">
+                  {{ project.city or project.address or project.site_name or "-" }}
+                  {% if project.city and project.address %}<div class="small text-secondary">{{ project.address }}</div>{% endif %}
+                </td>
                 <td><span class="status-badge status-neutral">{{ project_status_label(project.status) }}</span></td>
                 {% set inventory = project_inventory[project.id] %}
                 <td class="mobile-hide">
@@ -78,7 +83,7 @@
               </tr>
             {% else %}
               <tr>
-                <td colspan="6">
+                <td colspan="7">
                   <div class="empty-state">
                     <strong>Még nincs projekt.</strong>
                     <span>Hozd létre az első projektet, majd rendelj hozzá eszközöket.</span>

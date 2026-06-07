@@ -88,6 +88,27 @@
   </div>
 </section>
 
+<section class="data-section mb-4">
+  <div class="section-title">
+    <h2>Helyszín</h2>
+    {% if project.google_maps_url or (project.latitude is not none and project.longitude is not none) %}
+      <a class="btn btn-outline-primary btn-sm btn-icon"
+         href="{{ project.google_maps_url or ('https://www.google.com/maps?q=' ~ project.latitude ~ ',' ~ project.longitude) }}"
+         target="_blank" rel="noopener">
+        <i class="bi bi-geo-alt"></i> Megnyitás térképen
+      </a>
+    {% endif %}
+  </div>
+  <div class="p-3 row g-3">
+    <div class="col-md-6"><strong>Helyszín neve:</strong> {{ project.site_name or "-" }}</div>
+    <div class="col-md-6"><strong>Cím:</strong> {{ project.address or "-" }}</div>
+    <div class="col-md-6"><strong>Város:</strong> {{ project.city or "-" }}</div>
+    <div class="col-md-6"><strong>Ország:</strong> {{ project.country or "-" }}</div>
+    <div class="col-md-6"><strong>GPS:</strong> {% if project.latitude is not none and project.longitude is not none %}{{ project.latitude }}, {{ project.longitude }}{% else %}-{% endif %}</div>
+    <div class="col-12"><strong>Helyszín megjegyzés:</strong> {{ project.site_notes or "-" }}</div>
+  </div>
+</section>
+
 {% for section_title, section_units, empty_text in [
   ("Előfoglalások", reserved_units, "Nincs előfoglalva egyedi példány ehhez a projekthez."),
   ("Kiadott egyedi eszközök", issued_units, "Nincs kiadott egyedi példány."),

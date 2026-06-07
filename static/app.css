@@ -653,6 +653,194 @@ body {
   padding-top: 0;
 }
 
+.inventory-create-flow {
+  padding: 0;
+  overflow: hidden;
+}
+
+.workflow-step {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 42px minmax(0, 1fr);
+  padding: 1.35rem;
+}
+
+.workflow-step + .workflow-step {
+  border-top: 1px solid var(--line);
+}
+
+.workflow-step-number {
+  align-items: center;
+  background: linear-gradient(135deg, var(--purple), var(--purple-hot));
+  border-radius: 12px;
+  box-shadow: 0 10px 22px rgba(109, 69, 196, 0.2);
+  color: #fff;
+  display: flex;
+  font-size: 1rem;
+  font-weight: 800;
+  height: 42px;
+  justify-content: center;
+  width: 42px;
+}
+
+.workflow-step-content {
+  min-width: 0;
+}
+
+.workflow-step-content > h2,
+.workflow-step-content > div > div > h2 {
+  font-size: 1.1rem;
+  margin-bottom: 0.35rem;
+}
+
+.inventory-kind-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.inventory-kind-card {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #ded2ef;
+  border-radius: 16px;
+  cursor: pointer;
+  display: flex;
+  gap: 1rem;
+  min-height: 118px;
+  padding: 1rem;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.inventory-kind-card:hover,
+.inventory-kind-card:has(input:checked) {
+  border-color: var(--purple);
+  box-shadow: 0 14px 34px rgba(109, 69, 196, 0.16);
+  transform: translateY(-1px);
+}
+
+.inventory-kind-card input,
+.initial-state-options input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.inventory-kind-icon {
+  align-items: center;
+  background: linear-gradient(135deg, #efe4ff, #dbcaff);
+  border-radius: 14px;
+  color: var(--purple);
+  display: flex;
+  flex: 0 0 54px;
+  font-size: 1.55rem;
+  height: 54px;
+  justify-content: center;
+}
+
+.inventory-kind-card strong,
+.inventory-kind-card small {
+  display: block;
+}
+
+.inventory-kind-card small {
+  color: var(--muted);
+  line-height: 1.4;
+  margin-top: 0.3rem;
+}
+
+.unit-generation-preview {
+  align-items: center;
+  background: #f6f1ff;
+  border: 1px solid #dfd1f4;
+  border-radius: 12px;
+  color: #534266;
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.8rem 1rem;
+}
+
+.unit-generation-preview i {
+  color: var(--purple);
+  font-size: 1.25rem;
+}
+
+.initial-state-options {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.initial-state-options span {
+  align-items: center;
+  border: 1px solid #ded2ef;
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  font-weight: 700;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0.65rem;
+  text-align: center;
+}
+
+.initial-state-options input:checked + span {
+  background: #f2eaff;
+  border-color: var(--purple);
+  color: var(--accent-strong);
+  box-shadow: 0 8px 20px rgba(109, 69, 196, 0.12);
+}
+
+.metric-compact {
+  min-height: 82px;
+  padding: 0.8rem;
+}
+
+.metric-compact strong {
+  font-size: 1.55rem;
+}
+
+.movement-filter-panel {
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(5, minmax(140px, 1fr));
+  padding: 1rem 1.25rem;
+}
+
+.movement-filter-search {
+  grid-column: span 2;
+}
+
+.movement-filter-actions {
+  align-items: end;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.movement-group-heading {
+  align-items: center;
+  background: #f6f1ff;
+  border-bottom: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+  color: var(--accent-strong);
+  display: flex;
+  font-weight: 800;
+  gap: 0.55rem;
+  padding: 0.7rem 1rem;
+}
+
+.movement-group-heading span {
+  background: #fff;
+  border: 1px solid #ded2ef;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  margin-left: auto;
+  padding: 0.15rem 0.5rem;
+}
+
 .data-section {
   overflow: hidden;
 }
@@ -1527,6 +1715,20 @@ tr:hover .table-item-icon {
 
   .filter-bar {
     grid-template-columns: 1fr;
+  }
+
+  .workflow-step {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-kind-grid,
+  .initial-state-options,
+  .movement-filter-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .movement-filter-search {
+    grid-column: auto;
   }
 
   .mobile-hide {

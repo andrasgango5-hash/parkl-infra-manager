@@ -5,100 +5,184 @@
 {% block content %}
 <div class="page-header">
   <div>
-    <h1>Új eszköz</h1>
-    <p class="text-secondary mb-0">Új beszerzési vagy készletsor rögzítése. A készletműveletek később az eszköz adatlapján történnek.</p>
+    <h1>Új eszköz vagy készlettétel</h1>
+    <p class="text-secondary mb-0">Először azt válaszd ki, hogyan szeretnéd követni a fizikai készletet.</p>
   </div>
   <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('devices') }}"><i class="bi bi-arrow-left"></i> Vissza az eszközlistához</a>
 </div>
 
-<form method="post" class="form-panel" data-device-price-form>
-  <h2>Eszköz létrehozása</h2>
-  <h3 class="form-section-title">Alapadatok</h3>
-  <div class="row g-3">
-    <div class="col-md-4"><label class="form-label" for="asset_tag">Eszközazonosító</label><input class="form-control" id="asset_tag" name="asset_tag" required></div>
-    <div class="col-md-4"><label class="form-label" for="serial_number">Sorozatszám</label><input class="form-control" id="serial_number" name="serial_number"></div>
-    <div class="col-md-4"><label class="form-label" for="product_name">Terméknév</label><input class="form-control" id="product_name" name="product_name"></div>
-    <div class="col-md-4">
-      <label class="form-label" for="device_type">Kategória</label>
-      <select class="form-select" id="device_type" name="device_type" required>
-        <option value="">Válassz...</option>
-        {% for category in categories %}<option value="{{ category }}">{{ category_label(category) }}</option>{% endfor %}
-      </select>
+<form method="post" class="form-panel inventory-create-flow" data-device-price-form data-inventory-create>
+  <section class="workflow-step">
+    <div class="workflow-step-number">1</div>
+    <div class="workflow-step-content">
+      <h2>Mit szeretnél létrehozni?</h2>
+      <p class="text-secondary">A rendszer a választás alapján automatikusan beállítja a készletkövetést és a QR-kezelést.</p>
+      <div class="inventory-kind-grid">
+        <label class="inventory-kind-card">
+          <input type="radio" name="inventory_kind" value="unit" {% if request.form.get('inventory_kind', 'unit') == 'unit' %}checked{% endif %}>
+          <span class="inventory-kind-icon"><i class="bi bi-upc-scan"></i></span>
+          <span>
+            <strong>Egyedi nyilvántartott eszközök</strong>
+            <small>Töltő, router, kamera vagy Parkl Box. Minden darab saját példányazonosítót és QR-kódot kap.</small>
+          </span>
+        </label>
+        <label class="inventory-kind-card">
+          <input type="radio" name="inventory_kind" value="bulk" {% if request.form.get('inventory_kind') == 'bulk' %}checked{% endif %}>
+          <span class="inventory-kind-icon"><i class="bi bi-boxes"></i></span>
+          <span>
+            <strong>Mennyiségi készlet</strong>
+            <small>Matrica, kábel vagy kötőelem. A rendszer darabszámot vagy mennyiséget mozgat.</small>
+          </span>
+        </label>
+      </div>
     </div>
-    <div class="col-md-4"><label class="form-label" for="subtype_note">Altípus / megjegyzés</label><input class="form-control" id="subtype_note" name="subtype_note"></div>
-    <div class="col-md-4"><label class="form-label" for="supplier_manufacturer">Beszállító / gyártó</label><input class="form-control" id="supplier_manufacturer" name="supplier_manufacturer"></div>
-    <div class="col-md-4"><label class="form-label" for="manufacturer">Gyártó</label><input class="form-control" id="manufacturer" name="manufacturer"></div>
-    <div class="col-md-4"><label class="form-label" for="model">Modell</label><input class="form-control" id="model" name="model"></div>
-    <div class="col-md-4"><label class="form-label" for="version">Verzió</label><input class="form-control" id="version" name="version"></div>
-    <div class="col-md-4">
-      <label class="form-label" for="tracking_mode">Készletkövetés módja</label>
-      <select class="form-select" id="tracking_mode" name="tracking_mode">
-        <option value="bulk" selected>Mennyiségi (bulk)</option>
-        <option value="unit">Egyedi eszközpéldányok</option>
-      </select>
-      <div class="form-text">Bulk esetén mennyiséget, egyedi módban konkrét QR-példányokat mozgatunk.</div>
-    </div>
-    <div class="col-md-4">
-      <label class="form-label" for="qr_mode">QR mód</label>
-      <select class="form-select" id="qr_mode" name="qr_mode">
-        <option value="none">Nincs QR</option>
-        <option value="group" selected>Csoport QR</option>
-        <option value="individual">Egyedi QR példányonként</option>
-      </select>
-    </div>
-  </div>
+  </section>
 
-  <h3 class="form-section-title">Mennyiség és érték</h3>
-  <div class="row g-3">
-    <div class="col-md-3"><label class="form-label" for="quantity">Mennyiség</label><input class="form-control" id="quantity" name="quantity" type="number" step="0.01" min="0"></div>
-    <div class="col-md-3"><label class="form-label" for="unit_net_price">Egység nettó érték</label><input class="form-control" id="unit_net_price" name="unit_net_price" type="number" step="0.01" min="0"></div>
-    <div class="col-md-3">
-      <label class="form-label" for="currency">Deviza</label>
-      <select class="form-select" id="currency" name="currency"><option value="">Nincs megadva</option><option value="HUF">HUF</option><option value="EUR">EUR</option></select>
+  <section class="workflow-step">
+    <div class="workflow-step-number">2</div>
+    <div class="workflow-step-content">
+      <h2>Mit veszel készletre?</h2>
+      <div class="row g-3">
+        <div class="col-lg-6">
+          <label class="form-label" for="product_name">Termék neve</label>
+          <input class="form-control" id="product_name" name="product_name" value="{{ request.form.get('product_name', '') }}" placeholder="például Teltonika RUT241" required>
+        </div>
+        <div class="col-lg-3">
+          <label class="form-label" for="device_type">Kategória</label>
+          <select class="form-select" id="device_type" name="device_type" required>
+            <option value="">Válassz...</option>
+            {% for category in categories %}<option value="{{ category }}" {% if request.form.get('device_type') == category %}selected{% endif %}>{{ category_label(category) }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-lg-3">
+          <label class="form-label" for="quantity"><span data-quantity-label>Darabszám</span></label>
+          <input class="form-control" id="quantity" name="quantity" type="number" step="1" min="1" value="{{ request.form.get('quantity', '1') }}" required>
+        </div>
+        <div class="col-md-4" data-unit-only>
+          <label class="form-label" for="manufacturer">Gyártó</label>
+          <input class="form-control" id="manufacturer" name="manufacturer" value="{{ request.form.get('manufacturer', '') }}" placeholder="például Teltonika">
+        </div>
+        <div class="col-md-4" data-unit-only>
+          <label class="form-label" for="model">Modell</label>
+          <input class="form-control" id="model" name="model" value="{{ request.form.get('model', '') }}" placeholder="például RUT241">
+        </div>
+        <div class="col-md-4" data-unit-only>
+          <label class="form-label" for="unit_code_prefix">Példányazonosító előtag</label>
+          <input class="form-control" id="unit_code_prefix" name="unit_code_prefix" value="{{ request.form.get('unit_code_prefix', '') }}" placeholder="például RUT241">
+          <div class="form-text">Üresen hagyva a modell vagy terméknév alapján készül.</div>
+        </div>
+      </div>
+      <div class="unit-generation-preview mt-3" data-unit-preview>
+        <i class="bi bi-magic"></i>
+        <span>A rendszer automatikusan létrehozza a fizikai példányokat, például <strong>RUT241-001, RUT241-002...</strong>. A sorozatszám később, példányonként adható meg.</span>
+      </div>
     </div>
-    <div class="col-md-3">
-      <label class="form-label" for="vat_rate">ÁFA %</label>
-      <select class="form-select" id="vat_rate" name="vat_rate"><option value="">Nincs megadva</option><option value="0">0%</option><option value="5">5%</option><option value="18">18%</option><option value="27">27%</option></select>
+  </section>
+
+  <section class="workflow-step">
+    <div class="workflow-step-number">3</div>
+    <div class="workflow-step-content">
+      <h2>Hová és milyen kezdő állapotba kerüljön?</h2>
+      <div class="row g-3">
+        <div class="col-lg-5">
+          <label class="form-label" for="location_id">Kezdő készlethely</label>
+          <select class="form-select" id="location_id" name="location_id" required>
+            <option value="">Válassz készlethelyet...</option>
+            {% for location in locations %}<option value="{{ location.id }}" {% if request.form.get('location_id') == location.id|string %}selected{% endif %}>{{ location.name }}</option>{% endfor %}
+          </select>
+          <div class="form-text">A bevételezés innen indítja a későbbi projektmozgást.</div>
+        </div>
+        <div class="col-lg-7">
+          <label class="form-label d-block">Kezdő állapot</label>
+          <div class="initial-state-options">
+            <label><input type="radio" name="initial_state" value="IN_STOCK" {% if request.form.get('initial_state', 'IN_STOCK') == 'IN_STOCK' %}checked{% endif %}><span>Raktárkészlet</span></label>
+            <label><input type="radio" name="initial_state" value="RESERVED" {% if request.form.get('initial_state') == 'RESERVED' %}checked{% endif %}><span>Projektre előfoglalás</span></label>
+            <label><input type="radio" name="initial_state" value="ISSUED" {% if request.form.get('initial_state') == 'ISSUED' %}checked{% endif %}><span>Közvetlen projektkiadás</span></label>
+          </div>
+        </div>
+        <div class="col-lg-6" data-project-choice hidden>
+          <label class="form-label" for="initial_project_id">Projekt</label>
+          <select class="form-select" id="initial_project_id" name="initial_project_id">
+            <option value="">Válassz projektet...</option>
+            {% for project in projects %}<option value="{{ project.id }}" {% if request.form.get('initial_project_id') == project.id|string %}selected{% endif %}>{{ project.code }} - {{ project.name }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
     </div>
-    <div class="col-md-4"><label class="form-label" for="total_net_price_preview">Összes nettó érték</label><input class="form-control" id="total_net_price_preview" data-price-output="total-net" readonly></div>
-    <div class="col-md-4"><label class="form-label" for="unit_gross_price_preview">Egység bruttó érték</label><input class="form-control" id="unit_gross_price_preview" data-price-output="unit-gross" readonly></div>
-    <div class="col-md-4"><label class="form-label" for="total_gross_price_preview">Összes bruttó érték</label><input class="form-control" id="total_gross_price_preview" data-price-output="total-gross" readonly></div>
-  </div>
+  </section>
 
-  <h3 class="form-section-title">Kezdő készlethely</h3>
-  <div class="row g-3">
-    <div class="col-md-6">
-      <label class="form-label" for="location_id">Kezdő készlethely</label>
-      <select class="form-select" id="location_id" name="location_id" required><option value="">Válassz készlethelyet...</option>{% for location in locations %}<option value="{{ location.id }}">{{ location.name }}</option>{% endfor %}</select>
-      <div class="form-text">Projekt-hozzárendelés előfoglalás, kiadás vagy telepítés készletmozgással történik.</div>
+  <section class="workflow-step">
+    <div class="workflow-step-number">4</div>
+    <div class="workflow-step-content">
+      <div class="d-flex justify-content-between align-items-center gap-3">
+        <div>
+          <h2>Beszerzési és pénzügyi adatok</h2>
+          <p class="text-secondary mb-0">Opcionális adatok, később is kitölthetők.</p>
+        </div>
+        <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#optionalDeviceData" aria-expanded="false">
+          További mezők
+        </button>
+      </div>
+      <div class="collapse mt-3" id="optionalDeviceData">
+        <div class="row g-3">
+          <div class="col-md-4"><label class="form-label" for="supplier_manufacturer">Beszállító</label><input class="form-control" id="supplier_manufacturer" name="supplier_manufacturer" value="{{ request.form.get('supplier_manufacturer', '') }}"></div>
+          <div class="col-md-4"><label class="form-label" for="unit_net_price">Egység nettó érték</label><input class="form-control" id="unit_net_price" name="unit_net_price" type="number" step="0.01" min="0" value="{{ request.form.get('unit_net_price', '') }}"></div>
+          <div class="col-md-2"><label class="form-label" for="currency">Deviza</label><select class="form-select" id="currency" name="currency"><option value="">Nincs megadva</option><option value="HUF" {% if request.form.get('currency') == 'HUF' %}selected{% endif %}>HUF</option><option value="EUR" {% if request.form.get('currency') == 'EUR' %}selected{% endif %}>EUR</option></select></div>
+          <div class="col-md-2"><label class="form-label" for="vat_rate">ÁFA %</label><select class="form-select" id="vat_rate" name="vat_rate"><option value="">Nincs megadva</option>{% for rate in [0, 5, 18, 27] %}<option value="{{ rate }}" {% if request.form.get('vat_rate') == rate|string %}selected{% endif %}>{{ rate }}%</option>{% endfor %}</select></div>
+          <div class="col-md-4"><label class="form-label" for="total_net_price_preview">Összes nettó érték</label><input class="form-control" id="total_net_price_preview" data-price-output="total-net" readonly></div>
+          <div class="col-md-4"><label class="form-label" for="unit_gross_price_preview">Egység bruttó érték</label><input class="form-control" id="unit_gross_price_preview" data-price-output="unit-gross" readonly></div>
+          <div class="col-md-4"><label class="form-label" for="total_gross_price_preview">Összes bruttó érték</label><input class="form-control" id="total_gross_price_preview" data-price-output="total-gross" readonly></div>
+          <div class="col-md-4"><label class="form-label" for="order_date">Rendelés napja</label><input class="form-control" id="order_date" name="order_date" type="date" value="{{ request.form.get('order_date', '') }}"></div>
+          <div class="col-md-4"><label class="form-label" for="planned_arrival_date">Tervezett érkezés</label><input class="form-control" id="planned_arrival_date" name="planned_arrival_date" type="date" value="{{ request.form.get('planned_arrival_date', '') }}"></div>
+          <div class="col-md-4"><label class="form-label" for="supplier_invoice_number">Beszállítói számlaszám</label><input class="form-control" id="supplier_invoice_number" name="supplier_invoice_number" value="{{ request.form.get('supplier_invoice_number', '') }}"></div>
+          <div class="col-md-6"><label class="form-label" for="subtype_note">Altípus / megjegyzés</label><input class="form-control" id="subtype_note" name="subtype_note" value="{{ request.form.get('subtype_note', '') }}"></div>
+          <div class="col-md-6"><label class="form-label" for="asset_tag">Belső terméktétel-azonosító</label><input class="form-control" id="asset_tag" name="asset_tag" value="{{ request.form.get('asset_tag', '') }}" placeholder="Üresen hagyva automatikusan készül"></div>
+          <div class="col-md-3"><div class="form-check form-switch mt-4"><input class="form-check-input" id="is_ordered" name="is_ordered" type="checkbox" {% if request.form.get('is_ordered') %}checked{% endif %}><label class="form-check-label" for="is_ordered">Megrendelve</label></div></div>
+          <div class="col-md-3"><div class="form-check form-switch mt-4"><input class="form-check-input" id="has_arrived" name="has_arrived" type="checkbox" {% if request.form.get('has_arrived') %}checked{% endif %}><label class="form-check-label" for="has_arrived">Megérkezett</label></div></div>
+        </div>
+      </div>
     </div>
-    <div class="col-md-4"><label class="form-label" for="assignment_quantity">Hozzárendelt mennyiség</label><input class="form-control" id="assignment_quantity" name="assignment_quantity" type="number" step="0.01" min="0"></div>
-    <div class="col-md-8"><label class="form-label" for="assignment_notes">Hozzárendelési megjegyzés</label><input class="form-control" id="assignment_notes" name="assignment_notes"></div>
-  </div>
+  </section>
 
-  <h3 class="form-section-title">Rendelés / érkezés</h3>
-  <div class="row g-3">
-    <div class="col-md-3"><label class="form-label" for="order_date">Rendelés napja</label><input class="form-control" id="order_date" name="order_date" type="date"></div>
-    <div class="col-md-3"><label class="form-label" for="planned_arrival_date">Tervezett érkezés</label><input class="form-control" id="planned_arrival_date" name="planned_arrival_date" type="date"></div>
-    <div class="col-md-3"><label class="form-label" for="actual_arrival_date">Tényleges érkezés</label><input class="form-control" id="actual_arrival_date" name="actual_arrival_date" type="date"></div>
-    <div class="col-md-3"><label class="form-label" for="shipping_date">Elszállítás napja</label><input class="form-control" id="shipping_date" name="shipping_date" type="date"></div>
-    <div class="col-md-3"><div class="form-check form-switch mt-4"><input class="form-check-input" id="is_ordered" name="is_ordered" type="checkbox"><label class="form-check-label" for="is_ordered">Megrendelve</label></div></div>
-    <div class="col-md-3"><div class="form-check form-switch mt-4"><input class="form-check-input" id="has_arrived" name="has_arrived" type="checkbox"><label class="form-check-label" for="has_arrived">Megérkezett</label></div></div>
-    <div class="col-md-3"><label class="form-label" for="shipping_cost">Szállítási költség</label><input class="form-control" id="shipping_cost" name="shipping_cost" type="number" step="0.01" min="0"></div>
-  </div>
-
-  <h3 class="form-section-title">Pénzügyi adatok</h3>
-  <div class="row g-3">
-    <div class="col-md-4"><label class="form-label" for="supplier_invoice_number">Beszállítói számlaszám</label><input class="form-control" id="supplier_invoice_number" name="supplier_invoice_number"></div>
-    <div class="col-md-4"><label class="form-label" for="invoice_value">Számla értéke</label><input class="form-control" id="invoice_value" name="invoice_value" type="number" step="0.01" min="0"></div>
-    <div class="col-md-4"><label class="form-label" for="shipping_invoice_number">Szállítmányozói számlaszám</label><input class="form-control" id="shipping_invoice_number" name="shipping_invoice_number"></div>
-    <div class="col-md-4"><div class="form-check form-switch mt-2"><input class="form-check-input" id="supplier_invoice_paid" name="supplier_invoice_paid" type="checkbox"><label class="form-check-label" for="supplier_invoice_paid">Beszállítói számla fizetve</label></div></div>
-    <div class="col-md-4"><div class="form-check form-switch mt-2"><input class="form-check-input" id="shipping_invoice_paid" name="shipping_invoice_paid" type="checkbox"><label class="form-check-label" for="shipping_invoice_paid">Szállítmányozói számla fizetve</label></div></div>
-  </div>
-
-  <div class="mt-4 d-flex flex-wrap gap-2">
-    <button class="btn btn-purple btn-icon" type="submit"><i class="bi bi-save"></i> Eszköz létrehozása</button>
+  <input type="hidden" name="tracking_mode" value="unit">
+  <input type="hidden" name="qr_mode" value="individual">
+  <input type="hidden" name="serial_number" value="">
+  <div class="mt-4 d-flex flex-wrap gap-2 justify-content-end">
     <a class="btn btn-outline-secondary" href="{{ url_for('devices') }}">Mégse</a>
+    <button class="btn btn-purple btn-icon" type="submit"><i class="bi bi-plus-circle"></i> Létrehozás</button>
   </div>
 </form>
+
+<script>
+  const createFlow = document.querySelector("[data-inventory-create]");
+  if (createFlow) {
+    const kindInputs = createFlow.querySelectorAll('input[name="inventory_kind"]');
+    const stateInputs = createFlow.querySelectorAll('input[name="initial_state"]');
+    const projectChoice = createFlow.querySelector("[data-project-choice]");
+    const projectSelect = createFlow.querySelector("#initial_project_id");
+    const quantityInput = createFlow.querySelector("#quantity");
+    const quantityLabel = createFlow.querySelector("[data-quantity-label]");
+
+    function updateInventoryKind() {
+      const kind = createFlow.querySelector('input[name="inventory_kind"]:checked')?.value || "unit";
+      createFlow.querySelectorAll("[data-unit-only], [data-unit-preview]").forEach((element) => {
+        element.hidden = kind !== "unit";
+      });
+      quantityInput.step = kind === "unit" ? "1" : "0.01";
+      quantityLabel.textContent = kind === "unit" ? "Darabszám" : "Mennyiség";
+    }
+
+    function updateInitialState() {
+      const state = createFlow.querySelector('input[name="initial_state"]:checked')?.value || "IN_STOCK";
+      const needsProject = state !== "IN_STOCK";
+      projectChoice.hidden = !needsProject;
+      projectSelect.required = needsProject;
+    }
+
+    kindInputs.forEach((input) => input.addEventListener("change", updateInventoryKind));
+    stateInputs.forEach((input) => input.addEventListener("change", updateInitialState));
+    updateInventoryKind();
+    updateInitialState();
+  }
+</script>
 {% endblock %}

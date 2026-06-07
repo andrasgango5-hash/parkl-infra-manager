@@ -94,6 +94,7 @@
         <div class="col-6 col-lg-2"><div class="metric"><span>Új projekt</span><strong>{{ preview.new_project_count }}</strong></div></div>
         <div class="col-6 col-lg-2"><div class="metric"><span>Meglévő projekt</span><strong>{{ preview.existing_project_count }}</strong></div></div>
         <div class="col-6 col-lg-2"><div class="metric"><span>Új eszköz</span><strong>{{ preview.new_device_count }}</strong></div></div>
+        <div class="col-6 col-lg-2"><div class="metric"><span>Új példány</span><strong>{{ preview.new_unit_count }}</strong></div></div>
         <div class="col-6 col-lg-2"><div class="metric"><span>Új készlethely</span><strong>{{ preview.new_location_count }}</strong></div></div>
         <div class="col-6 col-lg-2"><div class="metric"><span>Hibás sor</span><strong>{{ preview.critical_error_count }}</strong></div></div>
       </div>
@@ -116,12 +117,12 @@
     <div class="section-title"><h2>Első feldolgozható eszközsorok</h2></div>
     <div class="table-responsive">
       <table class="table table-hover align-middle">
-        <thead><tr><th>Projekt</th><th>Termék</th><th>Kategória</th><th>Mennyiség</th><th>Deviza</th><th>Egység nettó</th><th>Összes nettó</th><th>Lokáció</th></tr></thead>
+        <thead><tr><th>Projekt</th><th>Termék</th><th>Kategória</th><th>Követés</th><th>Példánygenerálás</th><th>Mennyiség</th><th>Deviza</th><th>Egység nettó</th><th>Összes nettó</th><th>Lokáció</th></tr></thead>
         <tbody>
           {% for row in preview.devices[:10] %}
-            <tr><td>{{ row.project_code }}</td><td>{{ row.product_name }}</td><td>{{ category_label(row.category) }}</td><td>{{ format_number(row.quantity) }}</td><td>{{ row.currency }}</td><td>{{ format_number(row.unit_net_price) }}</td><td>{{ format_number(row.total_net_price) }}</td><td>{{ row.location_name or "-" }}</td></tr>
+            <tr><td>{{ row.project_code }}</td><td>{{ row.product_name }}</td><td>{{ category_label(row.category) }}</td><td>{{ tracking_mode_label(row.tracking_mode) }}</td><td>{{ "Igen" if row.unit_generation else "Nem" }}</td><td>{{ format_number(row.quantity) }}</td><td>{{ row.currency }}</td><td>{{ format_number(row.unit_net_price) }}</td><td>{{ format_number(row.total_net_price) }}</td><td>{{ row.location_name or "-" }}</td></tr>
           {% else %}
-            <tr><td colspan="8"><div class="empty-state"><strong>Nincs importálható eszközsor.</strong><span>Ellenőrizd a hibalistát és a sablon kötelező mezőit.</span></div></td></tr>
+            <tr><td colspan="10"><div class="empty-state"><strong>Nincs importálható eszközsor.</strong><span>Ellenőrizd a hibalistát és a sablon kötelező mezőit.</span></div></td></tr>
           {% endfor %}
         </tbody>
       </table>

@@ -6,166 +6,197 @@
 <div class="page-header">
   <div>
     <h1>Készletmozgások</h1>
-    <p class="text-secondary mb-0">Minden készletművelet auditálható mozgásként kerül rögzítésre.</p>
+    <p class="text-secondary mb-0">Időrendi auditnapló arról, hogy ki, mikor és hová mozgatta a készletet.</p>
   </div>
+  {% if can_write %}
+  <button class="btn btn-outline-secondary btn-sm btn-icon" type="button" data-bs-toggle="collapse" data-bs-target="#advancedMovement" aria-expanded="false">
+    <i class="bi bi-tools"></i> Speciális művelet
+  </button>
+  {% endif %}
 </div>
 
 <div class="help-box">
-  <strong>Auditálható készletnapló.</strong> Itt rögzíthetsz kézi mozgást, de napi munkához az eszköz részletein lévő színes műveletgombok a leggyorsabbak. Minden mozgás megmarad történeti naplóként.
+  <strong>A napi műveleteket az érintett projekt, eszközpéldány vagy készlethely adatlapjáról indítsd.</strong>
+  Ez az oldal elsősorban kereshető történeti napló. A speciális blokk csak ritka, központi készletkorrekciókhoz szükséges.
 </div>
 
-<div class="row g-4">
-  {% if can_write %}
-  <div class="col-xl-4">
-    <form method="post" class="form-panel">
-      <h2>Készletmozgás létrehozása</h2>
-      <div class="mb-3">
+{% if can_write %}
+<div class="collapse mb-4" id="advancedMovement">
+  <form method="post" class="form-panel">
+    <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
+      <div>
+        <h2 class="mb-1">Speciális készletmozgás</h2>
+        <p class="text-secondary small mb-0">Csak akkor használd, ha a műveletet nem lehet természetesen projektből, példányból vagy készlethelyből indítani.</p>
+      </div>
+      <span class="badge text-bg-warning">Haladó</span>
+    </div>
+    <div class="row g-3">
+      <div class="col-lg-4">
         <label class="form-label" for="device_search">Eszköz keresése</label>
-        <input class="form-control mb-2" id="device_search" type="search" placeholder="Azonosító, termék, projekt, státusz vagy lokáció">
-        <label class="form-label" for="device_id">Eszköz</label>
+        <input class="form-control mb-2" id="device_search" type="search" placeholder="Azonosító vagy termék">
         <select class="form-select" id="device_id" name="device_id" required>
-          <option value="">Válassz...</option>
+          <option value="">Válassz eszköztételt...</option>
           {% for category, grouped_devices in devices|groupby("device_type") %}
             <optgroup label="{{ category_label(category) }}">
               {% for device in grouped_devices %}
-                <option value="{{ device.id }}" data-search="{{ device_display_label(device)|lower }}" data-tracking-mode="{{ device.tracking_mode }}" data-quantity="{{ device.quantity if device.quantity is not none else '' }}">{{ device_display_label(device) }}</option>
+                <option value="{{ device.id }}" data-search="{{ device_display_label(device)|lower }}" data-tracking-mode="{{ device.tracking_mode }}">{{ device_display_label(device) }}</option>
               {% endfor %}
             </optgroup>
           {% endfor %}
         </select>
       </div>
-      <div class="mb-3">
-        <label class="form-label" for="unit_id">Eszközpéldány</label>
+      <div class="col-lg-4">
+        <label class="form-label" for="unit_id">Konkrét példány</label>
         <select class="form-select" id="unit_id" name="unit_id">
-          <option value="">Bulk tételnél nem kell kiválasztani</option>
-          {% for unit in units %}
-            <option value="{{ unit.id }}" data-device-id="{{ unit.device_id }}">{{ unit.human_label }}</option>
-          {% endfor %}
+          <option value="">Mennyiségi tételnél nem szükséges</option>
+          {% for unit in units %}<option value="{{ unit.id }}" data-device-id="{{ unit.device_id }}">{{ unit.human_label }}</option>{% endfor %}
         </select>
-        <div class="form-text">Egyedi követésű tételnél kötelező.</div>
       </div>
-      <div class="mb-3">
-        <label class="form-label" for="source_balance_id">Bulk forrás készletegyenleg</label>
+      <div class="col-lg-4">
+        <label class="form-label" for="source_balance_id">Mennyiségi forráskészlet</label>
         <select class="form-select" id="source_balance_id" name="source_balance_id">
-          <option value="">Új bevételezés / unit mozgás</option>
+          <option value="">Új bevételezés / egyedi példány</option>
           {% for balance in bulk_balances %}
             <option value="{{ balance.id }}" data-device-id="{{ balance.device_id }}" data-quantity="{{ balance.quantity }}" {% if balance.status == "SCRAPPED" %}disabled{% endif %}>
-              {{ device_primary_label(balance.device) }} · {{ format_number(balance.quantity) }} db ·
-              {{ status_label(balance.status) }} · {{ balance.location.name if balance.location else "-" }}
+              {{ device_primary_label(balance.device) }} · {{ format_number(balance.quantity) }} db · {{ status_label(balance.status) }} · {{ balance.location.name if balance.location else "-" }}
             </option>
           {% endfor %}
         </select>
-        <div class="form-text">Bulk mozgásnál kötelező, kivéve új bevételezéskor.</div>
       </div>
-      <div class="mb-3">
-        <label class="form-label" for="quantity">Mozgatott mennyiség</label>
-        <input class="form-control" id="quantity" name="quantity" type="number" min="0.01" step="0.01" value="1">
-        <div class="form-text">Bulk tételnél kötelező; egyedi példánynál mindig 1.</div>
-      </div>
-      <div class="mb-3">
-        <label class="form-label" for="movement_type">Típus</label>
+      <div class="col-md-3">
+        <label class="form-label" for="movement_type">Mozgástípus</label>
         <select class="form-select" id="movement_type" name="movement_type" required>
           <option value="">Válassz...</option>
-          {% for movement_type in movement_types %}
-            <option value="{{ movement_type }}">{{ movement_type_label(movement_type) }}</option>
-          {% endfor %}
+          {% for movement_type in movement_types %}<option value="{{ movement_type }}">{{ movement_type_label(movement_type) }}</option>{% endfor %}
         </select>
       </div>
-      <div class="mb-3">
+      <div class="col-md-2">
+        <label class="form-label" for="quantity">Mennyiség</label>
+        <input class="form-control" id="quantity" name="quantity" type="number" min="0.01" step="0.01" value="1">
+      </div>
+      <div class="col-md-3">
         <label class="form-label" for="from_location_id">Forrás készlethely</label>
-        <select class="form-select" id="from_location_id" name="from_location_id">
-          <option value="">Nincs</option>
-          {% for location in locations %}
-            <option value="{{ location.id }}">{{ location.name }}</option>
-          {% endfor %}
-        </select>
+        <select class="form-select" id="from_location_id" name="from_location_id"><option value="">Nincs</option>{% for location in locations %}<option value="{{ location.id }}">{{ location.name }}</option>{% endfor %}</select>
       </div>
-      <div class="mb-3">
+      <div class="col-md-4">
         <label class="form-label" for="to_location_id">Cél készlethely</label>
-        <select class="form-select" id="to_location_id" name="to_location_id">
-          <option value="">Nincs</option>
-          {% for location in locations %}
-            <option value="{{ location.id }}">{{ location.name }}</option>
-          {% endfor %}
-        </select>
+        <select class="form-select" id="to_location_id" name="to_location_id"><option value="">Nincs</option>{% for location in locations %}<option value="{{ location.id }}">{{ location.name }}</option>{% endfor %}</select>
       </div>
-      <div class="mb-3">
+      <div class="col-md-4">
         <label class="form-label" for="project_id">Projekt</label>
-        <select class="form-select" id="project_id" name="project_id">
-          <option value="">Nincs</option>
-          {% for project in projects %}
-            <option value="{{ project.id }}">{{ project.code }} - {{ project.name }}</option>
-          {% endfor %}
-        </select>
+        <select class="form-select" id="project_id" name="project_id"><option value="">Nincs</option>{% for project in projects %}<option value="{{ project.id }}">{{ project.code }} - {{ project.name }}</option>{% endfor %}</select>
       </div>
-      <div class="mb-3">
+      <div class="col-md-6">
         <label class="form-label" for="notes">Megjegyzés</label>
-        <textarea class="form-control" id="notes" name="notes" rows="3"></textarea>
+        <input class="form-control" id="notes" name="notes">
       </div>
-      <button class="btn btn-success btn-icon" type="submit" data-bs-toggle="tooltip" data-bs-title="Készletmozgás mentése"><i class="bi bi-save"></i> Rögzítés</button>
-    </form>
-  </div>
-  {% endif %}
-  <div class="{% if can_write %}col-xl-8{% else %}col-12{% endif %}">
-    <section class="data-section">
-      <div class="section-title"><h2>Mozgástörténet</h2></div>
-      <div class="table-responsive">
-        <table class="table table-hover align-middle">
-          <thead>
-            <tr>
-              <th>Időpont</th>
-              <th>Eszköz</th>
-              <th>Példány / mennyiség</th>
-              <th>Típus</th>
-              <th>Státusz</th>
-              <th>Innen</th>
-              <th>Ide</th>
-              <th>Projekt</th>
-              <th>Felhasználó</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for movement in movements %}
-              <tr>
-                <td>{{ movement.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
-                <td class="fw-semibold"><span class="table-item-with-icon"><span class="table-item-icon"><i class="bi bi-arrow-left-right"></i></span>{{ device_primary_label(movement.device) }}</span></td>
-                <td>{% if movement.unit %}<a href="{{ url_for('device_unit_detail', unit_id=movement.unit.id) }}">{{ movement.unit.unit_code }}</a>{% elif movement.quantity is not none %}{{ format_number(movement.quantity) }} db{% else %}<span class="text-secondary">régi rekord</span>{% endif %}</td>
-                <td>
-                  <span class="movement-badge {{ movement_badge_class(movement.movement_type) }}">{{ movement_type_label(movement.movement_type) }}</span>
-                  {% if movement.id in reversed_movement_ids %}<div class="small text-secondary">Visszavonva</div>{% endif %}
-                  {% if movement.reversal_of %}<div class="small text-secondary">Eredeti: #{{ movement.reversal_of.id }}</div>{% endif %}
-                </td>
-                <td>{{ status_label(movement.from_status) if movement.from_status else "-" }} → {{ status_label(movement.to_status) if movement.to_status else "-" }}</td>
-                <td>{{ movement.from_location.name if movement.from_location else "-" }}</td>
-                <td>{{ movement.to_location.name if movement.to_location else "-" }}</td>
-                <td>{{ movement.from_project.code if movement.from_project else "-" }} → {{ movement.to_project.code if movement.to_project else "-" }}</td>
-                <td>{{ movement.created_by.username }}</td>
-                <td>
-                  {% if can_write and movement.id in reversible_movement_ids %}
-                  <form method="post" action="{{ url_for('movement_reverse', movement_id=movement.id) }}">
-                    <button class="btn btn-outline-warning btn-sm" type="submit" data-confirm="Biztosan létrehozod az ellenmozgást? Az eredeti naplóbejegyzés nem törlődik.">Visszavonás</button>
-                  </form>
-                  {% endif %}
-                </td>
-              </tr>
-            {% else %}
-              <tr>
-                <td colspan="10">
-                  <div class="empty-state">
-                    <strong>Még nincs készletmozgás.</strong>
-                    <span>Rögzíts eszközt, majd hozz létre bevételezést, kiadást vagy telepítést.</span>
-                    <a class="btn btn-success btn-sm btn-icon" href="{{ url_for('devices') }}"><i class="bi bi-cpu"></i> Eszközök megnyitása</a>
-                  </div>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+      <div class="col-md-2 d-flex align-items-end">
+        <button class="btn btn-purple btn-icon w-100" type="submit"><i class="bi bi-save"></i> Rögzítés</button>
       </div>
-    </section>
-  </div>
+    </div>
+  </form>
 </div>
+{% endif %}
+
+<section class="data-section">
+  <div class="section-title">
+    <div>
+      <h2>Mozgástörténet</h2>
+      <span class="text-secondary small">{{ movements|length }} találat, legfrissebb elöl</span>
+    </div>
+  </div>
+  <form method="get" class="movement-filter-panel">
+    <div class="movement-filter-search">
+      <label class="form-label" for="movement_q">Keresés</label>
+      <input class="form-control" id="movement_q" name="q" value="{{ search }}" placeholder="Eszköz, példány, sorozatszám vagy megjegyzés">
+    </div>
+    <div><label class="form-label" for="date_from">Dátumtól</label><input class="form-control" id="date_from" name="date_from" type="date" value="{{ date_from or '' }}"></div>
+    <div><label class="form-label" for="date_to">Dátumig</label><input class="form-control" id="date_to" name="date_to" type="date" value="{{ date_to or '' }}"></div>
+    <div>
+      <label class="form-label" for="filter_device_id">Eszköz</label>
+      <select class="form-select" id="filter_device_id" name="device_id"><option value="">Összes</option>{% for device in devices %}<option value="{{ device.id }}" {% if selected_device_id == device.id %}selected{% endif %}>{{ device_primary_label(device) }}</option>{% endfor %}</select>
+    </div>
+    <div>
+      <label class="form-label" for="filter_unit_id">Példány</label>
+      <select class="form-select" id="filter_unit_id" name="unit_id"><option value="">Összes</option>{% for unit in units %}<option value="{{ unit.id }}" {% if selected_unit_id == unit.id %}selected{% endif %}>{{ unit.unit_code }}</option>{% endfor %}</select>
+    </div>
+    <div>
+      <label class="form-label" for="filter_project_id">Projekt</label>
+      <select class="form-select" id="filter_project_id" name="project_id"><option value="">Összes</option>{% for project in projects %}<option value="{{ project.id }}" {% if selected_project_id == project.id %}selected{% endif %}>{{ project.code }}</option>{% endfor %}</select>
+    </div>
+    <div>
+      <label class="form-label" for="filter_location_id">Készlethely</label>
+      <select class="form-select" id="filter_location_id" name="location_id"><option value="">Összes</option>{% for location in locations %}<option value="{{ location.id }}" {% if selected_location_id == location.id %}selected{% endif %}>{{ location.name }}</option>{% endfor %}</select>
+    </div>
+    <div>
+      <label class="form-label" for="filter_movement_type">Mozgástípus</label>
+      <select class="form-select" id="filter_movement_type" name="movement_type"><option value="">Összes</option>{% for movement_type in movement_filter_types %}<option value="{{ movement_type }}" {% if selected_movement_type == movement_type %}selected{% endif %}>{{ movement_type_label(movement_type) }}</option>{% endfor %}</select>
+    </div>
+    <div>
+      <label class="form-label" for="filter_user_id">Felhasználó</label>
+      <select class="form-select" id="filter_user_id" name="user_id"><option value="">Összes</option>{% for user in movement_users %}<option value="{{ user.id }}" {% if selected_user_id == user.id %}selected{% endif %}>{{ user.username }}</option>{% endfor %}</select>
+    </div>
+    <div>
+      <label class="form-label" for="group_by">Csoportosítás</label>
+      <select class="form-select" id="group_by" name="group_by">
+        <option value="">Nincs</option>
+        <option value="date" {% if group_by == "date" %}selected{% endif %}>Nap szerint</option>
+        <option value="device" {% if group_by == "device" %}selected{% endif %}>Eszköz szerint</option>
+        <option value="project" {% if group_by == "project" %}selected{% endif %}>Projekt szerint</option>
+      </select>
+    </div>
+    <div class="movement-filter-actions">
+      <button class="btn btn-purple btn-icon" type="submit"><i class="bi bi-funnel"></i> Szűrés</button>
+      <a class="btn btn-outline-secondary" href="{{ url_for('movements') }}">Törlés</a>
+    </div>
+  </form>
+
+  {% for group in movement_groups %}
+    {% if group.label %}<div class="movement-group-heading"><i class="bi bi-collection"></i> {{ group.label }} <span>{{ group.movements|length }}</span></div>{% endif %}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead>
+          <tr><th>Időpont</th><th>Eszköz / példány</th><th>Típus</th><th>Mennyiség</th><th>Állapotváltozás</th><th>Útvonal</th><th>Projekt</th><th>Felhasználó</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for movement in group.movements %}
+          <tr>
+            <td class="text-nowrap">{{ movement.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+            <td>
+              <a href="{{ url_for('device_unit_detail', unit_id=movement.unit.id) if movement.unit else url_for('device_detail', device_id=movement.device.id) }}">{{ movement.unit.unit_code if movement.unit else device_primary_label(movement.device) }}</a>
+              {% if movement.unit %}<div class="small text-secondary">{{ device_primary_label(movement.device) }}</div>{% endif %}
+            </td>
+            <td>
+              <span class="movement-badge {{ movement_badge_class(movement.movement_type) }}">{{ movement_type_label(movement.movement_type) }}</span>
+              {% if movement.id in reversed_movement_ids %}<div class="small text-secondary">Visszavonva</div>{% endif %}
+              {% if movement.reversal_of %}<div class="small text-secondary">Eredeti: #{{ movement.reversal_of.id }}</div>{% endif %}
+            </td>
+            <td>{{ format_number(movement.quantity) if movement.quantity is not none else "-" }}</td>
+            <td>{{ status_label(movement.from_status) if movement.from_status else "-" }} → {{ status_label(movement.to_status) if movement.to_status else "-" }}</td>
+            <td>
+              {{ movement.from_location.name if movement.from_location else "külső forrás" }}
+              <i class="bi bi-arrow-right mx-1"></i>
+              {{ movement.to_location.name if movement.to_location else "projekten / nincs készlethely" }}
+            </td>
+            <td>{{ movement.from_project.code if movement.from_project else "-" }} → {{ movement.to_project.code if movement.to_project else "-" }}</td>
+            <td>{{ movement.created_by.username }}{% if movement.notes %}<div class="small text-secondary">{{ movement.notes }}</div>{% endif %}</td>
+            <td>
+              {% if can_write and movement.id in reversible_movement_ids %}
+              <form method="post" action="{{ url_for('movement_reverse', movement_id=movement.id) }}">
+                <button class="btn btn-outline-warning btn-sm" type="submit" title="Mozgás visszavonása" data-confirm="Biztosan létrehozod az ellenmozgást? Az eredeti naplóbejegyzés nem törlődik."><i class="bi bi-arrow-counterclockwise"></i></button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="9"><div class="empty-state"><strong>Nincs a szűrésnek megfelelő mozgás.</strong><span>Módosítsd vagy töröld a szűrőfeltételeket.</span><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('movements') }}">Szűrők törlése</a></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endfor %}
+</section>
+
 <script>
   const deviceSearch = document.querySelector("#device_search");
   const deviceSelect = document.querySelector("#device_id");
@@ -173,61 +204,42 @@
   const balanceSelect = document.querySelector("#source_balance_id");
   const quantityInput = document.querySelector("#quantity");
 
-  function filterUnitsForDevice() {
-    if (!deviceSelect || !unitSelect) return;
+  function filterMovementSources() {
+    if (!deviceSelect) return;
     const selectedDeviceId = deviceSelect.value;
-    unitSelect.querySelectorAll("option[data-device-id]").forEach((option) => {
-      option.hidden = Boolean(selectedDeviceId) && option.dataset.deviceId !== selectedDeviceId;
-    });
-    if (balanceSelect) {
-      balanceSelect.querySelectorAll("option[data-device-id]").forEach((option) => {
+    [unitSelect, balanceSelect].forEach((select) => {
+      if (!select) return;
+      select.querySelectorAll("option[data-device-id]").forEach((option) => {
         option.hidden = Boolean(selectedDeviceId) && option.dataset.deviceId !== selectedDeviceId;
       });
-      if (balanceSelect.selectedOptions.length && balanceSelect.selectedOptions[0].hidden) {
-        balanceSelect.value = "";
-      }
-    }
-    if (
-      unitSelect.selectedOptions.length &&
-      unitSelect.selectedOptions[0].hidden
-    ) {
-      unitSelect.value = "";
-    }
+      if (select.selectedOptions.length && select.selectedOptions[0].hidden) select.value = "";
+    });
     const selectedDevice = deviceSelect.selectedOptions[0];
     if (!selectedDevice || !quantityInput) return;
-    if (selectedDevice.dataset.trackingMode === "unit") {
-      quantityInput.value = "1";
-      quantityInput.readOnly = true;
-      if (balanceSelect) balanceSelect.value = "";
-    } else {
-      quantityInput.readOnly = false;
-      quantityInput.value = "1";
-    }
+    quantityInput.readOnly = selectedDevice.dataset.trackingMode === "unit";
+    if (quantityInput.readOnly) quantityInput.value = "1";
   }
+
   if (balanceSelect && quantityInput) {
     balanceSelect.addEventListener("change", () => {
       const selected = balanceSelect.selectedOptions[0];
       quantityInput.max = selected && selected.dataset.quantity ? selected.dataset.quantity : "";
     });
   }
-
   if (deviceSearch && deviceSelect) {
     deviceSearch.addEventListener("input", () => {
       const term = deviceSearch.value.trim().toLowerCase();
       deviceSelect.querySelectorAll("option[data-search]").forEach((option) => {
-        option.hidden = term && !option.dataset.search.includes(term);
+        option.hidden = Boolean(term) && !option.dataset.search.includes(term);
       });
       deviceSelect.querySelectorAll("optgroup").forEach((group) => {
-        const hasVisibleOption = Array.from(group.querySelectorAll("option")).some(
-          (option) => !option.hidden
-        );
-        group.hidden = !hasVisibleOption;
+        group.hidden = !Array.from(group.querySelectorAll("option")).some((option) => !option.hidden);
       });
     });
   }
-  if (deviceSelect && unitSelect) {
-    deviceSelect.addEventListener("change", filterUnitsForDevice);
-    filterUnitsForDevice();
+  if (deviceSelect) {
+    deviceSelect.addEventListener("change", filterMovementSources);
+    filterMovementSources();
   }
 </script>
 {% endblock %}

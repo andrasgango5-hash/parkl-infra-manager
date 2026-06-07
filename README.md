@@ -153,7 +153,7 @@ Használat:
 4. A munkalap részletein generáld a `MUNKALAP_<azonosító>.pdf` hivatalos jegyzőkönyvet.
 5. A lezárt vagy régi munkalapokat archiváld; ezek nem törlődnek fizikailag.
 
-Helyi kipróbáláshoz érdemes a `reset-demo-data` paranccsal indulni. A demo két projektet, öt készlethelyet, egy három példányos EV-töltő tételt és egy 50 darabos bulk matrica tételt hoz létre. Egy töltőpéldány és 20 matrica a `PRK-001` projektre van előfoglalva, így a projekt- és raktárnézetek azonnal ellenőrizhetők. A parancs két gazdátlan számlasort is létrehoz.
+Helyi kipróbáláshoz érdemes a `reset-demo-data` paranccsal indulni. A demo két, saját telepítési helyszínadatokkal rendelkező projektet, három logisztikai készlethelyet, egy három példányos EV-töltő tételt és egy 50 darabos bulk matrica tételt hoz létre. Egy töltőpéldány és 20 matrica a `PRK-001` projektre van előfoglalva, így a projekt- és raktárnézetek azonnal ellenőrizhetők. A parancs két gazdátlan számlasort is létrehoz.
 
 A törlés jellegű műveletek alapértelmezés szerint archiválnak. Aktív készlettel, projekthez rendelt példánnyal vagy nem selejtezett állománnyal rendelkező rekord nem archiválható; a felület felsorolja a rendezendő blokkoló tételeket.
 
@@ -178,7 +178,21 @@ A `Device` a termék- vagy beszerzési tétel. Egyedi követésnél a fizikai á
 
 Előfoglalásból csak ugyanarra a projektre indítható kiadás. Másik projekthez történő kiadás előtt a `Foglalás feloldása` auditált készletmozgást kell használni. A mozgások nem módosíthatók és nem törölhetők; hibás mozgás csak külön ellenmozgással vonható vissza. Az állapot pontos visszaállítása érdekében csak az adott példány vagy bulk tétel legutolsó mozgása vonható vissza.
 
+## Projekt és készlethely
+
+A `Project` az ügyfél és a telepítési hely gazdája. A projektben tárolható a helyszín neve, címe, városa, országa, GPS-koordinátája, Google Maps linkje és helyszíni megjegyzése. A kiadott vagy telepített készlet a projekthez tartozik, aktív készlethelye nincs.
+
+A `Location` kizárólag logisztikai készlethely: raktár, szervizautó, szerviz/javítás, beszállító vagy alvállalkozói raktár. Az új sablon alapú import `Projects` lapjának `site_name` és `address` mezői közvetlenül a projektre kerülnek, és nem hoznak létre projekt-helyszín típusú készlethelyet.
+
 Az egyszerű Device export egy sorban tartja a terméktörzset. Ha a tétel példányai vagy bulk egyenlegei több projekt, lokáció vagy státusz között oszlanak meg, az export `MIXED` jelzést ír az érintett mezőbe. Ez szándékosan nem importálható vissza automatikusan: előbb egyértelmű allokációra vagy későbbi, példány-/egyenlegsoros exportformátumra van szükség.
+
+Az új sablonimport készletkövetési mezői:
+
+- `tracking_mode`: `bulk` vagy `unit`; üresen hagyva `bulk`.
+- `unit_generation`: unit követésnél `yes`, bulk követésnél `no`.
+- `unit_code_prefix`: opcionális prefix a generált példányazonosítókhoz.
+
+Bulk importnál egyetlen `INBOUND` mozgás és pontosan a megadott mennyiségű `BulkStockBalance` jön létre. Unit importnál a Device terméktörzs mellé `quantity` darab `DeviceUnit` és példányonként egy bevételezési mozgás készül. A terméktörzs-szintű export nem őrzi meg a már létező példányok egyedi sorozatszámát vagy asset tagjét; ehhez később külön DeviceUnit export/import munkalap szükséges.
 
 PDF dokumentumok projekt oldalról:
 

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import event, inspect
+from sqlalchemy import Numeric, event, inspect
 from sqlalchemy.orm import object_session
 
 from app import db
@@ -158,6 +158,14 @@ class Project(db.Model):
     name = db.Column(db.String(160), nullable=False)
     code = db.Column(db.String(60), unique=True, nullable=False, index=True)
     customer = db.Column(db.String(160), default="", nullable=False)
+    site_name = db.Column(db.String(160), nullable=True)
+    address = db.Column(db.String(255), nullable=True)
+    city = db.Column(db.String(120), nullable=True)
+    country = db.Column(db.String(120), nullable=True)
+    latitude = db.Column(Numeric(9, 6), nullable=True)
+    longitude = db.Column(Numeric(9, 6), nullable=True)
+    google_maps_url = db.Column(db.String(500), nullable=True)
+    site_notes = db.Column(db.Text, nullable=True)
     status = db.Column(db.String(40), default="planned", nullable=False)
     notes = db.Column(db.Text, default="", nullable=False)
     created_at = db.Column(

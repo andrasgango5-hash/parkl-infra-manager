@@ -6,12 +6,12 @@
 <div class="page-header">
   <div>
     <h1>Készlethelyek</h1>
-    <p class="text-secondary mb-0">Raktárak, projekt helyszínek, szervizautók és telepített infrastruktúra helyek.</p>
+    <p class="text-secondary mb-0">Raktárak, szervizautók, szerviz- és partneri tárolóhelyek.</p>
   </div>
 </div>
 
 <div class="help-box">
-  <strong>Készlethelyek és fizikai helyszínek.</strong> Itt hozd létre a raktárakat, szervizautókat és projekt helyszíneket, hogy az eszközmozgásoknál mindig látszódjon, hol van egy tétel.
+  <strong>Logisztikai készlethelyek.</strong> Itt azokat a fizikai helyeket kezeld, ahol készletet tárolunk. A telepítési hely az adott Projekt adatlapján található.
 </div>
 
 <form method="get" class="filter-bar mb-4">
@@ -75,7 +75,7 @@
                 <td colspan="5">
                   <div class="empty-state">
                     <strong>Még nincs készlethely.</strong>
-                    <span>Hozz létre legalább egy raktárat vagy projekt helyszínt az eszközök mozgatásához.</span>
+                    <span>Hozz létre legalább egy raktárat vagy más logisztikai készlethelyet az eszközök mozgatásához.</span>
                     {% if can_write %}<a class="btn btn-purple btn-sm btn-icon" href="{{ url_for('location_new') }}"><i class="bi bi-plus-circle"></i> Készlethely létrehozása</a>{% endif %}
                   </div>
                 </td>

@@ -1,5 +1,6 @@
 from functools import wraps
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from io import BytesIO
 import base64
 import json
@@ -94,11 +95,15 @@ CATEGORY_LABELS = {
 
 LOCATION_TYPE_LABELS = {
     "warehouse": "Raktár",
-    "project_site": "Projekt helyszín",
     "service_vehicle": "Szervizautó",
-    "installed": "Telepített helyszín",
     "service": "Szerviz / javítás",
     "supplier": "Beszállító",
+    "subcontractor_warehouse": "Alvállalkozó raktára",
+}
+LOGISTIC_LOCATION_TYPES = frozenset(LOCATION_TYPE_LABELS)
+LEGACY_LOCATION_TYPE_LABELS = {
+    "project_site": "Projekt helyszín (archív)",
+    "installed": "Telepített helyszín (archív)",
 }
 
 PROJECT_STATUS_LABELS = {
@@ -133,13 +138,29 @@ FREE_STOCK_STATUSES = {"IN_STOCK", "RETURNED"}
 PROJECT_ACTIVE_STATUSES = {"RESERVED", "ISSUED", "INSTALLED"}
 
 TEMPLATE_PROJECT_HEADERS = [
-    "project_code", "project_name", "customer_name", "site_name", "address", "status", "notes"
+    "project_code", "project_name", "customer_name", "site_name", "address",
+    "city", "country", "latitude", "longitude", "google_maps_url",
+    "site_notes", "status", "notes",
 ]
+OPTIONAL_TEMPLATE_PROJECT_HEADERS = {
+    "city",
+    "country",
+    "latitude",
+    "longitude",
+    "google_maps_url",
+    "site_notes",
+}
 TEMPLATE_DEVICE_HEADERS = [
     "project_code", "category", "product_name", "manufacturer", "model", "serial_number",
     "asset_tag", "quantity", "currency", "unit_net_price", "total_net_price", "vat_rate",
-    "unit_gross_price", "total_gross_price", "location_name", "status", "notes",
+    "unit_gross_price", "total_gross_price", "location_name", "status", "tracking_mode",
+    "unit_generation", "unit_code_prefix", "notes",
 ]
+OPTIONAL_TEMPLATE_DEVICE_HEADERS = {
+    "tracking_mode",
+    "unit_generation",
+    "unit_code_prefix",
+}
 TEMPLATE_LOCATION_HEADERS = ["location_name", "location_type", "address", "notes"]
 
 INVENTORY_SHEETS = {
@@ -838,7 +859,10 @@ def create_app(config_class=Config):
         )
         stats = {
             "projects": Project.query.filter(Project.archived_at.is_(None)).count(),
-            "locations": Location.query.filter(Location.archived_at.is_(None)).count(),
+            "locations": Location.query.filter(
+                Location.archived_at.is_(None),
+                Location.location_type.in_(LOGISTIC_LOCATION_TYPES),
+            ).count(),
             "movements": StockMovement.query.count(),
             "in_stock": inventory_status_quantity(active_devices, active_units, "IN_STOCK"),
             "reserved": inventory_status_quantity(active_devices, active_units, "RESERVED"),
@@ -937,7 +961,8 @@ def create_app(config_class=Config):
                     "Sablonimport kész: "
                     f"{result['projects_created']} projekt, "
                     f"{result['locations_created']} készlethely és "
-                    f"{result['devices_created']} eszköz létrehozva.",
+                    f"{result['devices_created']} eszköztétel, "
+                    f"{result['units_created']} egyedi példány létrehozva.",
                     "success",
                 )
                 return redirect(url_for("import_export"))
@@ -1370,6 +1395,9 @@ def create_app(config_class=Config):
                     Project.code.ilike(term),
                     Project.name.ilike(term),
                     Project.customer.ilike(term),
+                    Project.site_name.ilike(term),
+                    Project.address.ilike(term),
+                    Project.city.ilike(term),
                 )
             )
         if selected_status in PROJECT_STATUS_LABELS:
@@ -1392,23 +1420,17 @@ def create_app(config_class=Config):
     @manager_write_required
     def project_new():
         if request.method == "POST":
-            name = request.form.get("name", "").strip()
-            code = request.form.get("code", "").strip()
-            customer = request.form.get("customer", "").strip()
-            status = request.form.get("status", "planned").strip() or "planned"
-            notes = request.form.get("notes", "").strip()
+            project_data, location_error = project_form_data(request.form)
+            name = project_data["name"]
+            code = project_data["code"]
             if not name or not code:
                 flash("A projekt neve és kódja kötelező.", "danger")
+            elif location_error:
+                flash(location_error, "danger")
             elif Project.query.filter_by(code=code).first():
                 flash("Ezzel a kóddal már létezik projekt.", "danger")
             else:
-                project = Project(
-                    name=name,
-                    code=code,
-                    customer=customer,
-                    status=status,
-                    notes=notes,
-                )
+                project = Project(**project_data)
                 db.session.add(project)
                 db.session.commit()
                 flash("A projekt létrejött.", "success")
@@ -1780,10 +1802,13 @@ def create_app(config_class=Config):
     def project_edit(project_id):
         project = Project.query.get_or_404(project_id)
         if request.method == "POST":
-            name = request.form.get("name", "").strip()
-            code = request.form.get("code", "").strip()
+            project_data, location_error = project_form_data(request.form)
+            name = project_data["name"]
+            code = project_data["code"]
             if not name or not code:
                 flash("A projekt neve és kódja kötelező.", "danger")
+            elif location_error:
+                flash(location_error, "danger")
             elif (
                 Project.query.filter(Project.id != project.id)
                 .filter(Project.code == code)
@@ -1791,11 +1816,8 @@ def create_app(config_class=Config):
             ):
                 flash("Ezzel a kóddal már létezik másik projekt.", "danger")
             else:
-                project.name = name
-                project.code = code
-                project.customer = request.form.get("customer", "").strip()
-                project.status = request.form.get("status", "planned").strip()
-                project.notes = request.form.get("notes", "").strip()
+                for field, value in project_data.items():
+                    setattr(project, field, value)
                 db.session.commit()
                 flash("A projekt módosítva.", "success")
                 return redirect(url_for("project_detail", project_id=project.id))
@@ -1825,7 +1847,7 @@ def create_app(config_class=Config):
     @write_required
     def devices():
         projects = Project.query.filter(Project.archived_at.is_(None)).order_by(Project.name.asc()).all()
-        locations = Location.query.filter(Location.archived_at.is_(None)).order_by(Location.name.asc()).all()
+        locations = active_logistic_locations()
         source_sheets = [
             row[0]
             for row in db.session.query(Device.source_sheet)
@@ -2000,59 +2022,152 @@ def create_app(config_class=Config):
     @manager_write_required
     def device_new():
         projects = Project.query.filter(Project.archived_at.is_(None)).order_by(Project.name.asc()).all()
-        locations = Location.query.filter(Location.archived_at.is_(None)).order_by(Location.name.asc()).all()
+        locations = active_logistic_locations()
         if request.method == "POST":
             data = device_form_data(request.form)
+            inventory_kind = request.form.get("inventory_kind", "").strip()
+            initial_state = request.form.get("initial_state", "IN_STOCK").strip()
+            unit_code_prefix = request.form.get("unit_code_prefix", "").strip()
+            data["tracking_mode"] = "unit" if inventory_kind == "unit" else "bulk"
+            data["qr_mode"] = "individual" if inventory_kind == "unit" else "group"
+            data["serial_number"] = ""
+            data["project_id"] = None
+            initial_location_id = data["location_id"]
+            initial_project_id = optional_int(request.form.get("initial_project_id"))
+            if not data["asset_tag"]:
+                data["asset_tag"] = unique_device_asset_tag(
+                    Device,
+                    data["model"] or data["product_name"] or data["device_type"],
+                )
 
-            if not data["asset_tag"] or not data["device_type"]:
-                flash("Az eszközazonosító és a kategória kötelező.", "danger")
+            if inventory_kind not in {"unit", "bulk"}:
+                flash("Válaszd ki, hogy egyedi eszközöket vagy mennyiségi készletet hozol létre.", "danger")
+            elif not data["product_name"] or not data["device_type"]:
+                flash("A termék neve és a kategória kötelező.", "danger")
             elif data["device_type"] not in DEVICE_CATEGORIES:
                 flash("Érvénytelen eszközkategória.", "danger")
             elif data["currency"] and data["currency"] not in DEVICE_CURRENCIES:
                 flash("Érvénytelen deviza. Válassz HUF vagy EUR értéket.", "danger")
-            elif data["qr_mode"] not in DEVICE_QR_MODE_LABELS:
-                flash("Érvénytelen QR mód.", "danger")
-            elif data["tracking_mode"] not in TRACKING_MODES:
-                flash("Érvénytelen követési mód.", "danger")
             elif data["quantity"] is None or data["quantity"] <= 0:
                 flash("Pozitív mennyiség megadása kötelező.", "danger")
-            elif data["tracking_mode"] == "unit" and not float(data["quantity"]).is_integer():
-                flash("Egyedi példánykövetésnél a mennyiség csak egész szám lehet.", "danger")
+            elif inventory_kind == "unit" and not float(data["quantity"]).is_integer():
+                flash("Egyedi eszközöknél a darabszám csak egész szám lehet.", "danger")
             elif not data["location_id"]:
                 flash("A kezdő készlethely megadása kötelező.", "danger")
+            elif initial_state not in {"IN_STOCK", "RESERVED", "ISSUED"}:
+                flash("Érvénytelen kezdő állapot.", "danger")
+            elif initial_state in {"RESERVED", "ISSUED"} and not initial_project_id:
+                flash("Projektfoglaláshoz vagy közvetlen kiadáshoz projekt választása kötelező.", "danger")
             elif Device.query.filter_by(asset_tag=data["asset_tag"]).first():
                 flash("Ezzel az eszközazonosítóval már létezik eszköz.", "danger")
             else:
-                data["project_id"] = None
-                device = Device(**data, status="IN_STOCK")
-                db.session.add(device)
-                db.session.flush()
-                if device.tracking_mode == "bulk":
-                    create_movement(
-                        device=device,
-                        movement_type="INBOUND",
-                        quantity=device.quantity,
-                        to_location_id=device.location_id,
-                        project_id=device.project_id,
-                        notes="Kezdeti mennyiségi tétel rögzítése.",
-                        user_id=session["user_id"],
-                    )
-                    apply_device_state(
-                        device,
-                        "INBOUND",
-                        device.location_id,
-                        device.project_id,
-                        quantity=device.quantity,
-                    )
-                db.session.commit()
-                if device.tracking_mode == "bulk":
-                    flash("Az eszköz létrejött, a készletmozgás rögzítve.", "success")
+                try:
+                    device = Device(**data, status="IN_STOCK")
+                    db.session.add(device)
+                    db.session.flush()
+                    if device.tracking_mode == "unit":
+                        prefix = unit_code_prefix or data["model"] or data["product_name"]
+                        unit_codes = available_unit_codes(
+                            DeviceUnit,
+                            prefix,
+                            1,
+                            int(device.quantity),
+                        )
+                        for unit_code in unit_codes:
+                            unit = DeviceUnit(
+                                device=device,
+                                unit_code=unit_code,
+                                status="IN_STOCK",
+                                location_id=initial_location_id,
+                            )
+                            db.session.add(unit)
+                            db.session.flush()
+                            create_movement(
+                                device=device,
+                                unit=unit,
+                                movement_type="INBOUND",
+                                quantity=1,
+                                to_location_id=initial_location_id,
+                                notes="Új egyedi eszköz kezdő bevételezése.",
+                                user_id=session["user_id"],
+                            )
+                            if initial_state != "IN_STOCK":
+                                create_movement(
+                                    device=device,
+                                    unit=unit,
+                                    movement_type=(
+                                        "RESERVE"
+                                        if initial_state == "RESERVED"
+                                        else "ISSUE"
+                                    ),
+                                    quantity=1,
+                                    from_location_id=unit.location_id,
+                                    project_id=initial_project_id,
+                                    notes="Létrehozáskor választott kezdő projektállapot.",
+                                    user_id=session["user_id"],
+                                )
+                                apply_device_state(
+                                    device,
+                                    "RESERVE" if initial_state == "RESERVED" else "ISSUE",
+                                    None,
+                                    initial_project_id,
+                                    unit=unit,
+                                )
+                    else:
+                        create_movement(
+                            device=device,
+                            movement_type="INBOUND",
+                            quantity=device.quantity,
+                            to_location_id=initial_location_id,
+                            notes="Új mennyiségi készlet kezdő bevételezése.",
+                            user_id=session["user_id"],
+                        )
+                        apply_device_state(
+                            device,
+                            "INBOUND",
+                            initial_location_id,
+                            None,
+                            quantity=device.quantity,
+                        )
+                        if initial_state != "IN_STOCK":
+                            source_balance = infer_bulk_source_balance(
+                                device,
+                                "RESERVE" if initial_state == "RESERVED" else "ISSUE",
+                                device.quantity,
+                            )
+                            movement_type = (
+                                "RESERVE" if initial_state == "RESERVED" else "ISSUE"
+                            )
+                            create_movement(
+                                device=device,
+                                movement_type=movement_type,
+                                quantity=device.quantity,
+                                project_id=initial_project_id,
+                                source_balance=source_balance,
+                                notes="Létrehozáskor választott kezdő projektállapot.",
+                                user_id=session["user_id"],
+                            )
+                            apply_device_state(
+                                device,
+                                movement_type,
+                                None,
+                                initial_project_id,
+                                quantity=device.quantity,
+                                source_balance=source_balance,
+                            )
+                    db.session.commit()
+                except ValueError as error:
+                    db.session.rollback()
+                    flash(str(error), "danger")
                 else:
-                    flash(
-                        "Az egyedi követésű terméktörzs létrejött. Hozd létre a fizikai példányokat a mozgások előtt.",
-                        "success",
-                    )
-                return redirect(url_for("device_detail", device_id=device.id))
+                    if device.tracking_mode == "unit":
+                        flash(
+                            f"Az eszköztétel és {int(device.quantity)} egyedi példány létrejött.",
+                            "success",
+                        )
+                    else:
+                        flash("A mennyiségi készlet és a kezdő mozgások létrejöttek.", "success")
+                    return redirect(url_for("device_detail", device_id=device.id))
         return render_template(
             "device_new.html",
             projects=projects,
@@ -2066,13 +2181,20 @@ def create_app(config_class=Config):
         device = Device.query.get_or_404(device_id)
         bulk_balances = active_bulk_balances(device)
         projects = Project.query.filter(Project.archived_at.is_(None)).order_by(Project.name.asc()).all()
-        locations = Location.query.filter(Location.archived_at.is_(None)).order_by(Location.name.asc()).all()
+        locations = active_logistic_locations()
         units = (
             DeviceUnit.query.filter_by(device_id=device.id)
             .filter(DeviceUnit.archived_at.is_(None))
             .order_by(DeviceUnit.unit_code.asc())
             .all()
         )
+        unit_summary = {
+            "total": len(units),
+            **{
+                status: sum(1 for unit in units if unit.status == status)
+                for status in DEVICE_STATUSES
+            },
+        }
         movements = (
             StockMovement.query.filter_by(device_id=device.id)
             .order_by(StockMovement.created_at.desc())
@@ -2085,6 +2207,7 @@ def create_app(config_class=Config):
             projects=projects,
             locations=locations,
             units=units,
+            unit_summary=unit_summary,
             bulk_balances=bulk_balances,
             archive_blockers=device_archive_blockers(device),
             reversed_movement_ids=reversed_movement_ids(movements),
@@ -2096,7 +2219,7 @@ def create_app(config_class=Config):
     def device_edit(device_id):
         device = Device.query.get_or_404(device_id)
         projects = Project.query.filter(Project.archived_at.is_(None)).order_by(Project.name.asc()).all()
-        locations = Location.query.filter(Location.archived_at.is_(None)).order_by(Location.name.asc()).all()
+        locations = active_logistic_locations()
         if request.method == "POST":
             data = device_form_data(request.form)
             data.pop("project_id", None)
@@ -2181,6 +2304,15 @@ def create_app(config_class=Config):
     def device_units_create(device_id):
         device = Device.query.get_or_404(device_id)
         bulk_balances = active_bulk_balances(device)
+        source_balance = bulk_balances[0] if bulk_balances else None
+        locations = (
+            Location.query.filter(
+                Location.archived_at.is_(None),
+                Location.location_type.in_(LOGISTIC_LOCATION_TYPES),
+            )
+            .order_by(Location.name.asc())
+            .all()
+        )
         if device.tracking_mode == "bulk" and len(bulk_balances) > 1:
             flash(
                 "Több készletegyenlegre bontott bulk tétel csak az egyenlegek összevonása után példányosítható.",
@@ -2209,19 +2341,47 @@ def create_app(config_class=Config):
             if request.form.get("confirm") != "1":
                 flash("A példányok létrehozásához erősítsd meg a műveletet.", "warning")
             else:
+                initial_location_id = optional_int(request.form.get("initial_location_id"))
+                initial_location = (
+                    db.session.get(Location, initial_location_id)
+                    if initial_location_id
+                    else None
+                )
+                if source_balance is None and initial_location is None:
+                    flash(
+                        "Új fizikai példányokhoz kezdő készlethely megadása kötelező.",
+                        "danger",
+                    )
+                    return redirect(url_for("device_units_create", device_id=device.id))
                 device.tracking_mode = "unit"
-                source_balance = bulk_balances[0] if bulk_balances else None
                 for unit_code in generated_codes:
                     unit = DeviceUnit(
                         device=device,
                         unit_code=unit_code,
-                        status=source_balance.status if source_balance else device.status,
-                        location_id=source_balance.location_id if source_balance else device.location_id,
-                        project_id=source_balance.project_id if source_balance else device.project_id,
+                        status=source_balance.status if source_balance else "IN_STOCK",
+                        location_id=(
+                            source_balance.location_id
+                            if source_balance
+                            else initial_location.id
+                        ),
+                        project_id=source_balance.project_id if source_balance else None,
                     )
                     db.session.add(unit)
+                    db.session.flush()
+                    if source_balance is None:
+                        create_movement(
+                            device=device,
+                            unit=unit,
+                            movement_type="INBOUND",
+                            quantity=1,
+                            to_location_id=initial_location.id,
+                            notes="Példány létrehozásakor rögzített kezdő bevételezés.",
+                            user_id=session["user_id"],
+                        )
                 if source_balance is not None:
                     source_balance.quantity = 0
+                device.location_id = None
+                device.project_id = None
                 if device.qr_mode != "individual":
                     device.qr_mode = "individual"
                 db.session.commit()
@@ -2237,6 +2397,8 @@ def create_app(config_class=Config):
             prefix=prefix,
             start_number=start_number,
             generated_codes=generated_codes,
+            source_balance=source_balance,
+            locations=locations,
         )
 
     @app.route("/devices/<int:device_id>/unit-labels.pdf")
@@ -2269,7 +2431,7 @@ def create_app(config_class=Config):
     def device_unit_detail(unit_id):
         unit = DeviceUnit.query.get_or_404(unit_id)
         projects = Project.query.filter(Project.archived_at.is_(None)).order_by(Project.name.asc()).all()
-        locations = Location.query.filter(Location.archived_at.is_(None)).order_by(Location.name.asc()).all()
+        locations = active_logistic_locations()
         movements = (
             StockMovement.query.filter_by(unit_id=unit.id)
             .order_by(StockMovement.created_at.desc())
@@ -2752,7 +2914,10 @@ def create_app(config_class=Config):
     @write_required
     def locations():
         selected_type = request.args.get("location_type", "").strip()
-        location_query = Location.query.filter(Location.archived_at.is_(None))
+        location_query = Location.query.filter(
+            Location.archived_at.is_(None),
+            Location.location_type.in_(LOGISTIC_LOCATION_TYPES),
+        )
         if selected_type in LOCATION_TYPE_LABELS:
             location_query = location_query.filter(Location.location_type == selected_type)
         location_list = location_query.order_by(Location.name.asc()).all()
@@ -2777,6 +2942,8 @@ def create_app(config_class=Config):
             notes = request.form.get("notes", "").strip()
             if not name:
                 flash("A készlethely neve kötelező.", "danger")
+            elif location_type not in LOGISTIC_LOCATION_TYPES:
+                flash("Csak logisztikai készlethelytípus választható.", "danger")
             else:
                 location = Location(
                     name=name,
@@ -2916,11 +3083,14 @@ def create_app(config_class=Config):
         location = Location.query.get_or_404(location_id)
         if request.method == "POST":
             name = request.form.get("name", "").strip()
+            location_type = request.form.get("location_type", "warehouse").strip()
             if not name:
                 flash("A készlethely neve kötelező.", "danger")
+            elif location_type not in LOGISTIC_LOCATION_TYPES:
+                flash("Csak logisztikai készlethelytípus választható.", "danger")
             else:
                 location.name = name
-                location.location_type = request.form.get("location_type", "warehouse").strip()
+                location.location_type = location_type
                 location.address = request.form.get("address", "").strip()
                 location.notes = request.form.get("notes", "").strip()
                 db.session.commit()
@@ -2960,12 +3130,24 @@ def create_app(config_class=Config):
     @app.route("/movements", methods=["GET", "POST"])
     @write_required
     def movements():
+        search = request.args.get("q", "").strip()
+        date_from = optional_date(request.args.get("date_from"))
+        date_to = optional_date(request.args.get("date_to"))
+        selected_device_id = optional_int(request.args.get("device_id"))
+        selected_unit_id = optional_int(request.args.get("unit_id"))
+        selected_project_id = optional_int(request.args.get("project_id"))
+        selected_location_id = optional_int(request.args.get("location_id"))
+        selected_movement_type = request.args.get("movement_type", "").strip()
+        selected_user_id = optional_int(request.args.get("user_id"))
+        group_by = request.args.get("group_by", "").strip()
+        if group_by not in {"", "date", "device", "project"}:
+            group_by = ""
         devices = (
             Device.query.filter(Device.archived_at.is_(None))
             .order_by(Device.device_type.asc(), Device.product_name.asc(), Device.asset_tag.asc())
             .all()
         )
-        locations = Location.query.filter(Location.archived_at.is_(None)).order_by(Location.name.asc()).all()
+        locations = active_logistic_locations()
         projects = Project.query.filter(Project.archived_at.is_(None)).order_by(Project.name.asc()).all()
         units = (
             DeviceUnit.query.filter(DeviceUnit.archived_at.is_(None))
@@ -2981,6 +3163,7 @@ def create_app(config_class=Config):
             .order_by(BulkStockBalance.device_id.asc(), BulkStockBalance.id.asc())
             .all()
         )
+        movement_users = User.query.order_by(User.username.asc()).all()
 
         if request.method == "POST":
             device_id = optional_int(request.form.get("device_id"))
@@ -3050,18 +3233,121 @@ def create_app(config_class=Config):
                     flash("A készletmozgás rögzítve.", "success")
                     return redirect(url_for("movements"))
 
-        movement_list = StockMovement.query.order_by(
-            StockMovement.created_at.desc()
-        ).all()
+        movement_query = StockMovement.query
+        if search:
+            term = f"%{search}%"
+            movement_query = movement_query.filter(
+                or_(
+                    StockMovement.notes.ilike(term),
+                    StockMovement.device.has(
+                        or_(
+                            Device.asset_tag.ilike(term),
+                            Device.product_name.ilike(term),
+                            Device.model.ilike(term),
+                        )
+                    ),
+                    StockMovement.unit.has(
+                        or_(
+                            DeviceUnit.unit_code.ilike(term),
+                            DeviceUnit.asset_tag.ilike(term),
+                            DeviceUnit.serial_number.ilike(term),
+                        )
+                    ),
+                )
+            )
+        if date_from:
+            movement_query = movement_query.filter(
+                StockMovement.created_at >= datetime.combine(
+                    date_from, datetime.min.time(), tzinfo=timezone.utc
+                )
+            )
+        if date_to:
+            movement_query = movement_query.filter(
+                StockMovement.created_at < datetime.combine(
+                    date_to + timedelta(days=1),
+                    datetime.min.time(),
+                    tzinfo=timezone.utc,
+                )
+            )
+        if selected_device_id:
+            movement_query = movement_query.filter(
+                StockMovement.device_id == selected_device_id
+            )
+        if selected_unit_id:
+            movement_query = movement_query.filter(
+                StockMovement.unit_id == selected_unit_id
+            )
+        if selected_project_id:
+            movement_query = movement_query.filter(
+                or_(
+                    StockMovement.project_id == selected_project_id,
+                    StockMovement.from_project_id == selected_project_id,
+                    StockMovement.to_project_id == selected_project_id,
+                )
+            )
+        if selected_location_id:
+            movement_query = movement_query.filter(
+                or_(
+                    StockMovement.from_location_id == selected_location_id,
+                    StockMovement.to_location_id == selected_location_id,
+                )
+            )
+        if selected_movement_type in MOVEMENT_TYPE_LABELS:
+            movement_query = movement_query.filter(
+                StockMovement.movement_type == selected_movement_type
+            )
+        if selected_user_id:
+            movement_query = movement_query.filter(
+                StockMovement.created_by_id == selected_user_id
+            )
+
+        movement_list = movement_query.order_by(StockMovement.created_at.desc()).all()
+        movement_groups = []
+        if group_by:
+            grouped = {}
+            for movement in movement_list:
+                if group_by == "date":
+                    key = movement.created_at.date().isoformat()
+                    label = movement.created_at.strftime("%Y. %m. %d.")
+                elif group_by == "device":
+                    key = movement.device_id
+                    label = device_primary_label(movement.device)
+                else:
+                    project = movement.to_project or movement.from_project or movement.project
+                    key = project.id if project else "none"
+                    label = (
+                        f"{project.code} - {project.name}"
+                        if project
+                        else "Projekt nélküli mozgások"
+                    )
+                grouped.setdefault(key, {"label": label, "movements": []})[
+                    "movements"
+                ].append(movement)
+            movement_groups = list(grouped.values())
+        else:
+            movement_groups = [{"label": None, "movements": movement_list}]
         return render_template(
             "movements.html",
             movements=movement_list,
+            movement_groups=movement_groups,
             devices=devices,
             locations=locations,
             projects=projects,
             units=units,
             bulk_balances=bulk_balances,
+            movement_users=movement_users,
             movement_types=MOVEMENT_TYPES,
+            movement_filter_types=MOVEMENT_TYPE_LABELS,
+            search=search,
+            date_from=date_from,
+            date_to=date_to,
+            selected_device_id=selected_device_id,
+            selected_unit_id=selected_unit_id,
+            selected_project_id=selected_project_id,
+            selected_location_id=selected_location_id,
+            selected_movement_type=selected_movement_type,
+            selected_user_id=selected_user_id,
+            group_by=group_by,
             reversed_movement_ids=reversed_movement_ids(movement_list),
             reversible_movement_ids=reversible_movement_ids(movement_list),
         )
@@ -3153,6 +3439,11 @@ def reset_demo_dataset(
             code="PRK-001",
             name="Arena EV Upgrade",
             customer="Arena",
+            site_name="Arena helyszín",
+            address="Stefánia út 2.",
+            city="Budapest",
+            country="Magyarország",
+            site_notes="Demó telepítési helyszín.",
             status="active",
             notes="Demó EV-töltő bővítési projekt.",
         ),
@@ -3160,6 +3451,11 @@ def reset_demo_dataset(
             code="PRK-002",
             name="Office Park Sorompó projekt",
             customer="Office Park",
+            site_name="Office Park helyszín",
+            address="Váci út 99.",
+            city="Budapest",
+            country="Magyarország",
+            site_notes="Demó sorompótelepítési helyszín.",
             status="active",
             notes="Demó sorompó és beléptetési projekt.",
         ),
@@ -3169,8 +3465,6 @@ def reset_demo_dataset(
     locations = {
         "warehouse": Location(name="Fő raktár", location_type="warehouse"),
         "service_car": Location(name="Szervizautó 1", location_type="service_vehicle"),
-        "arena": Location(name="Arena helyszín", location_type="project_site"),
-        "office": Location(name="Office Park helyszín", location_type="project_site"),
         "service": Location(name="Szerviz / javítás", location_type="service"),
     }
     db.session.add_all(locations.values())
@@ -3361,6 +3655,16 @@ def optional_float(value):
         return None
 
 
+def optional_decimal(value):
+    if value in (None, ""):
+        return None
+    normalized = str(value).strip().replace(" ", "").replace(",", ".")
+    try:
+        return Decimal(normalized)
+    except (InvalidOperation, ValueError):
+        return None
+
+
 def optional_date(value):
     if not value:
         return None
@@ -3368,6 +3672,37 @@ def optional_date(value):
         return date.fromisoformat(value)
     except ValueError:
         return None
+
+
+def project_form_data(form):
+    latitude_raw = form.get("latitude", "").strip()
+    longitude_raw = form.get("longitude", "").strip()
+    latitude = optional_decimal(latitude_raw)
+    longitude = optional_decimal(longitude_raw)
+    error = None
+    if latitude_raw and latitude is None:
+        error = "A latitude értéke nem érvényes szám."
+    elif longitude_raw and longitude is None:
+        error = "A longitude értéke nem érvényes szám."
+    elif latitude is not None and not Decimal("-90") <= latitude <= Decimal("90"):
+        error = "A latitude értékének -90 és 90 között kell lennie."
+    elif longitude is not None and not Decimal("-180") <= longitude <= Decimal("180"):
+        error = "A longitude értékének -180 és 180 között kell lennie."
+    return {
+        "name": form.get("name", "").strip(),
+        "code": form.get("code", "").strip(),
+        "customer": form.get("customer", "").strip(),
+        "site_name": form.get("site_name", "").strip() or None,
+        "address": form.get("address", "").strip() or None,
+        "city": form.get("city", "").strip() or None,
+        "country": form.get("country", "").strip() or None,
+        "latitude": latitude,
+        "longitude": longitude,
+        "google_maps_url": form.get("google_maps_url", "").strip() or None,
+        "site_notes": form.get("site_notes", "").strip() or None,
+        "status": form.get("status", "planned").strip() or "planned",
+        "notes": form.get("notes", "").strip(),
+    }, error
 
 
 def checkbox_value(value):
@@ -3806,17 +4141,17 @@ def device_inventory_export_value(device, field):
     return "MIXED"
 
 
-def available_device_movements(device):
+def available_device_movements(subject):
     transitions = {
         "IN_STOCK": ["RESERVE", "ISSUE", "TRANSFER", "SERVICE", "SCRAP"],
         "RESERVED": ["ISSUE", "RELEASE", "SCRAP"],
-        "ISSUED": ["INSTALL", "RETURN"],
+        "ISSUED": ["INSTALL", "RETURN", "SERVICE"],
         "INSTALLED": ["RETURN", "SERVICE", "SCRAP"],
         "RETURNED": ["INBOUND", "TRANSFER", "ISSUE", "INSTALL"],
         "IN_SERVICE": ["RETURN", "SCRAP"],
         "SCRAPPED": [],
     }
-    return transitions.get(device.status, [])
+    return transitions.get(subject.status, [])
 
 
 def movement_allowed_statuses():
@@ -4041,15 +4376,6 @@ def device_archive_blockers(device):
             f"{format_number(quantity)} aktív készletmennyiség maradt "
             f"{len(active_balances)} egyenlegen. Mozgasd vagy selejtezd a készletet."
         )
-    if (
-        device.tracking_mode == "bulk"
-        and not device.bulk_balances
-        and device.quantity
-        and device.quantity > 0
-    ):
-        blockers.append(
-            f"A régi készletadat szerint {format_number(device.quantity)} darab aktív készlet van."
-        )
     active_units = [
         unit
         for unit in device.units
@@ -4156,6 +4482,19 @@ def default_unit_code_prefix(device):
     return re.sub(r"[^A-Za-z0-9]+", "-", value).strip("-").upper()
 
 
+def unique_device_asset_tag(device_model, value):
+    normalized = unicodedata.normalize("NFKD", value or "ESZKOZ")
+    ascii_value = normalized.encode("ascii", "ignore").decode("ascii")
+    prefix = re.sub(r"[^A-Za-z0-9]+", "-", ascii_value).strip("-").upper()
+    prefix = (prefix or "ESZKOZ")[:60]
+    candidate = prefix
+    number = 1
+    while device_model.query.filter_by(asset_tag=candidate).first():
+        number += 1
+        candidate = f"{prefix[:54]}-{number:03d}"
+    return candidate
+
+
 def available_unit_codes(device_unit_model, prefix, start_number, count):
     clean_prefix = re.sub(r"[^A-Za-z0-9]+", "-", prefix).strip("-").upper() or "UNIT"
     width = max(3, len(str(start_number + count - 1)))
@@ -4197,7 +4536,23 @@ def movement_badge_class(value):
 
 
 def location_type_label(value):
-    return LOCATION_TYPE_LABELS.get(value, value)
+    return LOCATION_TYPE_LABELS.get(
+        value,
+        LEGACY_LOCATION_TYPE_LABELS.get(value, value),
+    )
+
+
+def active_logistic_locations():
+    from models import Location
+
+    return (
+        Location.query.filter(
+            Location.archived_at.is_(None),
+            Location.location_type.in_(LOGISTIC_LOCATION_TYPES),
+        )
+        .order_by(Location.name.asc())
+        .all()
+    )
 
 
 def project_status_label(value):
@@ -4599,6 +4954,35 @@ def build_project_pdf(project, inventory_rows, pdf_type):
     story.append(Paragraph(pdf_escape(titles[pdf_type]), styles["Title"]))
     story.append(Paragraph(pdf_escape(f"{project.code} - {project.name}"), styles["Heading2"]))
     story.append(Paragraph(pdf_escape(f"Ügyfél: {project.customer or '-'}"), styles["Normal"]))
+    site_parts = [
+        project.site_name,
+        project.address,
+        project.city,
+        project.country,
+    ]
+    site_text = ", ".join(str(part) for part in site_parts if part) or "-"
+    story.append(Paragraph(pdf_escape(f"Helyszín: {site_text}"), styles["Normal"]))
+    if project.latitude is not None and project.longitude is not None:
+        story.append(
+            Paragraph(
+                pdf_escape(f"GPS: {project.latitude}, {project.longitude}"),
+                styles["Normal"],
+            )
+        )
+    if project.google_maps_url:
+        story.append(
+            Paragraph(
+                pdf_escape(f"Google Maps: {project.google_maps_url}"),
+                styles["Normal"],
+            )
+        )
+    if project.site_notes:
+        story.append(
+            Paragraph(
+                pdf_escape(f"Helyszín megjegyzés: {project.site_notes}"),
+                styles["Normal"],
+            )
+        )
     story.append(Paragraph(pdf_escape(f"Dátum: {date.today().isoformat()}"), styles["Normal"]))
     story.append(Spacer(1, 0.4 * cm))
 
@@ -5206,11 +5590,30 @@ def build_import_template_workbook():
     projects = workbook.active
     projects.title = "Projects"
     projects.append(TEMPLATE_PROJECT_HEADERS)
-    projects.append(["PRK-100", "Minta EV projekt", "Minta Ügyfél Kft.", "Minta helyszín", "Budapest, Minta utca 1.", "active", "Példasor, import előtt törölhető."])
+    projects.append([
+        "PRK-100",
+        "Minta EV projekt",
+        "Minta Ügyfél Kft.",
+        "Minta helyszín",
+        "Minta utca 1.",
+        "Budapest",
+        "Magyarország",
+        47.4979,
+        19.0402,
+        "https://maps.google.com/?q=47.4979,19.0402",
+        "Bejárat a főkapu felől.",
+        "active",
+        "Példasor, import előtt törölhető.",
+    ])
 
     devices = workbook.create_sheet("Devices")
     devices.append(TEMPLATE_DEVICE_HEADERS)
-    devices.append(["PRK-100", "EV charger", "Schneider EVlink Pro AC", "Schneider", "EVB3S22N4", "", "EV-MINTA-001", 2, "HUF", 250000, 500000, 27, 317500, 635000, "Fő raktár", "IN_STOCK", "Példasor, import előtt törölhető."])
+    devices.append([
+        "PRK-100", "EV charger", "Schneider EVlink Pro AC", "Schneider",
+        "EVB3S22N4", "", "EV-MINTA-001", 2, "HUF", 250000, 500000, 27,
+        317500, 635000, "Fő raktár", "IN_STOCK", "unit", "yes",
+        "EV-MINTA", "Példasor, import előtt törölhető.",
+    ])
 
     locations = workbook.create_sheet("Locations")
     locations.append(TEMPLATE_LOCATION_HEADERS)
@@ -5220,7 +5623,11 @@ def build_import_template_workbook():
     instructions.append(["Parkl Infra Manager import sablon"])
     instructions.append(["A Projects és Devices munkalap használható. A Locations munkalap opcionális."])
     instructions.append(["Kötelező Project mezők: project_code, project_name új projekt esetén."])
+    instructions.append(["A Projects site_name/address/city/country és térképes mezői közvetlenül a projekthez tartoznak; nem hoznak létre készlethelyet."])
     instructions.append(["Kötelező Device mezők: project_code, product_name, quantity, currency."])
+    instructions.append(["tracking_mode: bulk vagy unit. Ha üres, az alapértelmezés bulk."])
+    instructions.append(["unit_generation: unit követésnél yes esetén quantity darab DeviceUnit jön létre."])
+    instructions.append(["unit_code_prefix: opcionális példányazonosító prefix, például EV-MINTA."])
     instructions.append(["Elfogadott deviza: HUF, EUR. Elfogadott Device státuszok: " + ", ".join(sorted(STATUS_LABELS))])
     instructions.append(["Elfogadott projekt státuszok: " + ", ".join(sorted(PROJECT_STATUS_LABELS))])
     instructions.append(["A példa sorokat import előtt töröld vagy írd át."])
@@ -5252,11 +5659,32 @@ def build_data_export_workbook(export_type, Project, Device, Location):
         sheet.title = "Projects"
         sheet.append(TEMPLATE_PROJECT_HEADERS)
         for project in Project.query.filter(Project.archived_at.is_(None)).order_by(Project.code).all():
-            sheet.append([project.code, project.name, project.customer, "", "", project.status, project.notes])
+            sheet.append([
+                project.code,
+                project.name,
+                project.customer,
+                project.site_name,
+                project.address,
+                project.city,
+                project.country,
+                project.latitude,
+                project.longitude,
+                project.google_maps_url,
+                project.site_notes,
+                project.status,
+                project.notes,
+            ])
     elif export_type == "locations":
         sheet.title = "Locations"
         sheet.append(TEMPLATE_LOCATION_HEADERS)
-        for location in Location.query.filter(Location.archived_at.is_(None)).order_by(Location.name).all():
+        for location in (
+            Location.query.filter(
+                Location.archived_at.is_(None),
+                Location.location_type.in_(LOGISTIC_LOCATION_TYPES),
+            )
+            .order_by(Location.name)
+            .all()
+        ):
             sheet.append([location.name, location.location_type, location.address, location.notes])
     else:
         sheet.title = "Devices"
@@ -5279,6 +5707,9 @@ def build_data_export_workbook(export_type, Project, Device, Location):
                 device.total_gross_price,
                 device_inventory_export_value(device, "location"),
                 device_inventory_export_value(device, "status"),
+                device.tracking_mode,
+                "yes" if device.tracking_mode == "unit" else "no",
+                default_unit_code_prefix(device) if device.tracking_mode == "unit" else "",
                 device.subtype_note or "",
             ])
     style_workbook_headers(workbook)
@@ -5298,6 +5729,7 @@ def parse_template_workbook(path, Project, Device, Location):
         "new_project_count": 0,
         "existing_project_count": 0,
         "new_device_count": 0,
+        "new_unit_count": 0,
         "new_location_count": 0,
         "critical_error_count": 0,
     }
@@ -5311,13 +5743,23 @@ def parse_template_workbook(path, Project, Device, Location):
         summary["errors"].append({"sheet": "Devices", "row": "-", "message": "Hiányzik a Devices munkalap."})
 
     existing_projects = {project.code: project for project in Project.query.all()}
-    existing_locations = {location.name.lower(): location for location in Location.query.all()}
+    existing_locations = {
+        location.name.lower(): location
+        for location in Location.query.filter(
+            Location.archived_at.is_(None),
+            Location.location_type.in_(LOGISTIC_LOCATION_TYPES),
+        ).all()
+    }
     existing_asset_tags = {value for (value,) in db.session.query(Device.asset_tag).all() if value}
     existing_serials = {value for (value,) in db.session.query(Device.serial_number).all() if value}
     seen_project_codes, seen_asset_tags, seen_serials, seen_locations = set(), set(), set(), set()
 
     if project_sheet:
-        rows, errors = template_sheet_rows(project_sheet, TEMPLATE_PROJECT_HEADERS)
+        rows, errors = template_sheet_rows(
+            project_sheet,
+            TEMPLATE_PROJECT_HEADERS,
+            optional_headers=OPTIONAL_TEMPLATE_PROJECT_HEADERS,
+        )
         summary["errors"].extend(errors)
         for row_number, row in rows:
             code = clean_string(row.get("project_code"))
@@ -5337,16 +5779,29 @@ def parse_template_workbook(path, Project, Device, Location):
                 add_template_error(summary, "Projects", row_number, f"Ismeretlen projekt státusz: {status}.")
                 continue
             parsed = {key: clean_string(value) for key, value in row.items()}
+            latitude = optional_decimal(row.get("latitude"))
+            longitude = optional_decimal(row.get("longitude"))
+            if meaningful_value(row.get("latitude")) and latitude is None:
+                add_template_error(summary, "Projects", row_number, "Hibás latitude érték.")
+            elif latitude is not None and not Decimal("-90") <= latitude <= Decimal("90"):
+                add_template_error(summary, "Projects", row_number, "A latitude -90 és 90 közötti lehet.")
+            if meaningful_value(row.get("longitude")) and longitude is None:
+                add_template_error(summary, "Projects", row_number, "Hibás longitude érték.")
+            elif longitude is not None and not Decimal("-180") <= longitude <= Decimal("180"):
+                add_template_error(summary, "Projects", row_number, "A longitude -180 és 180 közötti lehet.")
+            if any(
+                error["sheet"] == "Projects" and error["row"] == row_number
+                for error in summary["errors"]
+            ):
+                continue
             parsed.update({"project_code": code, "project_name": name, "status": status})
+            parsed["latitude"] = latitude
+            parsed["longitude"] = longitude
             summary["projects"].append(parsed)
             if code in existing_projects:
                 summary["existing_project_count"] += 1
             else:
                 summary["new_project_count"] += 1
-            site_name = parsed.get("site_name")
-            if site_name and site_name.lower() not in existing_locations and site_name.lower() not in seen_locations:
-                seen_locations.add(site_name.lower())
-                summary["new_location_count"] += 1
 
     project_rows_by_code = {row["project_code"]: row for row in summary["projects"]}
 
@@ -5366,12 +5821,25 @@ def parse_template_workbook(path, Project, Device, Location):
             parsed = {field: clean_string(value) for field, value in row.items()}
             parsed["location_name"] = name
             parsed["location_type"] = parsed.get("location_type") or "warehouse"
+            if parsed["location_type"] not in LOGISTIC_LOCATION_TYPES:
+                add_template_error(
+                    summary,
+                    "Locations",
+                    row_number,
+                    "Ismeretlen vagy nem logisztikai location_type: "
+                    f"{parsed['location_type']}.",
+                )
+                continue
             summary["locations"].append(parsed)
             if key not in existing_locations:
                 summary["new_location_count"] += 1
 
     if device_sheet:
-        rows, errors = template_sheet_rows(device_sheet, TEMPLATE_DEVICE_HEADERS)
+        rows, errors = template_sheet_rows(
+            device_sheet,
+            TEMPLATE_DEVICE_HEADERS,
+            optional_headers=OPTIONAL_TEMPLATE_DEVICE_HEADERS,
+        )
         summary["errors"].extend(errors)
         for row_number, row in rows:
             parsed = parse_template_device_row(
@@ -5381,6 +5849,8 @@ def parse_template_workbook(path, Project, Device, Location):
             if parsed:
                 summary["devices"].append(parsed)
                 summary["new_device_count"] += 1
+                if parsed["tracking_mode"] == "unit":
+                    summary["new_unit_count"] += int(parsed["quantity"])
                 location_name = parsed.get("location_name")
                 if location_name and location_name.lower() not in existing_locations and location_name.lower() not in seen_locations:
                     seen_locations.add(location_name.lower())
@@ -5401,12 +5871,17 @@ def parse_template_workbook(path, Project, Device, Location):
     return summary
 
 
-def template_sheet_rows(sheet, expected_headers):
+def template_sheet_rows(sheet, expected_headers, optional_headers=None):
+    optional_headers = optional_headers or set()
     values = list(sheet.iter_rows(values_only=True))
     if not values:
         return [], [{"sheet": sheet.title, "row": "-", "message": "Üres munkalap."}]
     headers = [clean_string(value) or "" for value in values[0]]
-    missing = [header for header in expected_headers if header not in headers]
+    missing = [
+        header
+        for header in expected_headers
+        if header not in headers and header not in optional_headers
+    ]
     errors = [{"sheet": sheet.title, "row": 1, "message": f"Hiányzó oszlop: {header}."} for header in missing]
     rows = []
     for row_number, values_row in enumerate(values[1:], start=2):
@@ -5420,11 +5895,29 @@ def add_template_error(summary, sheet, row, message):
     summary["errors"].append({"sheet": sheet, "row": row, "message": message})
 
 
+def parse_template_boolean(value):
+    if not meaningful_value(value):
+        return False
+    normalized = clean_string(value)
+    if normalized is None:
+        return False
+    normalized = normalized.lower()
+    if normalized in {"yes", "true", "1", "igen", "i"}:
+        return True
+    if normalized in {"no", "false", "0", "nem", "n"}:
+        return False
+    return None
+
+
 def parse_template_device_row(row_number, row, existing_projects, project_rows_by_code, existing_asset_tags, existing_serials, seen_asset_tags, seen_serials, summary):
+    from models import TRACKING_MODES
+
     project_code = clean_string(row.get("project_code"))
     product_name = clean_string(row.get("product_name"))
     currency = (clean_string(row.get("currency")) or "").upper()
     quantity = number_value(row.get("quantity"))
+    tracking_mode = (clean_string(row.get("tracking_mode")) or "bulk").lower()
+    unit_generation = parse_template_boolean(row.get("unit_generation"))
     if not project_code:
         add_template_error(summary, "Devices", row_number, "Hiányzó project_code.")
     elif project_code not in existing_projects and project_code not in project_rows_by_code:
@@ -5439,6 +5932,42 @@ def parse_template_device_row(row_number, row, existing_projects, project_rows_b
         add_template_error(summary, "Devices", row_number, "Hiányzó currency.")
     elif currency not in DEVICE_CURRENCIES:
         add_template_error(summary, "Devices", row_number, f"Ismeretlen currency érték: {currency}.")
+    if tracking_mode not in TRACKING_MODES:
+        add_template_error(
+            summary,
+            "Devices",
+            row_number,
+            f"Ismeretlen tracking_mode érték: {tracking_mode}.",
+        )
+    if meaningful_value(row.get("unit_generation")) and unit_generation is None:
+        add_template_error(
+            summary,
+            "Devices",
+            row_number,
+            "A unit_generation értéke yes/no, igen/nem vagy true/false lehet.",
+        )
+    if tracking_mode == "unit":
+        if quantity is not None and not float(quantity).is_integer():
+            add_template_error(
+                summary,
+                "Devices",
+                row_number,
+                "Unit követésnél a quantity csak pozitív egész szám lehet.",
+            )
+        if unit_generation is not True:
+            add_template_error(
+                summary,
+                "Devices",
+                row_number,
+                "Unit követésű importnál unit_generation=yes szükséges.",
+            )
+    elif unit_generation is True:
+        add_template_error(
+            summary,
+            "Devices",
+            row_number,
+            "Bulk követésnél nem kérhető unit példánygenerálás.",
+        )
 
     numeric_fields = {}
     for field in ["unit_net_price", "total_net_price", "vat_rate", "unit_gross_price", "total_gross_price"]:
@@ -5500,14 +6029,30 @@ def parse_template_device_row(row_number, row, existing_projects, project_rows_b
         "vat_rate": vat_rate,
         "location_name": clean_string(row.get("location_name")),
         "status": status,
+        "tracking_mode": tracking_mode,
+        "unit_generation": unit_generation is True,
+        "unit_code_prefix": clean_string(row.get("unit_code_prefix")),
         "notes": clean_string(row.get("notes")),
     }
 
 
 def import_template_workbook(summary, Project, Device, Location, user_id):
+    from models import DeviceUnit
+
     projects = {project.code: project for project in Project.query.all()}
-    locations = {location.name.lower(): location for location in Location.query.all()}
-    result = {"projects_created": 0, "locations_created": 0, "devices_created": 0}
+    locations = {
+        location.name.lower(): location
+        for location in Location.query.filter(
+            Location.archived_at.is_(None),
+            Location.location_type.in_(LOGISTIC_LOCATION_TYPES),
+        ).all()
+    }
+    result = {
+        "projects_created": 0,
+        "locations_created": 0,
+        "devices_created": 0,
+        "units_created": 0,
+    }
     for row in summary["projects"]:
         if row["project_code"] in projects:
             continue
@@ -5515,6 +6060,14 @@ def import_template_workbook(summary, Project, Device, Location, user_id):
             code=row["project_code"],
             name=row["project_name"],
             customer=row.get("customer_name") or "",
+            site_name=row.get("site_name") or None,
+            address=row.get("address") or None,
+            city=row.get("city") or None,
+            country=row.get("country") or None,
+            latitude=row.get("latitude"),
+            longitude=row.get("longitude"),
+            google_maps_url=row.get("google_maps_url") or None,
+            site_notes=row.get("site_notes") or None,
             status=row.get("status") or "planned",
             notes=row.get("notes") or "",
         )
@@ -5522,13 +6075,6 @@ def import_template_workbook(summary, Project, Device, Location, user_id):
         db.session.flush()
         projects[project.code] = project
         result["projects_created"] += 1
-        site_name = row.get("site_name")
-        if site_name and site_name.lower() not in locations:
-            location = Location(name=site_name, location_type="project_site", address=row.get("address") or "", notes=f"Projekt: {project.code}")
-            db.session.add(location)
-            db.session.flush()
-            locations[site_name.lower()] = location
-            result["locations_created"] += 1
     for row in summary["locations"]:
         key = row["location_name"].lower()
         if key in locations:
@@ -5572,33 +6118,67 @@ def import_template_workbook(summary, Project, Device, Location, user_id):
             unit_net_price=row.get("unit_net_price"),
             huf_value=row.get("total_net_price") if row.get("currency") == "HUF" else None,
             vat_rate=row.get("vat_rate"),
+            tracking_mode=row.get("tracking_mode") or "bulk",
+            qr_mode="individual" if row.get("tracking_mode") == "unit" else "group",
             status="IN_STOCK",
-            location=location,
+            location=location if row.get("tracking_mode") != "unit" else None,
         )
         db.session.add(device)
         db.session.flush()
-        create_movement(
-            device=device,
-            movement_type="INBOUND",
-            quantity=device.quantity,
-            to_location_id=device.location_id,
-            notes="Sablon alapú import.",
-            user_id=user_id,
-        )
-        apply_device_state(
-            device,
-            "INBOUND",
-            device.location_id,
-            None,
-            quantity=device.quantity,
-        )
-        apply_imported_device_status(
-            device,
-            row.get("status") or "IN_STOCK",
-            user_id,
-            project_id=project.id,
-            stock_location_id=location.id,
-        )
+        if device.tracking_mode == "unit":
+            unit_count = int(device.quantity)
+            prefix = row.get("unit_code_prefix") or default_unit_code_prefix(device)
+            unit_codes = available_unit_codes(DeviceUnit, prefix, 1, unit_count)
+            for unit_code in unit_codes:
+                unit = DeviceUnit(
+                    device=device,
+                    unit_code=unit_code,
+                    status="IN_STOCK",
+                    location_id=location.id,
+                )
+                db.session.add(unit)
+                db.session.flush()
+                create_movement(
+                    device=device,
+                    unit=unit,
+                    movement_type="INBOUND",
+                    quantity=1,
+                    to_location_id=location.id,
+                    notes="Sablon alapú unit import.",
+                    user_id=user_id,
+                )
+                apply_imported_device_status(
+                    device,
+                    row.get("status") or "IN_STOCK",
+                    user_id,
+                    project_id=project.id,
+                    stock_location_id=location.id,
+                    unit=unit,
+                )
+                result["units_created"] += 1
+        else:
+            create_movement(
+                device=device,
+                movement_type="INBOUND",
+                quantity=device.quantity,
+                to_location_id=location.id,
+                notes="Sablon alapú bulk import.",
+                user_id=user_id,
+            )
+            apply_device_state(
+                device,
+                "INBOUND",
+                location.id,
+                None,
+                quantity=device.quantity,
+            )
+            apply_imported_device_status(
+                device,
+                row.get("status") or "IN_STOCK",
+                user_id,
+                project_id=project.id,
+                stock_location_id=location.id,
+            )
         result["devices_created"] += 1
     return result
 
@@ -5609,6 +6189,7 @@ def apply_imported_device_status(
     user_id,
     project_id=None,
     stock_location_id=None,
+    unit=None,
 ):
     movement_path = {
         "IN_STOCK": [],
@@ -5620,6 +6201,13 @@ def apply_imported_device_status(
         "SCRAPPED": ["SCRAP"],
     }
     for movement_type in movement_path.get(target_status, []):
+        source_balance = None
+        if unit is None:
+            source_balance = infer_bulk_source_balance(
+                device,
+                movement_type,
+                device.quantity,
+            )
         target_location_id = (
             stock_location_id
             if movement_type in {"RETURN", "SERVICE", "INBOUND", "TRANSFER"}
@@ -5632,10 +6220,15 @@ def apply_imported_device_status(
         )
         create_movement(
             device=device,
+            unit=unit,
             movement_type=movement_type,
-            from_location_id=device.location_id,
+            quantity=1 if unit is not None else device.quantity,
+            from_location_id=unit.location_id if unit is not None else (
+                source_balance.location_id if source_balance else None
+            ),
             to_location_id=target_location_id,
             project_id=target_project_id,
+            source_balance=source_balance,
             notes="Sablon alapú import státuszbeállítás.",
             user_id=user_id,
         )
@@ -5644,6 +6237,9 @@ def apply_imported_device_status(
             movement_type,
             target_location_id,
             target_project_id,
+            unit=unit,
+            quantity=1 if unit is not None else device.quantity,
+            source_balance=source_balance,
         )
 
 
@@ -6399,6 +6995,11 @@ def validate_movement(
     )
     if to_location_id is not None and target_location is None:
         return "A megadott cél készlethely nem található."
+    if reversal_of_movement_id is None and target_location is not None and (
+        target_location.archived_at is not None
+        or target_location.location_type not in LOGISTIC_LOCATION_TYPES
+    ):
+        return "Készletmozgás célja csak aktív logisztikai készlethely lehet."
     if project_id is not None and db.session.get(Project, project_id) is None:
         return "A megadott projekt nem található."
     if source_balance is None and device.tracking_mode == "bulk" and movement_type == "INBOUND":
@@ -6590,27 +7191,13 @@ def inventory_state_error(status, location_id, project_id):
 
 
 def active_bulk_balances(device):
-    from models import BulkStockBalance
-
     if device.tracking_mode != "bulk":
         return []
-    balances = [
+    return [
         balance
         for balance in device.bulk_balances
         if balance.quantity is not None and balance.quantity > 1e-9
     ]
-    if not balances and device.quantity and device.quantity > 0:
-        balance = BulkStockBalance(
-            device=device,
-            status=device.status,
-            quantity=device.quantity,
-            location_id=device.location_id,
-            project_id=device.project_id,
-        )
-        db.session.add(balance)
-        db.session.flush()
-        balances = [balance]
-    return balances
 
 
 def infer_bulk_source_balance(device, movement_type, quantity=None):
