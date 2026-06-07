@@ -658,14 +658,22 @@ body {
   overflow: hidden;
 }
 
-.workflow-step {
+.inventory-workflow-step {
+  align-items: start;
+  background: transparent;
+  border-radius: 0;
+  color: inherit;
   display: grid;
   gap: 1rem;
-  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-columns: minmax(42px, 42px) minmax(0, 1fr);
+  height: auto;
+  margin: 0;
+  min-height: 0;
   padding: 1.35rem;
+  width: 100%;
 }
 
-.workflow-step + .workflow-step {
+.inventory-workflow-step + .inventory-workflow-step {
   border-top: 1px solid var(--line);
 }
 
@@ -684,7 +692,9 @@ body {
 }
 
 .workflow-step-content {
+  align-self: start;
   min-width: 0;
+  width: 100%;
 }
 
 .workflow-step-content > h2,
@@ -1717,8 +1727,16 @@ tr:hover .table-item-icon {
     grid-template-columns: 1fr;
   }
 
-  .workflow-step {
-    grid-template-columns: 1fr;
+  .inventory-workflow-step {
+    gap: 0.8rem;
+    grid-template-columns: minmax(38px, 38px) minmax(0, 1fr);
+    padding: 1rem;
+  }
+
+  .workflow-step-number {
+    border-radius: 10px;
+    height: 38px;
+    width: 38px;
   }
 
   .inventory-kind-grid,
