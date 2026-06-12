@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}{{ subscription.phone_number or subscription.sim_number }} - M2M{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ subscription.phone_number or subscription.device_number or subscription.sim_number or "M2M SIM" }}</h1>
+    <p class="text-secondary mb-0">{{ subscription.location_name or "Nincs helyszín" }} · {{ subscription.device_identifier or "Nincs eszközazonosító" }}</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2"><a class="btn btn-outline-secondary btn-icon" href="{{ url_for('m2m_subscription_edit', subscription_id=subscription.id) }}"><i class="bi bi-pencil"></i> Szerkesztés</a><a class="btn btn-outline-secondary" href="{{ url_for('m2m_subscriptions') }}">Vissza</a></div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-4"><div class="metric metric-compact"><div class="metric-icon"><i class="bi bi-activity"></i></div><div class="metric-body"><span>Státusz</span><strong class="fs-4">{{ m2m_status_label(subscription.status) }}</strong></div></div></div>
+  <div class="col-md-4"><div class="metric metric-compact"><div class="metric-icon"><i class="bi bi-speedometer2"></i></div><div class="metric-body"><span>Aktuális havi forgalom</span><strong class="fs-4">{{ format_number(current_usage) }} MB</strong></div></div></div>
+  <div class="col-md-4"><div class="metric metric-compact"><div class="metric-icon"><i class="bi bi-box"></i></div><div class="metric-body"><span>Csomag</span><strong class="fs-4">{{ subscription.current_package or "Nincs megadva" }}</strong></div></div></div>
+</div>
+
+<div class="row g-4">
+  <div class="col-xl-7">
+    <section class="data-section mb-4">
+      <div class="section-title"><h2>Havi adatforgalom</h2><span class="status-badge {{ usage_state.class }}">{{ usage_state.label }}</span></div>
+      <div class="p-3"><div class="m2m-chart-wrap"><canvas id="usageChart"></canvas></div></div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle"><thead><tr><th>Hónap</th><th>Adatforgalom</th><th>Forrás</th></tr></thead><tbody>{% for item in usage_history|reverse %}<tr><td>{{ item.year }}-{{ "%02d"|format(item.month) }}</td><td class="fw-semibold">{{ format_number(item.usage_mb) }} MB</td><td>{{ m2m_usage_source_label(item.source) }}</td></tr>{% else %}<tr><td colspan="3"><div class="empty-state"><strong>Még nincs adatforgalmi adat.</strong><span>Rögzíts kézzel, vagy tölts be M2M importot.</span></div></td></tr>{% endfor %}</tbody></table>
+      </div>
+    </section>
+    <section class="data-section mb-4">
+      <div class="section-title"><h2>Csomagváltási történet</h2></div>
+      <div class="table-responsive"><table class="table table-hover align-middle"><thead><tr><th>Csomag</th><th>Havidíj</th><th>Érvényesség</th><th>Megjegyzés</th></tr></thead><tbody>{% for item in subscription.package_history %}<tr><td class="fw-semibold">{{ item.package_name }}</td><td>{{ format_number(item.monthly_fee) }} Ft</td><td>{{ item.valid_from }} – {{ item.valid_to or "jelenleg" }}</td><td>{{ item.notes or "-" }}</td></tr>{% else %}<tr><td colspan="4"><div class="empty-state"><strong>Nincs csomagtörténet.</strong></div></td></tr>{% endfor %}</tbody></table></div>
+    </section>
+  </div>
+  <div class="col-xl-5">
+    <section class="data-section mb-4">
+      <div class="section-title"><h2>Alapadatok</h2></div>
+      <div class="p-3 detail-grid">
+        <div><strong>Előfizető:</strong> {{ subscription.subscriber_name or "-" }}</div>
+        <div><strong>Folyószámlaszám:</strong> {{ subscription.account_number or "-" }}</div>
+        <div><strong>Szerződésszám:</strong> {{ subscription.contract_number or "-" }}</div>
+        <div><strong>Rögzítés:</strong> {{ subscription.registration_date or "-" }}</div>
+        <div><strong>Hívószám:</strong> {{ subscription.phone_number or "-" }}</div>
+        <div><strong>SIM / ICCID:</strong> {{ subscription.sim_number or "-" }}</div>
+        <div><strong>Eszköz szám:</strong> {{ subscription.device_number or "-" }}</div>
+        <div><strong>Eszközazonosító:</strong> {{ subscription.device_identifier or "-" }}</div>
+        <div><strong>Helyszín:</strong> {{ subscription.location_name or "-" }}</div>
+        <div><strong>ERP-eszköz:</strong> {% if subscription.teltonika_device %}<a href="{{ url_for('device_detail', device_id=subscription.teltonika_device.id) }}">{{ device_primary_label(subscription.teltonika_device) }}</a>{% else %}-{% endif %}</div>
+        <div><strong>Díjcsomag:</strong> {{ subscription.tariff_name or "-" }}</div>
+        <div><strong>Havidíj:</strong> {{ format_number(subscription.current_monthly_fee) }} Ft</div>
+        <div><strong>API szinkron:</strong> {{ subscription.last_api_sync_at.strftime("%Y-%m-%d %H:%M") if subscription.last_api_sync_at else "Még nem történt" }}</div>
+        <div><strong>Kapcsolat típusa:</strong> {% if subscription.connection_type == "mobile" %}Mobil{% elif subscription.connection_type == "wired" %}Vezetékes{% else %}Ismeretlen{% endif %}</div>
+        <div><strong>RMS eszköz ID:</strong> {{ subscription.teltonika_rms_device_id or "-" }}</div>
+        <div><strong>RMS név:</strong> {{ subscription.teltonika_rms_name or "-" }}</div>
+        <div><strong>IMEI:</strong> {{ subscription.teltonika_imei or "-" }}</div>
+        <div><strong>Operátor:</strong> {{ subscription.teltonika_operator or "-" }}</div>
+        <div><strong>Utolsó RMS szinkron:</strong> {{ subscription.last_rms_sync_at.strftime("%Y-%m-%d %H:%M") if subscription.last_rms_sync_at else "Még nem történt" }}</div>
+        <div><strong>RMS sent / received raw:</strong> {{ subscription.rms_sent_raw or "-" }} / {{ subscription.rms_received_raw or "-" }}</div>
+      </div>
+      {% if subscription.last_rms_error %}<div class="alert alert-warning mx-3 mb-3">{{ subscription.last_rms_error }}</div>{% endif %}
+      {% if subscription.notes %}<div class="p-3 border-top text-preline">{{ subscription.notes }}</div>{% endif %}
+    </section>
+    <form method="post" action="{{ url_for('m2m_subscription_status', subscription_id=subscription.id) }}" class="form-panel mb-4">
+      <h2>Státusz módosítása</h2>
+      <div class="d-flex gap-2"><select class="form-select" name="status">{% for value, label in statuses.items() %}<option value="{{ value }}" {% if subscription.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select><button class="btn btn-purple" type="submit">Mentés</button></div>
+    </form>
+    <form method="post" action="{{ url_for('m2m_subscription_usage', subscription_id=subscription.id) }}" class="form-panel mb-4">
+      <h2>Havi forgalom rögzítése</h2>
+      <div class="row g-3">
+        <div class="col-4"><label class="form-label">Év</label><input class="form-control" name="year" type="number" value="{{ current_date[:4] }}" required></div>
+        <div class="col-4"><label class="form-label">Hónap</label><input class="form-control" name="month" type="number" min="1" max="12" value="{{ current_date[5:7]|int }}" required></div>
+        <div class="col-4"><label class="form-label">MB</label><input class="form-control" name="usage_mb" type="number" min="0" step="0.01" required></div>
+        <div class="col-12"><label class="form-label">Forrás</label><select class="form-select" name="source">{% for value, label in usage_sources.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+      </div>
+      <button class="btn btn-purple btn-icon mt-3" type="submit"><i class="bi bi-save"></i> Forgalom mentése</button>
+    </form>
+    <form method="post" action="{{ url_for('m2m_subscription_package', subscription_id=subscription.id) }}" class="form-panel">
+      <h2>Csomagváltás rögzítése</h2>
+      <div class="row g-3">
+        <div class="col-12"><label class="form-label">Új csomag</label><input class="form-control" name="package_name" placeholder="például 2 GB" required></div>
+        <div class="col-6"><label class="form-label">Havidíj</label><input class="form-control" name="monthly_fee" type="number" min="0" step="0.01"></div>
+        <div class="col-6"><label class="form-label">Érvényes ettől</label><input class="form-control" name="valid_from" type="date" value="{{ current_date }}" required></div>
+        <div class="col-12"><label class="form-label">Megjegyzés</label><input class="form-control" name="notes"></div>
+      </div>
+      <button class="btn btn-purple btn-icon mt-3" type="submit"><i class="bi bi-arrow-repeat"></i> Csomagváltás mentése</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+  const usageCanvas = document.querySelector("#usageChart");
+  if (usageCanvas) {
+    new Chart(usageCanvas, {
+      type: "line",
+      data: {
+        labels: {{ chart_labels|tojson }},
+        datasets: [{
+          label: "Adatforgalom (MB)",
+          data: {{ chart_values|tojson }},
+          borderColor: "#6d45c4",
+          backgroundColor: "rgba(109, 69, 196, 0.13)",
+          fill: true,
+          tension: 0.3,
+          pointBackgroundColor: "#9f4dff",
+          pointRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, title: { display: true, text: "MB" } } }
+      }
+    });
+  }
+</script>
+{% endblock %}

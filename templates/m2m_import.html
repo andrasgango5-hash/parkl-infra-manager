@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}M2M import - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div><h1>M2M import</h1><p class="text-secondary mb-0">Mobil előfizetések és havi adatforgalmak betöltése CSV vagy Excel fájlból.</p></div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('m2m_subscriptions') }}">Vissza</a>
+</div>
+
+<div class="help-box">
+  A rendszer elsőként SIM-szám, majd hívószám, végül eszközszám alapján keres meglévő előfizetést. A havi forgalmi oszlop neve például <strong>2026-06 forgalom (MB)</strong> lehet.
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-xl-5">
+    <section class="data-section h-100">
+      <div class="section-title"><h2>Import sablon</h2></div>
+      <div class="p-3"><p class="text-secondary">A minta tartalmazza a támogatott magyar oszlopokat és egy havi forgalmi mezőt.</p><a class="btn btn-outline-secondary btn-icon" href="{{ url_for('m2m_import_template') }}"><i class="bi bi-download"></i> Sablon letöltése</a></div>
+    </section>
+  </div>
+  <div class="col-xl-7">
+    <form method="post" enctype="multipart/form-data" class="form-panel h-100">
+      <h2>CSV / XLSX feltöltése</h2>
+      <label class="form-label" for="m2m_file">Adatfájl</label>
+      <input class="form-control" id="m2m_file" name="m2m_file" type="file" accept=".csv,.xlsx" required>
+      <button class="btn btn-purple btn-icon mt-3" type="submit"><i class="bi bi-upload"></i> Importálás</button>
+    </form>
+  </div>
+</div>
+
+{% if result %}
+<section class="data-section">
+  <div class="section-title"><h2>Import eredmény</h2></div>
+  <div class="row g-3 p-3">
+    <div class="col-6 col-lg-3"><div class="metric metric-compact"><span>Új SIM</span><strong>{{ result.created }}</strong></div></div>
+    <div class="col-6 col-lg-3"><div class="metric metric-compact"><span>Frissített SIM</span><strong>{{ result.updated }}</strong></div></div>
+    <div class="col-6 col-lg-3"><div class="metric metric-compact"><span>Forgalmi rekord</span><strong>{{ result.usages }}</strong></div></div>
+    <div class="col-6 col-lg-3"><div class="metric metric-compact"><span>Hiba</span><strong>{{ result.errors|length }}</strong></div></div>
+  </div>
+  {% if result.errors %}<div class="p-3 border-top"><div class="alert alert-warning mb-0"><strong>Kihagyott vagy részben feldolgozott sorok:</strong><ul class="mb-0 mt-2">{% for error in result.errors %}<li>{{ error }}</li>{% endfor %}</ul></div></div>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

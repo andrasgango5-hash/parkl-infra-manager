@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}{{ form_title }} - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div><h1>{{ form_title }}</h1><p class="text-secondary mb-0">Előfizetés, SIM és kapcsolódó eszköz alapadatainak rögzítése.</p></div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('m2m_subscriptions') }}">Mégse</a>
+</div>
+
+<form method="post" class="form-panel">
+  <div class="row g-4">
+    <div class="col-xl-6">
+      <h2>Előfizetés</h2>
+      <div class="row g-3">
+        <div class="col-md-6"><label class="form-label" for="subscriber_name">Előfizető</label><input class="form-control" id="subscriber_name" name="subscriber_name" value="{{ subscription.subscriber_name or '' }}"></div>
+        <div class="col-md-6"><label class="form-label" for="registration_date">Rögzítés dátuma</label><input class="form-control" id="registration_date" name="registration_date" type="date" value="{{ subscription.registration_date or '' }}"></div>
+        <div class="col-md-6"><label class="form-label" for="account_number">Folyószámlaszám</label><input class="form-control" id="account_number" name="account_number" value="{{ subscription.account_number or '' }}"></div>
+        <div class="col-md-6"><label class="form-label" for="contract_number">Szerződésszám</label><input class="form-control" id="contract_number" name="contract_number" value="{{ subscription.contract_number or '' }}"></div>
+        <div class="col-md-6"><label class="form-label" for="phone_number">Hívószám</label><input class="form-control" id="phone_number" name="phone_number" value="{{ subscription.phone_number or '' }}"></div>
+        <div class="col-md-6"><label class="form-label" for="sim_number">SIM / ICCID</label><input class="form-control" id="sim_number" name="sim_number" value="{{ subscription.sim_number or '' }}"></div>
+        <div class="col-md-6"><label class="form-label" for="device_number">Eszköz szám</label><input class="form-control" id="device_number" name="device_number" value="{{ subscription.device_number or '' }}"></div>
+        <div class="col-md-6"><label class="form-label" for="status">Státusz</label><select class="form-select" id="status" name="status">{% for value, label in statuses.items() %}<option value="{{ value }}" {% if subscription.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      </div>
+    </div>
+    <div class="col-xl-6">
+      <h2>Helyszín és eszköz</h2>
+      <div class="row g-3">
+        <div class="col-md-6"><label class="form-label" for="location_name">Helyszín</label><input class="form-control" id="location_name" name="location_name" value="{{ subscription.location_name or '' }}"></div>
+        <div class="col-md-6"><label class="form-label" for="device_identifier">Eszköz azonosító</label><input class="form-control" id="device_identifier" name="device_identifier" value="{{ subscription.device_identifier or '' }}"></div>
+        <div class="col-12"><label class="form-label" for="teltonika_device_id">Kapcsolódó ERP-eszköz</label><select class="form-select" id="teltonika_device_id" name="teltonika_device_id"><option value="">Nincs összekapcsolva</option>{% for device in devices %}<option value="{{ device.id }}" {% if subscription.teltonika_device_id == device.id %}selected{% endif %}>{{ device_primary_label(device) }}</option>{% endfor %}</select></div>
+      </div>
+      <h2 class="mt-4">Díjcsomag</h2>
+      <div class="row g-3">
+        <div class="col-md-6"><label class="form-label" for="tariff_name">Díjcsomag neve</label><input class="form-control" id="tariff_name" name="tariff_name" value="{{ subscription.tariff_name or '' }}"></div>
+        <div class="col-md-6"><label class="form-label" for="current_package">Aktuális csomag / limit</label><input class="form-control" id="current_package" name="current_package" value="{{ subscription.current_package or '' }}" placeholder="például 1 GB"></div>
+        <div class="col-md-6"><label class="form-label" for="current_monthly_fee">Aktuális havidíj</label><input class="form-control" id="current_monthly_fee" name="current_monthly_fee" type="number" min="0" step="0.01" value="{{ subscription.current_monthly_fee if subscription.current_monthly_fee is not none else '' }}"></div>
+        <div class="col-12"><label class="form-label" for="notes">Megjegyzés</label><textarea class="form-control" id="notes" name="notes" rows="4">{{ subscription.notes or '' }}</textarea></div>
+      </div>
+    </div>
+  </div>
+  <div class="mt-4 d-flex gap-2"><button class="btn btn-purple btn-icon" type="submit"><i class="bi bi-save"></i> {{ submit_label }}</button><a class="btn btn-outline-secondary" href="{{ url_for('m2m_subscriptions') }}">Mégse</a></div>
+</form>
+{% endblock %}

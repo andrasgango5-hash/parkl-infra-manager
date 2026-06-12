@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}M2M SIM-ek - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>M2M SIM-ek</h1>
+    <p class="text-secondary mb-0">Mobil előfizetések, SIM-kártyák és havi adatforgalmak áttekintése.</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <form method="post" action="{{ url_for('m2m_rms_sync') }}">
+      <button class="btn btn-outline-secondary btn-icon" type="submit" data-confirm="Elindítod a Teltonika RMS eszköz- és adatforgalom-szinkront?"><i class="bi bi-cloud-arrow-down"></i> RMS szinkron</button>
+    </form>
+    <a class="btn btn-outline-secondary btn-icon" href="{{ url_for('m2m_import') }}"><i class="bi bi-upload"></i> Import</a>
+    <a class="btn btn-purple btn-icon" href="{{ url_for('m2m_subscription_new') }}"><i class="bi bi-plus-circle"></i> Új M2M SIM</a>
+  </div>
+</div>
+
+<div class="help-box">
+  <strong>Az aktuális havi forgalom a csomagnévben szereplő MB/GB limithez viszonyítva jelenik meg.</strong>
+  80%-tól figyelmeztetést, a limit felett piros jelzést kap a SIM. Limit nélküli csomagnévnél a rendszer nem becsül.
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-xl-3"><div class="metric metric-compact"><div class="metric-icon"><i class="bi bi-sim"></i></div><div class="metric-body"><span>Összes SIM</span><strong>{{ summary.total }}</strong></div></div></div>
+  <div class="col-6 col-xl-3"><div class="metric metric-compact"><div class="metric-icon"><i class="bi bi-broadcast-pin"></i></div><div class="metric-body"><span>Aktív</span><strong>{{ summary.active }}</strong></div></div></div>
+  <div class="col-6 col-xl-3"><div class="metric metric-compact"><div class="metric-icon"><i class="bi bi-speedometer"></i></div><div class="metric-body"><span>Limit közelében</span><strong>{{ summary.warning }}</strong></div></div></div>
+  <div class="col-6 col-xl-3"><div class="metric metric-compact"><div class="metric-icon"><i class="bi bi-exclamation-octagon"></i></div><div class="metric-body"><span>Túlforgalmazott</span><strong>{{ summary.exceeded }}</strong></div></div></div>
+</div>
+
+<section class="data-section">
+  <div class="section-title">
+    <h2>Előfizetések</h2>
+    <div class="btn-group btn-group-sm" role="group" aria-label="Megjelenítési mód">
+      <a class="btn {% if selected_view == 'table' %}btn-purple{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('m2m_subscriptions', q=search, status=selected_status, location=selected_location, package=selected_package, usage=selected_usage, view='table') }}"><i class="bi bi-table"></i> Táblázat</a>
+      <a class="btn {% if selected_view == 'cards' %}btn-purple{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('m2m_subscriptions', q=search, status=selected_status, location=selected_location, package=selected_package, usage=selected_usage, view='cards') }}"><i class="bi bi-grid"></i> Kártyák</a>
+    </div>
+  </div>
+
+  <form method="get" class="filter-bar">
+    <input type="hidden" name="view" value="{{ selected_view }}">
+    <div>
+      <label class="form-label" for="q">Keresés</label>
+      <input class="form-control form-control-sm" id="q" name="q" value="{{ search }}" placeholder="SIM, hívószám, helyszín, eszköz">
+    </div>
+    <div>
+      <label class="form-label" for="status">Státusz</label>
+      <select class="form-select form-select-sm" id="status" name="status">
+        <option value="">Minden státusz</option>
+        {% for value, label in statuses.items() %}<option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label" for="location">Helyszín</label>
+      <select class="form-select form-select-sm" id="location" name="location">
+        <option value="">Minden helyszín</option>
+        {% for value in locations %}<option value="{{ value }}" {% if selected_location == value %}selected{% endif %}>{{ value }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label" for="package">Csomag</label>
+      <select class="form-select form-select-sm" id="package" name="package">
+        <option value="">Minden csomag</option>
+        {% for value in packages %}<option value="{{ value }}" {% if selected_package == value %}selected{% endif %}>{{ value }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label" for="usage">Adatforgalom</label>
+      <select class="form-select form-select-sm" id="usage" name="usage">
+        <option value="">Minden szint</option>
+        <option value="normal" {% if selected_usage == "normal" %}selected{% endif %}>Rendben</option>
+        <option value="warning" {% if selected_usage == "warning" %}selected{% endif %}>80% felett</option>
+        <option value="exceeded" {% if selected_usage == "exceeded" %}selected{% endif %}>Túlforgalmazott</option>
+        <option value="unknown" {% if selected_usage == "unknown" %}selected{% endif %}>Nincs limitadat</option>
+      </select>
+    </div>
+    <div class="filter-actions">
+      <button class="btn btn-purple btn-sm btn-icon" type="submit"><i class="bi bi-funnel"></i> Szűrés</button>
+      <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('m2m_subscriptions') }}"><i class="bi bi-arrow-counterclockwise"></i> Alaphelyzet</a>
+    </div>
+  </form>
+
+  {% if selected_view == "cards" %}
+    <div class="m2m-card-grid">
+      {% for row in rows %}
+        {% set item = row.subscription %}
+        <a class="m2m-subscription-card usage-{{ row.usage_state.key }}" href="{{ url_for('m2m_subscription_detail', subscription_id=item.id) }}">
+          <div class="d-flex justify-content-between gap-3">
+            <span class="m2m-card-icon"><i class="bi bi-sim"></i></span>
+            <span class="status-badge {% if item.status == 'active' %}status-in-stock{% elif item.status == 'suspended' %}status-reserved{% else %}status-neutral{% endif %}">{{ m2m_status_label(item.status) }}</span>
+          </div>
+          <div>
+            <h3>{{ item.phone_number or item.device_number or item.sim_number }}</h3>
+            <p>{{ item.location_name or "Nincs helyszín" }} · {{ item.device_identifier or "Nincs eszközazonosító" }}</p>
+          </div>
+          <div class="m2m-usage-line">
+            <strong>{{ format_number(row.current_usage) }} MB</strong>
+            <span>{{ item.current_package or "Nincs csomag" }}</span>
+          </div>
+          {% if row.usage_state.percent is not none %}
+            <div class="progress" role="progressbar" aria-label="Adatforgalom" aria-valuenow="{{ row.usage_state.percent|round }}" aria-valuemin="0" aria-valuemax="100">
+              <div class="progress-bar" style="width: {{ [row.usage_state.percent, 100]|min }}%"></div>
+            </div>
+          {% endif %}
+          <span class="status-badge {{ row.usage_state.class }}">{{ row.usage_state.label }}</span>
+        </a>
+      {% else %}
+        <div class="empty-state m-3"><strong>Nincs a szűrésnek megfelelő M2M SIM.</strong><span>Állítsd vissza a szűrőket, vagy rögzíts új előfizetést.</span></div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead><tr><th>Hívószám / SIM</th><th>Helyszín és eszköz</th><th>Csomag</th><th>Aktuális havi forgalom</th><th>Státusz</th><th></th></tr></thead>
+        <tbody>
+          {% for row in rows %}
+            {% set item = row.subscription %}
+            <tr class="m2m-usage-row usage-{{ row.usage_state.key }}">
+              <td><strong>{{ item.phone_number or "-" }}</strong><div class="small text-secondary">{{ item.sim_number or "Nincs SIM-szám" }}</div></td>
+              <td>{{ item.location_name or "-" }}<div class="small text-secondary">{{ item.device_identifier or item.device_number or "-" }}</div></td>
+              <td>{{ item.current_package or "-" }}<div class="small text-secondary">{{ format_number(item.current_monthly_fee) }} Ft/hó · {{ item.connection_type }}</div></td>
+              <td>
+                <strong>{{ format_number(row.current_usage) }} MB</strong>
+                <div><span class="status-badge {{ row.usage_state.class }}">{{ row.usage_state.label }}</span></div>
+              </td>
+              <td><span class="status-badge {% if item.status == 'active' %}status-in-stock{% elif item.status == 'suspended' %}status-reserved{% else %}status-neutral{% endif %}">{{ m2m_status_label(item.status) }}</span></td>
+              <td><a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('m2m_subscription_detail', subscription_id=item.id) }}"><i class="bi bi-eye"></i> Részletek</a></td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6"><div class="empty-state"><strong>Nincs a szűrésnek megfelelő M2M SIM.</strong><span>Állítsd vissza a szűrőket, vagy rögzíts új előfizetést.</span></div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

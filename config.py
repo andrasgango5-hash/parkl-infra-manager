@@ -23,3 +23,8 @@ class Config:
     SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "false").lower() == "true"
     LOGIN_MAX_FAILED_ATTEMPTS = int(os.environ.get("LOGIN_MAX_FAILED_ATTEMPTS", "5"))
     LOGIN_LOCKOUT_MINUTES = int(os.environ.get("LOGIN_LOCKOUT_MINUTES", "15"))
+    TELTONIKA_RMS_API_TOKEN = os.environ.get("TELTONIKA_RMS_API_TOKEN")
+    TELTONIKA_RMS_API_BASE_URL = os.environ.get(
+        "TELTONIKA_RMS_API_BASE_URL",
+        "https://api.rms.teltonika-networks.com",
+    )

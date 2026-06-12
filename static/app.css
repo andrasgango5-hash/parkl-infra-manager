@@ -1715,6 +1715,101 @@ tr:hover .table-item-icon {
   white-space: pre-line;
 }
 
+.m2m-card-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  padding: 1rem;
+}
+
+.m2m-subscription-card {
+  background: linear-gradient(180deg, #fff, #fbf8ff);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--purple);
+  border-radius: 16px;
+  box-shadow: var(--shadow-soft);
+  color: var(--ink);
+  display: grid;
+  gap: 1rem;
+  min-height: 230px;
+  padding: 1rem;
+  text-decoration: none;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.m2m-subscription-card:hover {
+  border-color: var(--purple);
+  box-shadow: 0 20px 44px rgba(109, 69, 196, 0.18);
+  color: var(--ink);
+  transform: translateY(-2px);
+}
+
+.m2m-subscription-card.usage-warning,
+.m2m-usage-row.usage-warning {
+  box-shadow: inset 4px 0 0 var(--warning);
+}
+
+.m2m-subscription-card.usage-exceeded,
+.m2m-usage-row.usage-exceeded {
+  box-shadow: inset 4px 0 0 var(--danger);
+}
+
+.m2m-card-icon {
+  align-items: center;
+  background: var(--accent-soft);
+  border-radius: 12px;
+  color: var(--purple);
+  display: inline-flex;
+  font-size: 1.5rem;
+  height: 48px;
+  justify-content: center;
+  width: 48px;
+}
+
+.m2m-subscription-card h3 {
+  font-size: 1.05rem;
+  margin: 0 0 0.25rem;
+}
+
+.m2m-subscription-card p,
+.m2m-usage-line span {
+  color: var(--muted);
+  margin: 0;
+}
+
+.m2m-usage-line {
+  align-items: end;
+  display: flex;
+  justify-content: space-between;
+}
+
+.m2m-usage-line strong {
+  color: var(--accent-strong);
+  font-size: 1.35rem;
+}
+
+.m2m-subscription-card .progress {
+  background: #eee7f7;
+  height: 8px;
+}
+
+.m2m-subscription-card .progress-bar {
+  background: linear-gradient(90deg, var(--purple), var(--purple-hot));
+}
+
+.m2m-subscription-card.usage-warning .progress-bar {
+  background: var(--warning);
+}
+
+.m2m-subscription-card.usage-exceeded .progress-bar {
+  background: var(--danger);
+}
+
+.m2m-chart-wrap {
+  height: 320px;
+  position: relative;
+}
+
 @media print {
   .label-page {
     background: #fff;
@@ -1766,7 +1861,8 @@ tr:hover .table-item-icon {
   .inventory-kind-grid,
   .initial-state-options,
   .movement-filter-panel,
-  .clarification-form {
+  .clarification-form,
+  .m2m-card-grid {
     grid-template-columns: 1fr;
   }
 

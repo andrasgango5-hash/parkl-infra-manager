@@ -1,8 +1,9 @@
 from functools import wraps
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
-from io import BytesIO
+from io import BytesIO, StringIO
 import base64
+import csv
 import json
 import os
 import re
@@ -14,6 +15,7 @@ import qrcode
 import reportlab
 from flask import (
     abort,
+    current_app,
     Flask,
     flash,
     jsonify,
@@ -178,6 +180,20 @@ IGNORED_IMPORT_SHEETS = {"workflow", "dashboard", "seged", "onkoltseg", "sheet1"
 UPLOAD_SUBDIR = "uploads"
 DRAWING_UPLOAD_SUBDIR = "drawings"
 WORK_ORDER_UPLOAD_SUBDIR = "work_orders"
+M2M_UPLOAD_SUBDIR = "m2m"
+
+M2M_STATUS_LABELS = {
+    "active": "Aktív",
+    "suspended": "Felfüggesztve",
+    "inactive": "Inaktív",
+    "cancelled": "Megszüntetve",
+}
+
+M2M_USAGE_SOURCE_LABELS = {
+    "manual": "Kézi rögzítés",
+    "import": "Import",
+    "teltonika_api": "Teltonika API",
+}
 ALLOWED_DRAWING_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 ALLOWED_PHOTO_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 
@@ -284,6 +300,9 @@ def create_app(config_class=Config):
         DeviceUnit,
         ImportBatch,
         Location,
+        M2MMonthlyUsage,
+        M2MPackageHistory,
+        M2MSubscription,
         Project,
         ProjectDrawing,
         StockMovement,
@@ -423,6 +442,7 @@ def create_app(config_class=Config):
             "can_export": user_can("admin", "manager"),
             "can_view_finance": user_can("admin", "manager"),
             "can_manage_users": user_can("admin"),
+            "can_manage_m2m": user_can("admin", "manager"),
             "user_role_label": lambda value: USER_ROLE_LABELS.get(value, value or "–"),
             "status_label": status_label,
             "movement_type_label": movement_type_label,
@@ -451,6 +471,10 @@ def create_app(config_class=Config):
             "template_json_rows": template_json_rows,
             "available_device_movements": available_device_movements,
             "current_date": date.today().isoformat(),
+            "m2m_status_label": m2m_status_label,
+            "m2m_usage_source_label": m2m_usage_source_label,
+            "m2m_package_limit_mb": m2m_package_limit_mb,
+            "m2m_usage_state": m2m_usage_state,
         }
 
     def login_required(view):
@@ -505,6 +529,9 @@ def create_app(config_class=Config):
         return role_required("admin", "manager")(view)
 
     def finance_required(view):
+        return role_required("admin", "manager")(view)
+
+    def m2m_required(view):
         return role_required("admin", "manager")(view)
 
     def work_order_write_required(view):
@@ -912,6 +939,473 @@ def create_app(config_class=Config):
             active_devices=active_devices,
             active_units=active_units,
         )
+
+    @app.route("/m2m")
+    @m2m_required
+    def m2m_subscriptions():
+        search = request.args.get("q", "").strip()
+        selected_status = request.args.get("status", "").strip()
+        selected_location = request.args.get("location", "").strip()
+        selected_package = request.args.get("package", "").strip()
+        selected_usage = request.args.get("usage", "").strip()
+        selected_view = request.args.get("view", "table").strip()
+        if selected_view not in {"table", "cards"}:
+            selected_view = "table"
+
+        query = M2MSubscription.query
+        if search:
+            term = f"%{search}%"
+            query = query.filter(
+                or_(
+                    M2MSubscription.subscriber_name.ilike(term),
+                    M2MSubscription.account_number.ilike(term),
+                    M2MSubscription.contract_number.ilike(term),
+                    M2MSubscription.phone_number.ilike(term),
+                    M2MSubscription.device_number.ilike(term),
+                    M2MSubscription.device_identifier.ilike(term),
+                    M2MSubscription.sim_number.ilike(term),
+                    M2MSubscription.location_name.ilike(term),
+                )
+            )
+        if selected_status in M2M_STATUS_LABELS:
+            query = query.filter(M2MSubscription.status == selected_status)
+        if selected_location:
+            query = query.filter(M2MSubscription.location_name == selected_location)
+        if selected_package:
+            query = query.filter(M2MSubscription.current_package == selected_package)
+
+        subscriptions = query.order_by(
+            M2MSubscription.location_name.asc(),
+            M2MSubscription.phone_number.asc(),
+        ).all()
+        rows = []
+        for subscription in subscriptions:
+            current_usage = m2m_current_usage(subscription)
+            state = m2m_subscription_usage_state(subscription, current_usage)
+            if selected_usage and state["key"] != selected_usage:
+                continue
+            rows.append(
+                {
+                    "subscription": subscription,
+                    "current_usage": current_usage,
+                    "usage_state": state,
+                }
+            )
+
+        all_subscriptions = M2MSubscription.query.all()
+        locations = [
+            value[0]
+            for value in db.session.query(M2MSubscription.location_name)
+            .filter(
+                M2MSubscription.location_name.is_not(None),
+                M2MSubscription.location_name != "",
+            )
+            .distinct()
+            .order_by(M2MSubscription.location_name.asc())
+            .all()
+        ]
+        packages = [
+            value[0]
+            for value in db.session.query(M2MSubscription.current_package)
+            .filter(
+                M2MSubscription.current_package.is_not(None),
+                M2MSubscription.current_package != "",
+            )
+            .distinct()
+            .order_by(M2MSubscription.current_package.asc())
+            .all()
+        ]
+        usage_states = [
+            m2m_subscription_usage_state(item, m2m_current_usage(item))["key"]
+            for item in all_subscriptions
+        ]
+        return render_template(
+            "m2m_subscriptions.html",
+            rows=rows,
+            statuses=M2M_STATUS_LABELS,
+            locations=locations,
+            packages=packages,
+            search=search,
+            selected_status=selected_status,
+            selected_location=selected_location,
+            selected_package=selected_package,
+            selected_usage=selected_usage,
+            selected_view=selected_view,
+            summary={
+                "total": len(all_subscriptions),
+                "active": sum(1 for item in all_subscriptions if item.status == "active"),
+                "warning": usage_states.count("warning"),
+                "exceeded": usage_states.count("exceeded"),
+            },
+        )
+
+    @app.route("/m2m/new", methods=["GET", "POST"])
+    @m2m_required
+    def m2m_subscription_new():
+        subscription = M2MSubscription(status="active")
+        if request.method == "POST":
+            error = update_m2m_subscription_from_form(
+                subscription, request.form, Device
+            )
+            if error:
+                flash(error, "danger")
+            else:
+                db.session.add(subscription)
+                db.session.flush()
+                if subscription.current_package:
+                    db.session.add(
+                        M2MPackageHistory(
+                            subscription_id=subscription.id,
+                            package_name=subscription.current_package,
+                            monthly_fee=subscription.current_monthly_fee,
+                            valid_from=subscription.registration_date or date.today(),
+                            notes="Kezdő csomag a SIM létrehozásakor.",
+                        )
+                    )
+                log_audit_event(
+                    "m2m_subscription_created",
+                    user=get_current_user(),
+                    success=True,
+                    details=f"subscription_id={subscription.id}",
+                )
+                db.session.commit()
+                flash("Az M2M SIM előfizetés létrejött.", "success")
+                return redirect(
+                    url_for("m2m_subscription_detail", subscription_id=subscription.id)
+                )
+        return render_template(
+            "m2m_subscription_form.html",
+            subscription=subscription,
+            statuses=M2M_STATUS_LABELS,
+            devices=m2m_teltonika_devices(Device),
+            form_title="Új M2M SIM",
+            submit_label="Előfizetés létrehozása",
+        )
+
+    @app.route("/m2m/<int:subscription_id>")
+    @m2m_required
+    def m2m_subscription_detail(subscription_id):
+        subscription = M2MSubscription.query.get_or_404(subscription_id)
+        usage_history = m2m_effective_usage_history(subscription)
+        current_usage = m2m_current_usage(subscription)
+        return render_template(
+            "m2m_subscription_detail.html",
+            subscription=subscription,
+            statuses=M2M_STATUS_LABELS,
+            usage_sources=M2M_USAGE_SOURCE_LABELS,
+            usage_history=usage_history,
+            current_usage=current_usage,
+            usage_state=m2m_subscription_usage_state(
+                subscription, current_usage
+            ),
+            chart_labels=[
+                f"{item['year']}-{item['month']:02d}" for item in usage_history[-12:]
+            ],
+            chart_values=[
+                float(item["usage_mb"]) for item in usage_history[-12:]
+            ],
+        )
+
+    @app.route("/m2m/<int:subscription_id>/edit", methods=["GET", "POST"])
+    @m2m_required
+    def m2m_subscription_edit(subscription_id):
+        subscription = M2MSubscription.query.get_or_404(subscription_id)
+        if request.method == "POST":
+            error = update_m2m_subscription_from_form(
+                subscription, request.form, Device
+            )
+            if error:
+                flash(error, "danger")
+            else:
+                log_audit_event(
+                    "m2m_subscription_updated",
+                    user=get_current_user(),
+                    success=True,
+                    details=f"subscription_id={subscription.id}",
+                )
+                db.session.commit()
+                flash("Az M2M előfizetés adatai frissültek.", "success")
+                return redirect(
+                    url_for("m2m_subscription_detail", subscription_id=subscription.id)
+                )
+        return render_template(
+            "m2m_subscription_form.html",
+            subscription=subscription,
+            statuses=M2M_STATUS_LABELS,
+            devices=m2m_teltonika_devices(Device),
+            form_title="M2M SIM szerkesztése",
+            submit_label="Módosítások mentése",
+        )
+
+    @app.route("/m2m/<int:subscription_id>/status", methods=["POST"])
+    @m2m_required
+    def m2m_subscription_status(subscription_id):
+        subscription = M2MSubscription.query.get_or_404(subscription_id)
+        status = request.form.get("status", "").strip()
+        if status not in M2M_STATUS_LABELS:
+            flash("Érvénytelen M2M státusz.", "danger")
+        else:
+            subscription.status = status
+            log_audit_event(
+                "m2m_status_changed",
+                user=get_current_user(),
+                success=True,
+                details=f"subscription_id={subscription.id};status={status}",
+            )
+            db.session.commit()
+            flash("Az előfizetés státusza frissült.", "success")
+        return redirect(
+            url_for("m2m_subscription_detail", subscription_id=subscription.id)
+        )
+
+    @app.route("/m2m/<int:subscription_id>/usage", methods=["POST"])
+    @m2m_required
+    def m2m_subscription_usage(subscription_id):
+        subscription = M2MSubscription.query.get_or_404(subscription_id)
+        year = optional_int(request.form.get("year"))
+        month = optional_int(request.form.get("month"))
+        usage_mb = optional_decimal(request.form.get("usage_mb"))
+        source = request.form.get("source", "manual").strip()
+        if not year or not 2000 <= year <= 2200:
+            flash("Az év értéke nem érvényes.", "danger")
+        elif not month or not 1 <= month <= 12:
+            flash("A hónap értéke nem érvényes.", "danger")
+        elif usage_mb is None or usage_mb < 0:
+            flash("Az adatforgalom nem lehet üres vagy negatív.", "danger")
+        elif source not in M2M_USAGE_SOURCE_LABELS:
+            flash("Érvénytelen adatforrás.", "danger")
+        else:
+            usage = M2MMonthlyUsage.query.filter_by(
+                subscription_id=subscription.id,
+                year=year,
+                month=month,
+                source=source,
+            ).first()
+            if usage is None:
+                usage = M2MMonthlyUsage(
+                    subscription_id=subscription.id,
+                    year=year,
+                    month=month,
+                    source=source,
+                )
+                db.session.add(usage)
+            usage.usage_mb = usage_mb
+            log_audit_event(
+                "m2m_usage_saved",
+                user=get_current_user(),
+                success=True,
+                details=(
+                    f"subscription_id={subscription.id};"
+                    f"period={year}-{month:02d};source={source}"
+                ),
+            )
+            db.session.commit()
+            flash("A havi adatforgalom mentve.", "success")
+        return redirect(
+            url_for("m2m_subscription_detail", subscription_id=subscription.id)
+        )
+
+    @app.route("/m2m/<int:subscription_id>/package", methods=["POST"])
+    @m2m_required
+    def m2m_subscription_package(subscription_id):
+        subscription = M2MSubscription.query.get_or_404(subscription_id)
+        package_name = request.form.get("package_name", "").strip()
+        monthly_fee = optional_decimal(request.form.get("monthly_fee"))
+        valid_from = optional_date(request.form.get("valid_from"))
+        if not package_name:
+            flash("A csomag neve kötelező.", "danger")
+        elif not valid_from:
+            flash("Az érvényesség kezdete kötelező.", "danger")
+        elif monthly_fee is not None and monthly_fee < 0:
+            flash("A havidíj nem lehet negatív.", "danger")
+        else:
+            active_history = (
+                M2MPackageHistory.query.filter_by(
+                    subscription_id=subscription.id, valid_to=None
+                )
+                .order_by(M2MPackageHistory.valid_from.desc())
+                .first()
+            )
+            if active_history and active_history.valid_from < valid_from:
+                active_history.valid_to = valid_from - timedelta(days=1)
+            history = M2MPackageHistory(
+                subscription_id=subscription.id,
+                package_name=package_name,
+                monthly_fee=monthly_fee,
+                valid_from=valid_from,
+                notes=request.form.get("notes", "").strip() or None,
+            )
+            subscription.current_package = package_name
+            subscription.current_monthly_fee = monthly_fee
+            db.session.add(history)
+            log_audit_event(
+                "m2m_package_changed",
+                user=get_current_user(),
+                success=True,
+                details=f"subscription_id={subscription.id};package={package_name}",
+            )
+            db.session.commit()
+            flash("A csomagváltás rögzítve.", "success")
+        return redirect(
+            url_for("m2m_subscription_detail", subscription_id=subscription.id)
+        )
+
+    @app.route("/m2m/import", methods=["GET", "POST"])
+    @m2m_required
+    def m2m_import():
+        result = None
+        if request.method == "POST":
+            upload = request.files.get("m2m_file")
+            if not upload or not upload.filename:
+                flash("Válassz CSV vagy XLSX fájlt.", "danger")
+            elif not upload.filename.lower().endswith((".csv", ".xlsx")):
+                flash("Csak .csv vagy .xlsx fájl tölthető fel.", "danger")
+            else:
+                upload_dir = os.path.join(app.instance_path, M2M_UPLOAD_SUBDIR)
+                os.makedirs(upload_dir, exist_ok=True)
+                safe_name = secure_filename(upload.filename)
+                upload_path = os.path.join(
+                    upload_dir, f"m2m_{uuid4().hex}_{safe_name}"
+                )
+                upload.save(upload_path)
+                try:
+                    parsed_rows = parse_m2m_import_file(upload_path)
+                    result = import_m2m_rows(
+                        parsed_rows,
+                        M2MSubscription,
+                        M2MMonthlyUsage,
+                        M2MPackageHistory,
+                        Device,
+                    )
+                    log_audit_event(
+                        "m2m_import",
+                        user=get_current_user(),
+                        success=not result["errors"],
+                        details=(
+                            f"filename={safe_name};created={result['created']};"
+                            f"updated={result['updated']};usages={result['usages']};"
+                            f"errors={len(result['errors'])}"
+                        ),
+                    )
+                    db.session.commit()
+                    flash(
+                        "M2M import kész: "
+                        f"{result['created']} új, {result['updated']} frissített SIM, "
+                        f"{result['usages']} havi forgalmi rekord.",
+                        "success" if not result["errors"] else "warning",
+                    )
+                except (ValueError, OSError) as exc:
+                    db.session.rollback()
+                    flash(f"Az M2M import nem sikerült: {exc}", "danger")
+                finally:
+                    if os.path.exists(upload_path):
+                        os.remove(upload_path)
+        return render_template("m2m_import.html", result=result)
+
+    @app.route("/m2m/import/template")
+    @m2m_required
+    def m2m_import_template():
+        return send_file(
+            build_m2m_import_template(),
+            mimetype=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
+            as_attachment=True,
+            download_name="Parkl_M2M_import_sablon.xlsx",
+        )
+
+    @app.route("/m2m/rms-sync", methods=["POST"])
+    @m2m_required
+    def m2m_rms_sync():
+        from services.teltonika_rms import (
+            TeltonikaRMSError,
+            list_rms_devices,
+            sync_rms_devices_to_m2m,
+            sync_rms_usage_to_m2m,
+        )
+
+        try:
+            raw_devices = list_rms_devices()
+            device_result = sync_rms_devices_to_m2m(raw_devices)
+            usage_result = sync_rms_usage_to_m2m(raw_devices)
+            log_audit_event(
+                "m2m_rms_sync",
+                user=get_current_user(),
+                success=True,
+                details=(
+                    f"devices={device_result['rms_devices']};"
+                    f"linked={device_result['linked_by_iccid']};"
+                    f"mobile={device_result['mobile_updated']};"
+                    f"skipped={device_result['skipped_wired_unknown']};"
+                    f"usage_requested={usage_result['usage_requested']};"
+                    f"usage_chunks={usage_result['usage_chunk_requests']};"
+                    f"usage_daily={usage_result['usage_daily_records']};"
+                    f"usage_created={usage_result['usage_created']};"
+                    f"usage_updated={usage_result['usage_updated']};"
+                    f"errors={device_result['errors'] + usage_result['errors']}"
+                ),
+            )
+            db.session.commit()
+            scope_warning = (
+                " Valószínűleg hiányzik a "
+                "company_device_statistics:read RMS scope."
+                if usage_result["scope_errors"]
+                else ""
+            )
+            flash(
+                "RMS szinkron kész: "
+                f"{device_result['rms_devices']} RMS eszköz, "
+                f"{device_result['linked_by_iccid']} ICCID kapcsolat, "
+                f"{device_result['mobile_updated']} mobile frissítés, "
+                f"{device_result['skipped_wired_unknown']} wired/unknown kihagyva, "
+                f"{device_result['errors'] + usage_result['errors']} hibás rekord. "
+                f"Havi data usage lekérés: {usage_result['usage_requested']} SIM, "
+                f"{usage_result['usage_chunk_requests']} chunk, "
+                f"{usage_result['usage_daily_records']} napi rekord, "
+                f"{format_number(usage_result['usage_total_mb'])} MB összesen, "
+                f"{usage_result['usage_created']} új, "
+                f"{usage_result['usage_updated']} frissített, "
+                f"{usage_result['usage_no_data']} adat nélkül, "
+                f"{usage_result['errors']} hibás."
+                f"{scope_warning}",
+                "warning" if usage_result["errors"] else "success",
+            )
+        except TeltonikaRMSError as exc:
+            db.session.rollback()
+            current_app.logger.exception(
+                "A Teltonika RMS szinkron ismert RMS hibával leállt. "
+                "exception_type=%s",
+                type(exc).__name__,
+            )
+            log_audit_event(
+                "m2m_rms_sync",
+                user=get_current_user(),
+                success=False,
+                details=exc.__class__.__name__,
+            )
+            db.session.commit()
+            flash(f"Az RMS szinkron nem sikerült: {exc}", "danger")
+        except Exception as exc:
+            db.session.rollback()
+            current_app.logger.exception(
+                "A Teltonika RMS szinkron váratlan hibával leállt. "
+                "exception_type=%s",
+                type(exc).__name__,
+            )
+            log_audit_event(
+                "m2m_rms_sync",
+                user=get_current_user(),
+                success=False,
+                details="UnexpectedError",
+            )
+            db.session.commit()
+            flash(
+                "Az RMS szinkron váratlan hiba miatt nem sikerült. "
+                "A részletek a szerver naplójában láthatók.",
+                "danger",
+            )
+        return redirect(url_for("m2m_subscriptions"))
 
     @app.route("/drawings")
     @login_required
@@ -3793,6 +4287,320 @@ def optional_date(value):
         return None
 
 
+def m2m_teltonika_devices(Device):
+    return (
+        Device.query.filter(Device.archived_at.is_(None))
+        .order_by(Device.product_name.asc(), Device.asset_tag.asc())
+        .all()
+    )
+
+
+def update_m2m_subscription_from_form(subscription, form, Device):
+    status = form.get("status", "active").strip()
+    if status not in M2M_STATUS_LABELS:
+        return "Érvénytelen előfizetés-státusz."
+    phone_number = form.get("phone_number", "").strip() or None
+    sim_number = form.get("sim_number", "").strip() or None
+    device_number = form.get("device_number", "").strip() or None
+    if not any((phone_number, sim_number, device_number)):
+        return "Legalább a hívószám, a SIM-szám vagy az eszközszám megadása kötelező."
+    teltonika_device_id = optional_int(form.get("teltonika_device_id"))
+    if teltonika_device_id and db.session.get(Device, teltonika_device_id) is None:
+        return "A kiválasztott ERP-eszköz nem található."
+    monthly_fee = optional_decimal(form.get("current_monthly_fee"))
+    if monthly_fee is not None and monthly_fee < 0:
+        return "A havidíj nem lehet negatív."
+
+    subscription.subscriber_name = form.get("subscriber_name", "").strip() or None
+    subscription.account_number = form.get("account_number", "").strip() or None
+    subscription.contract_number = form.get("contract_number", "").strip() or None
+    subscription.registration_date = optional_date(form.get("registration_date"))
+    subscription.phone_number = phone_number
+    subscription.device_number = device_number
+    subscription.location_name = form.get("location_name", "").strip() or None
+    subscription.device_identifier = (
+        form.get("device_identifier", "").strip() or None
+    )
+    subscription.sim_number = sim_number
+    subscription.tariff_name = form.get("tariff_name", "").strip() or None
+    subscription.current_package = form.get("current_package", "").strip() or None
+    subscription.current_monthly_fee = monthly_fee
+    subscription.status = status
+    subscription.notes = form.get("notes", "").strip() or None
+    subscription.teltonika_device_id = teltonika_device_id
+    return None
+
+
+M2M_IMPORT_ALIASES = {
+    "subscriber_name": ("elofizeto", "subscriber name"),
+    "account_number": ("folyoszamlaszam", "account number"),
+    "contract_number": ("szerzodesszam", "contract number"),
+    "registration_date": ("rogzites datuma", "registration date"),
+    "phone_number": ("hivoszam", "telefonszam", "phone number"),
+    "device_number": ("eszkoz szam", "device number"),
+    "location_name": ("helyszin", "location"),
+    "device_identifier": ("eszkoz azonosito", "device identifier"),
+    "sim_number": ("sim", "sim szam", "sim number", "iccid"),
+    "tariff_name": ("dijcsomag", "tariff name"),
+    "current_package": ("csomag", "aktualis csomag", "current package"),
+    "current_monthly_fee": ("havidij", "aktualis havidij", "monthly fee"),
+    "status": ("statusz", "status"),
+    "notes": ("megjegyzes", "notes"),
+}
+
+
+def parse_m2m_import_file(path):
+    if path.lower().endswith(".xlsx"):
+        workbook = load_workbook(path, read_only=True, data_only=True)
+        sheet = workbook.active
+        values = list(sheet.iter_rows(values_only=True))
+        workbook.close()
+        if not values:
+            return []
+        headers = [clean_string(value) or "" for value in values[0]]
+        return [
+            {
+                "row_number": row_number,
+                "values": {
+                    headers[index]: value
+                    for index, value in enumerate(row)
+                    if index < len(headers) and headers[index]
+                },
+            }
+            for row_number, row in enumerate(values[1:], start=2)
+            if any(value not in (None, "") for value in row)
+        ]
+
+    with open(path, "rb") as source:
+        raw = source.read()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("cp1250")
+    sample = text[:4096]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=";,\\t")
+        reader = csv.DictReader(StringIO(text), dialect=dialect)
+    except csv.Error:
+        reader = csv.DictReader(StringIO(text), delimiter=";")
+    if not reader.fieldnames:
+        return []
+    return [
+        {"row_number": row_number, "values": dict(row)}
+        for row_number, row in enumerate(reader, start=2)
+        if any(value not in (None, "") for value in row.values())
+    ]
+
+
+def m2m_import_value(values, field):
+    normalized_values = {
+        normalize_key(header): value for header, value in values.items()
+    }
+    for alias in M2M_IMPORT_ALIASES[field]:
+        value = normalized_values.get(normalize_key(alias))
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def parse_m2m_period_header(header):
+    normalized = normalize_key(header)
+    match = re.search(r"\b(20\d{2})\s+(0?[1-9]|1[0-2])\b", normalized)
+    if not match:
+        return None
+    if not any(token in normalized for token in ("forgalom", "usage", "mb")):
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
+def parse_m2m_status(value):
+    normalized = normalize_key(value)
+    mapping = {
+        "aktiv": "active",
+        "active": "active",
+        "felfuggesztve": "suspended",
+        "suspended": "suspended",
+        "inaktiv": "inactive",
+        "inactive": "inactive",
+        "megszuntetve": "cancelled",
+        "cancelled": "cancelled",
+        "torolt": "cancelled",
+    }
+    return mapping.get(normalized, "active" if not normalized else None)
+
+
+def import_m2m_rows(
+    rows,
+    M2MSubscription,
+    M2MMonthlyUsage,
+    M2MPackageHistory,
+    Device,
+):
+    result = {"created": 0, "updated": 0, "usages": 0, "errors": []}
+    for raw_row in rows:
+        values = raw_row["values"]
+        row_number = raw_row["row_number"]
+        sim_number = clean_string(m2m_import_value(values, "sim_number"))
+        phone_number = clean_string(m2m_import_value(values, "phone_number"))
+        device_number = clean_string(m2m_import_value(values, "device_number"))
+        if not any((sim_number, phone_number, device_number)):
+            result["errors"].append(
+                f"{row_number}. sor: hiányzik a SIM, hívószám és eszközszám."
+            )
+            continue
+
+        subscription = None
+        if sim_number:
+            subscription = M2MSubscription.query.filter_by(
+                sim_number=sim_number
+            ).first()
+        if subscription is None and phone_number:
+            subscription = M2MSubscription.query.filter_by(
+                phone_number=phone_number
+            ).first()
+        if subscription is None and device_number:
+            subscription = M2MSubscription.query.filter_by(
+                device_number=device_number
+            ).first()
+        created = subscription is None
+        if created:
+            subscription = M2MSubscription(status="active")
+            db.session.add(subscription)
+
+        status = parse_m2m_status(m2m_import_value(values, "status"))
+        if status is None:
+            result["errors"].append(
+                f"{row_number}. sor: ismeretlen státusz."
+            )
+            if created:
+                db.session.expunge(subscription)
+            continue
+
+        field_values = {
+            "subscriber_name": clean_string(m2m_import_value(values, "subscriber_name")),
+            "account_number": clean_string(m2m_import_value(values, "account_number")),
+            "contract_number": clean_string(m2m_import_value(values, "contract_number")),
+            "registration_date": date_value(m2m_import_value(values, "registration_date")),
+            "phone_number": phone_number,
+            "device_number": device_number,
+            "location_name": clean_string(m2m_import_value(values, "location_name")),
+            "device_identifier": clean_string(m2m_import_value(values, "device_identifier")),
+            "sim_number": sim_number,
+            "tariff_name": clean_string(m2m_import_value(values, "tariff_name")),
+            "current_package": clean_string(m2m_import_value(values, "current_package")),
+            "current_monthly_fee": optional_decimal(
+                m2m_import_value(values, "current_monthly_fee")
+            ),
+            "status": status,
+            "notes": clean_string(m2m_import_value(values, "notes")),
+        }
+        for field, value in field_values.items():
+            if value is not None or field == "status":
+                setattr(subscription, field, value)
+        db.session.flush()
+
+        if created:
+            result["created"] += 1
+            if subscription.current_package:
+                db.session.add(
+                    M2MPackageHistory(
+                        subscription_id=subscription.id,
+                        package_name=subscription.current_package,
+                        monthly_fee=subscription.current_monthly_fee,
+                        valid_from=subscription.registration_date or date.today(),
+                        notes="Importált kezdő csomag.",
+                    )
+                )
+        else:
+            result["updated"] += 1
+
+        for header, raw_usage in values.items():
+            period = parse_m2m_period_header(header)
+            if period is None or raw_usage in (None, ""):
+                continue
+            usage_mb = optional_decimal(raw_usage)
+            if usage_mb is None or usage_mb < 0:
+                result["errors"].append(
+                    f"{row_number}. sor: hibás havi forgalom ({header})."
+                )
+                continue
+            year, month = period
+            usage = M2MMonthlyUsage.query.filter_by(
+                subscription_id=subscription.id,
+                year=year,
+                month=month,
+                source="import",
+            ).first()
+            if usage is None:
+                usage = M2MMonthlyUsage(
+                    subscription_id=subscription.id,
+                    year=year,
+                    month=month,
+                    source="import",
+                )
+                db.session.add(usage)
+            usage.usage_mb = usage_mb
+            result["usages"] += 1
+    return result
+
+
+def build_m2m_import_template():
+    from openpyxl.styles import Font, PatternFill
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "M2M SIM-ek"
+    headers = [
+        "Előfizető",
+        "Folyószámlaszám",
+        "Szerződésszám",
+        "Rögzítés dátuma",
+        "Hívószám",
+        "Eszköz szám",
+        "Helyszín",
+        "Eszköz azonosító",
+        "SIM",
+        "Díjcsomag",
+        "Csomag",
+        "Havidíj",
+        "Státusz",
+        "Megjegyzés",
+        f"{date.today().year}-{date.today().month:02d} forgalom (MB)",
+    ]
+    sheet.append(headers)
+    sheet.append(
+        [
+            "Parkl Digital Technologies Kft.",
+            "12345678",
+            "M2M-2026-001",
+            date.today(),
+            "+36301234567",
+            "DEV-001",
+            "Arena helyszín",
+            "RUT241-001",
+            "8944100000000000001",
+            "M2M adat",
+            "1 GB",
+            1990,
+            "Aktív",
+            "Minta sor, import előtt törölhető.",
+            420,
+        ]
+    )
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = f"A1:{sheet.cell(1, len(headers)).column_letter}2"
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(fill_type="solid", fgColor="6D45C4")
+    widths = [28, 18, 18, 18, 18, 16, 24, 22, 24, 18, 16, 14, 16, 34, 24]
+    for index, width in enumerate(widths, start=1):
+        sheet.column_dimensions[sheet.cell(1, index).column_letter].width = width
+    buffer = BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+
 def project_form_data(form):
     latitude_raw = form.get("latitude", "").strip()
     longitude_raw = form.get("longitude", "").strip()
@@ -4680,6 +5488,112 @@ def project_status_label(value):
 
 def assignment_status_label(value):
     return ASSIGNMENT_STATUS_LABELS.get(value, value)
+
+
+def m2m_status_label(value):
+    return M2M_STATUS_LABELS.get(value, value or "–")
+
+
+def m2m_usage_source_label(value):
+    return M2M_USAGE_SOURCE_LABELS.get(value, value or "–")
+
+
+def m2m_package_limit_mb(package_name):
+    if not package_name:
+        return None
+    text = str(package_name).lower().replace(",", ".")
+    if "korlátlan" in text or "unlimited" in text:
+        return None
+    matches = re.findall(r"(\d+(?:\.\d+)?)\s*(tb|gb|mb)\b", text)
+    if not matches:
+        return None
+    value, unit = matches[-1]
+    multiplier = {"mb": Decimal("1"), "gb": Decimal("1024"), "tb": Decimal("1048576")}
+    return Decimal(value) * multiplier[unit]
+
+
+def m2m_usage_state(package_name, usage_mb):
+    limit_mb = m2m_package_limit_mb(package_name)
+    if limit_mb is None:
+        return {
+            "key": "unknown",
+            "label": "Nincs limitadat",
+            "percent": None,
+            "class": "status-neutral",
+            "limit_mb": None,
+        }
+    usage = Decimal(str(usage_mb or 0))
+    percent = float(usage / limit_mb * 100) if limit_mb else 0
+    if usage > limit_mb:
+        key, label, badge_class = "exceeded", "Túllépve", "status-scrapped"
+    elif percent >= 80:
+        key, label, badge_class = "warning", "Limit közelében", "status-reserved"
+    else:
+        key, label, badge_class = "normal", "Rendben", "status-in-stock"
+    return {
+        "key": key,
+        "label": label,
+        "percent": percent,
+        "class": badge_class,
+        "limit_mb": limit_mb,
+    }
+
+
+def m2m_subscription_usage_state(subscription, usage_mb):
+    if subscription.connection_type == "wired":
+        return {
+            "key": "wired",
+            "label": "Vezetékes kapcsolat",
+            "percent": None,
+            "class": "status-neutral",
+            "limit_mb": None,
+        }
+    return m2m_usage_state(subscription.current_package, usage_mb)
+
+
+def m2m_effective_usage_history(subscription):
+    source_priority = {"import": 1, "manual": 2, "teltonika_api": 3}
+    def created_rank(value):
+        if value is None:
+            return 0
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.timestamp()
+
+    monthly = {}
+    for usage in subscription.monthly_usages:
+        key = (usage.year, usage.month)
+        current = monthly.get(key)
+        current_rank = (
+            source_priority.get(current.source, 0),
+            created_rank(current.created_at),
+            current.id or 0,
+        ) if current else None
+        usage_rank = (
+            source_priority.get(usage.source, 0),
+            created_rank(usage.created_at),
+            usage.id or 0,
+        )
+        if current is None or usage_rank > current_rank:
+            monthly[key] = usage
+    return [
+        {
+            "year": year,
+            "month": month,
+            "usage_mb": usage.usage_mb,
+            "source": usage.source,
+            "created_at": usage.created_at,
+        }
+        for (year, month), usage in sorted(monthly.items())
+    ]
+
+
+def m2m_current_usage(subscription):
+    today = date.today()
+    for item in reversed(m2m_effective_usage_history(subscription)):
+        if item["year"] == today.year and item["month"] == today.month:
+            return item["usage_mb"]
+    return None
 
 
 def import_status_label(value):

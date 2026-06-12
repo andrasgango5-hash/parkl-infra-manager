@@ -16,6 +16,7 @@
       {% set drawings_active = endpoint in ['drawings', 'project_drawing_create', 'project_drawing_editor', 'project_drawing_save', 'drawing_background'] %}
       {% set devices_active = endpoint in ['devices', 'device_new', 'device_detail', 'device_edit', 'device_action'] %}
       {% set labels_active = endpoint in ['labels', 'device_qr', 'device_label', 'device_units', 'device_units_create', 'device_unit_detail', 'device_unit_edit', 'device_unit_qr', 'device_unit_label', 'device_unit_labels_pdf', 'location_qr', 'project_qr'] %}
+      {% set m2m_active = endpoint.startswith('m2m_') %}
       {% set locations_active = endpoint in ['locations', 'location_new', 'location_detail', 'location_edit', 'location_archive'] %}
       {% set movements_active = endpoint == 'movements' %}
       {% set import_export_active = endpoint in ['import_export', 'import_template_download', 'data_export'] %}
@@ -82,6 +83,11 @@
             <a class="sidebar-link {% if labels_active %}active{% endif %}" href="{{ url_for('labels') }}" title="QR / címkék">
               <i class="bi bi-qr-code"></i><span>QR / címkék</span>
             </a>
+            {% if can_manage_m2m %}
+            <a class="sidebar-link {% if m2m_active %}active{% endif %}" href="{{ url_for('m2m_subscriptions') }}" title="M2M SIM-ek">
+              <i class="bi bi-sim"></i><span>M2M SIM-ek</span>
+            </a>
+            {% endif %}
           </div>
 
           <div class="sidebar-group">
@@ -255,5 +261,6 @@
         updatePricePreview();
       });
     </script>
+    {% block scripts %}{% endblock %}
   </body>
 </html>

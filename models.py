@@ -87,6 +87,19 @@ USER_ROLE_LABELS = {
 
 TRACKING_MODES = ("bulk", "unit")
 
+M2M_SUBSCRIPTION_STATUSES = (
+    "active",
+    "suspended",
+    "inactive",
+    "cancelled",
+)
+
+M2M_USAGE_SOURCES = (
+    "manual",
+    "import",
+    "teltonika_api",
+)
+
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -300,6 +313,9 @@ class Device(db.Model):
     )
     unassigned_invoice_items = db.relationship(
         "UnassignedInvoiceItem", back_populates="assigned_device"
+    )
+    m2m_subscriptions = db.relationship(
+        "M2MSubscription", back_populates="teltonika_device"
     )
     import_batch = db.relationship("ImportBatch", back_populates="devices")
     units = db.relationship(
@@ -653,6 +669,139 @@ class ImportBatch(db.Model):
     devices = db.relationship("Device", back_populates="import_batch")
     unassigned_invoice_items = db.relationship(
         "UnassignedInvoiceItem", back_populates="import_batch"
+    )
+
+
+class M2MSubscription(db.Model):
+    __tablename__ = "m2m_subscription"
+    __table_args__ = (
+        db.CheckConstraint(
+            "status IN ('active', 'suspended', 'inactive', 'cancelled')",
+            name="ck_m2m_subscription_status",
+        ),
+        db.CheckConstraint(
+            "connection_type IN ('mobile', 'wired', 'unknown')",
+            name="ck_m2m_subscription_connection_type",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    subscriber_name = db.Column(db.String(160), nullable=True, index=True)
+    account_number = db.Column(db.String(100), nullable=True, index=True)
+    contract_number = db.Column(db.String(100), nullable=True, index=True)
+    registration_date = db.Column(db.Date, nullable=True)
+    phone_number = db.Column(db.String(80), nullable=True, index=True)
+    device_number = db.Column(db.String(100), nullable=True, index=True)
+    location_name = db.Column(db.String(160), nullable=True, index=True)
+    device_identifier = db.Column(db.String(160), nullable=True, index=True)
+    sim_number = db.Column(db.String(120), nullable=True, index=True)
+    tariff_name = db.Column(db.String(160), nullable=True, index=True)
+    current_package = db.Column(db.String(160), nullable=True, index=True)
+    current_monthly_fee = db.Column(Numeric(14, 2), nullable=True)
+    status = db.Column(
+        db.String(30), default="active", nullable=False, index=True
+    )
+    notes = db.Column(db.Text, nullable=True)
+    teltonika_device_id = db.Column(
+        db.Integer, db.ForeignKey("device.id"), nullable=True, index=True
+    )
+    last_api_sync_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    teltonika_rms_device_id = db.Column(db.String(120), nullable=True, index=True)
+    teltonika_rms_name = db.Column(db.String(160), nullable=True)
+    teltonika_imei = db.Column(db.String(120), nullable=True, index=True)
+    teltonika_operator = db.Column(db.String(160), nullable=True)
+    connection_type = db.Column(
+        db.String(20), default="unknown", nullable=False, index=True
+    )
+    last_rms_sync_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    last_rms_error = db.Column(db.Text, nullable=True)
+    rms_sent_raw = db.Column(db.String(120), nullable=True)
+    rms_received_raw = db.Column(db.String(120), nullable=True)
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    teltonika_device = db.relationship(
+        "Device", back_populates="m2m_subscriptions"
+    )
+    monthly_usages = db.relationship(
+        "M2MMonthlyUsage",
+        back_populates="subscription",
+        cascade="all, delete-orphan",
+        order_by="(M2MMonthlyUsage.year, M2MMonthlyUsage.month)",
+    )
+    package_history = db.relationship(
+        "M2MPackageHistory",
+        back_populates="subscription",
+        cascade="all, delete-orphan",
+        order_by="M2MPackageHistory.valid_from.desc()",
+    )
+
+
+class M2MMonthlyUsage(db.Model):
+    __tablename__ = "m2m_monthly_usage"
+    __table_args__ = (
+        db.CheckConstraint("month >= 1 AND month <= 12", name="ck_m2m_usage_month"),
+        db.CheckConstraint(
+            "source IN ('manual', 'import', 'teltonika_api')",
+            name="ck_m2m_usage_source",
+        ),
+        db.UniqueConstraint(
+            "subscription_id",
+            "year",
+            "month",
+            "source",
+            name="uq_m2m_usage_subscription_month_source",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    subscription_id = db.Column(
+        db.Integer,
+        db.ForeignKey("m2m_subscription.id"),
+        nullable=False,
+        index=True,
+    )
+    year = db.Column(db.Integer, nullable=False, index=True)
+    month = db.Column(db.Integer, nullable=False, index=True)
+    usage_mb = db.Column(Numeric(14, 2), nullable=False)
+    source = db.Column(db.String(30), default="manual", nullable=False, index=True)
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    subscription = db.relationship(
+        "M2MSubscription", back_populates="monthly_usages"
+    )
+
+
+class M2MPackageHistory(db.Model):
+    __tablename__ = "m2m_package_history"
+    id = db.Column(db.Integer, primary_key=True)
+    subscription_id = db.Column(
+        db.Integer,
+        db.ForeignKey("m2m_subscription.id"),
+        nullable=False,
+        index=True,
+    )
+    package_name = db.Column(db.String(160), nullable=False)
+    monthly_fee = db.Column(Numeric(14, 2), nullable=True)
+    valid_from = db.Column(db.Date, nullable=False, index=True)
+    valid_to = db.Column(db.Date, nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+
+    subscription = db.relationship(
+        "M2MSubscription", back_populates="package_history"
     )
 
 

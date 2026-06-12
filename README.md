@@ -344,6 +344,67 @@ flask --app app seed-role-users
 
 Ez a fejlesztési parancs létrehozza vagy frissíti az `admin`, `manager`, `technician` és `viewer` tesztfelhasználókat, és kiírja a hozzájuk tartozó helyi jelszavakat. Production környezetben ne használd.
 
+## M2M SIM-ek
+
+Az M2M modul mobil előfizetések, SIM-kártyák és havi adatforgalmak
+nyilvántartására szolgál. Admin és manager szerepkörrel érhető el.
+
+- `/m2m` - kereshető lista és kártyanézet
+- `/m2m/new` - új előfizetés
+- `/m2m/import` - CSV/XLSX import és letölthető sablon
+- A SIM adatlapján havi forgalom, Chart.js grafikon, csomagtörténet és
+  státuszkezelés található.
+- A forgalmi adatok forrása `manual`, `import` vagy `teltonika_api`.
+- A csomaglimit a csomagnévben szereplő MB/GB értékből olvasható ki.
+  `1 GB` esetén például 80%-tól figyelmeztetés, 1024 MB felett túllépés
+  jelenik meg.
+
+Az import meglévő előfizetést először SIM-szám, majd hívószám, végül
+eszközszám alapján keres. Havi adatforgalmi oszlop például:
+`2026-06 forgalom (MB)`.
+
+### Teltonika RMS előkészítés
+
+Az RMS token kizárólag környezeti változóból olvasható:
+
+```bash
+export TELTONIKA_RMS_API_TOKEN="sajat-rms-token"
+export TELTONIKA_RMS_API_BASE_URL="https://api.rms.teltonika-networks.com"
+```
+
+`.env` fájlban ugyanezek a változók használhatók, de valódi tokent nem szabad
+verziókezelésbe tenni. A szükséges minimális RMS jogosultság:
+
+- `devices:read`
+- adatforgalmi/statisztikai adatokhoz szükség esetén
+  `company_device_statistics:read`
+
+Kézi szinkron:
+
+1. Nyisd meg az `/m2m` oldalt admin vagy manager felhasználóként.
+2. Kattints az `RMS szinkron` gombra.
+3. A rendszer egyszer tölti le az RMS eszközlistát, majd frissíti az
+   eszközmetaadatokat és az aktuális havi adatforgalmat.
+
+Az összekötés elsődleges kulcsa az ICCID:
+
+- az RMS `iccid` értéke az `M2MSubscription.sim_number` mezőhöz kapcsolódik;
+- az RMS device ID csak technikai azonosító, routercsere esetén nem lesz
+  üzleti kulcs;
+- ICCID nélküli RMS eszköz vezetékesnek minősül, ezért nem kap mobil
+  adatforgalmi vagy túlforgalmazási riasztást.
+
+Az RMS `sent` és `received` értékeit a rendszer nyersen is megőrzi. Havi
+`teltonika_api` forgalom csak akkor készül, ha az API-válaszból egyértelmű,
+hogy mindkét adat MB-ban értendő. Egyébként a rekord figyelmeztetést kap,
+de a rendszer nem végez bizonytalan átváltást.
+
+Mock teszt valódi API nélkül:
+
+```bash
+python -m unittest tests.test_teltonika_rms -v
+```
+
 ## MVP oldalak
 
 - `/login` - bejelentkezés
@@ -365,6 +426,8 @@ Ez a fejlesztési parancs létrehozza vagy frissíti az `admin`, `manager`, `tec
 - `/import` - Legacy Parkl Excel import kompatibilitási URL, csak admin felhasználóknak
 - `/attention` - figyelmet igénylő készlet-, projekt-, beszerzési és pénzügyi tételek
 - `/labels` - QR-kódok és eszköz-/példánycímkék belépési oldala
+- `/m2m` - M2M SIM-ek és mobil adatforgalmak
+- `/m2m/import` - M2M CSV/XLSX import
 - `/documents` - projekt PDF-ek és munkalap-jegyzőkönyvek belépési oldala
 - `/import-export` - normál import- és exportfolyamatok belépési oldala
 - `/import-export/template` - új import sablon letöltése
