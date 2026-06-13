@@ -3,151 +3,228 @@
 {% block title %}Rajzszerkesztő - {{ drawing.name }}{% endblock %}
 
 {% block content %}
-<div class="page-header">
-  <div>
-    <h1>{{ drawing.name }}</h1>
-    <p class="text-secondary mb-0">{{ project.code }} - {{ project.name }} · helyszíni / implementációs vázlat</p>
-  </div>
-</div>
-
-<div class="help-box">
-  <strong>Gyors vázlatrajz.</strong> Egérgörgővel zoomolsz, a Pan móddal húzható a vászon. Az ikonokat kattintással helyezheted el, majd mozgatni, méretezni, forgatni, duplikálni vagy törölni tudod őket.
-</div>
-
-<section class="drawing-topbar data-section mb-3">
-  <div class="action-buttons">
-    <button class="btn btn-success btn-sm" id="saveDrawing" type="button">Mentés</button>
-    <button class="btn btn-export btn-sm" id="exportPng" type="button">PNG export</button>
-    <button class="btn btn-export btn-sm" id="exportPdf" type="button">PDF export</button>
-    <button class="btn btn-outline-secondary btn-sm" id="undoDrawing" type="button">Undo</button>
-    <button class="btn btn-outline-secondary btn-sm" id="redoDrawing" type="button">Redo</button>
-    <button class="btn btn-outline-secondary btn-sm" id="zoomOut" type="button">- Zoom</button>
-    <button class="btn btn-outline-secondary btn-sm" id="zoomIn" type="button">+ Zoom</button>
-    <button class="btn btn-outline-secondary btn-sm" id="fitScreen" type="button">Képernyőhöz igazítás</button>
-    <a class="btn btn-outline-secondary btn-sm ms-auto" href="{{ url_for('project_detail', project_id=project.id) }}#drawings">Vissza a projekthez</a>
-  </div>
-  <div class="drawing-mode-strip">
-    <span>Mód: <strong id="modeIndicator">Select</strong></span>
-    <span>Zoom: <strong id="zoomValue">100%</strong></span>
-    <span id="saveStatus">Nincs mentetlen változás.</span>
-    <label class="form-check form-switch mb-0 ms-auto">
-      <input class="form-check-input" id="snapToGrid" type="checkbox" checked>
-      <span class="form-check-label">Rácsra illesztés</span>
-    </label>
-  </div>
-</section>
-
-<div class="drawing-layout">
-  <aside class="drawing-sidebar">
-    <section class="data-section mb-3">
-      <div class="section-title"><h2>Eszköztár</h2></div>
-      <div class="p-3">
-        <div class="action-buttons mb-3">
-          <button class="btn btn-outline-secondary btn-sm drawing-mode-button active" id="selectMode" type="button">Kijelölés</button>
-          <button class="btn btn-outline-secondary btn-sm drawing-mode-button" id="panMode" type="button">Pan</button>
-          <button class="btn btn-outline-secondary btn-sm drawing-mode-button" id="textMode" type="button">Szöveg</button>
-          <button class="btn btn-purple btn-sm drawing-mode-button" id="lineMode" type="button">Vonal rajzolása</button>
-          <button class="btn btn-outline-secondary btn-sm" id="duplicateObject" type="button">Duplikálás</button>
-          <button class="btn btn-outline-danger btn-sm" id="deleteObject" type="button">Törlés</button>
-        </div>
-
-        <label class="form-label" for="lineType">Kábelvonal típusa</label>
-        <select class="form-select form-select-sm mb-2" id="lineType">
-          {% for key, label, color in line_types %}
-            <option value="{{ key }}" data-color="{{ color }}">{{ label }}</option>
-          {% endfor %}
-        </select>
-
-        <div class="drawing-legend">
-          {% for key, label, color in line_types %}
-            <div><span style="--line-color: {{ color }}"></span>{{ label }}</div>
-          {% endfor %}
-        </div>
+<div class="drawing-app">
+  <header class="drawing-app-header">
+    <div class="drawing-title">
+      <a class="drawing-back" href="{{ url_for('project_detail', project_id=project.id) }}#drawings" title="Vissza a projekthez"><i class="bi bi-arrow-left"></i></a>
+      <div>
+        <h1>{{ drawing.name }}</h1>
+        <span>{{ project.code }} · {{ project.name }}</span>
       </div>
-    </section>
+    </div>
 
-    <section class="data-section mb-3">
-      <div class="section-title"><h2>Infrastruktúra ikonok</h2></div>
-      <div class="p-3 drawing-palette">
-        <input class="form-control form-control-sm mb-3" id="iconSearch" type="search" placeholder="Ikon keresése">
+    <div class="drawing-floating-toolbar" role="toolbar" aria-label="Rajzszerkesztő eszköztár">
+      <button class="drawing-tool active" id="selectMode" type="button" title="Kijelölés (V)"><i class="bi bi-cursor"></i><span>Kijelölés</span></button>
+      <button class="drawing-tool" id="panMode" type="button" title="Mozgatás (H)"><i class="bi bi-hand-index-thumb"></i><span>Pan</span></button>
+      <button class="drawing-tool" id="lineMode" type="button" title="Kapcsolat rajzolása (C)"><i class="bi bi-bezier2"></i><span>Kapcsolat</span></button>
+      <button class="drawing-tool" id="textMode" type="button" title="Szöveg (T)"><i class="bi bi-fonts"></i><span>Szöveg</span></button>
+      <span class="drawing-toolbar-divider"></span>
+      <button class="drawing-tool icon-only" id="undoDrawing" type="button" title="Visszavonás"><i class="bi bi-arrow-counterclockwise"></i></button>
+      <button class="drawing-tool icon-only" id="redoDrawing" type="button" title="Újra"><i class="bi bi-arrow-clockwise"></i></button>
+      <button class="drawing-tool icon-only" id="zoomOut" type="button" title="Kicsinyítés"><i class="bi bi-zoom-out"></i></button>
+      <span class="drawing-zoom" id="zoomValue">100%</span>
+      <button class="drawing-tool icon-only" id="zoomIn" type="button" title="Nagyítás"><i class="bi bi-zoom-in"></i></button>
+      <button class="drawing-tool icon-only" id="fitScreen" type="button" title="Képernyőhöz igazítás"><i class="bi bi-arrows-fullscreen"></i></button>
+    </div>
+
+    <div class="drawing-header-actions">
+      <span class="drawing-save-state" id="saveStatus">Mentve</span>
+      <div class="dropdown">
+        <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown"><i class="bi bi-download"></i> Export</button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><button class="dropdown-item" id="exportPng" type="button"><i class="bi bi-filetype-png"></i> PNG export</button></li>
+          <li><button class="dropdown-item" id="exportPdf" type="button"><i class="bi bi-file-earmark-pdf"></i> PDF export</button></li>
+          <li><button class="dropdown-item" id="exportSvg" type="button"><i class="bi bi-filetype-svg"></i> SVG export</button></li>
+        </ul>
+      </div>
+      <button class="btn btn-purple btn-sm" id="saveDrawing" type="button"><i class="bi bi-cloud-check"></i> Mentés</button>
+    </div>
+  </header>
+
+  <div class="drawing-workspace">
+    <aside class="drawing-left-panel">
+      <div class="drawing-panel-head">
+        <strong>Elemek</strong>
+        <button class="drawing-panel-toggle" type="button" data-collapse-panel="left" title="Paletta összecsukása"><i class="bi bi-layout-sidebar-inset"></i></button>
+      </div>
+      <div class="drawing-panel-scroll">
+        <div class="drawing-search">
+          <i class="bi bi-search"></i>
+          <input id="iconSearch" type="search" placeholder="Eszköz keresése">
+        </div>
+
+        {% if project_drawing_items %}
+        <section class="drawing-palette-section">
+          <button class="drawing-section-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#erpProjectItems" aria-expanded="true">
+            <span><i class="bi bi-box-seam"></i> Projekt eszközei</span><span class="badge text-bg-light">{{ project_drawing_items|length }}</span>
+          </button>
+          <div class="collapse show" id="erpProjectItems">
+            <div class="drawing-erp-list">
+              {% for item in project_drawing_items %}
+              <button class="drawing-erp-item" draggable="true" type="button"
+                      data-type="erp_device" data-label="{{ item.label }}"
+                      data-erp-kind="{{ item.kind }}" data-device-id="{{ item.device_id }}"
+                      data-unit-id="{{ item.unit_id or '' }}" data-balance-id="{{ item.balance_id or '' }}"
+                      data-erp-code="{{ item.code or '' }}" data-status="{{ item.status }}">
+                <span class="erp-item-icon"><i class="bi bi-cpu"></i></span>
+                <span><strong>{{ item.code or item.label }}</strong><small>{{ item.label }} · {{ format_number(item.quantity) }} db</small></span>
+              </button>
+              {% endfor %}
+            </div>
+          </div>
+        </section>
+        {% endif %}
+
         <div class="accordion drawing-accordion" id="iconAccordion">
           {% for category, icons in icon_categories.items() %}
-            <div class="accordion-item">
-              <h3 class="accordion-header">
-                <button class="accordion-button {% if not loop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#icon-group-{{ loop.index }}">
-                  {{ category }}
+          <div class="accordion-item">
+            <h2 class="accordion-header">
+              <button class="accordion-button {% if not loop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#icon-group-{{ loop.index }}">
+                {{ category }}
+              </button>
+            </h2>
+            <div id="icon-group-{{ loop.index }}" class="accordion-collapse collapse {% if loop.first %}show{% endif %}">
+              <div class="accordion-body drawing-icon-grid">
+                {% for key, label in icons %}
+                <button class="drawing-icon-button" draggable="true" type="button" data-type="{{ key }}" data-label="{{ label }}">
+                  <span class="mini-icon" aria-hidden="true"></span>
+                  <span>{{ label }}</span>
                 </button>
-              </h3>
-              <div id="icon-group-{{ loop.index }}" class="accordion-collapse collapse {% if loop.first %}show{% endif %}" data-bs-parent="#iconAccordion">
-                <div class="accordion-body">
-                  <div class="drawing-icon-grid">
-                    {% for key, label in icons %}
-                      <button class="drawing-icon-button" type="button" data-type="{{ key }}" data-label="{{ label }}">
-                        <span class="mini-icon"></span>
-                        <span>{{ label }}</span>
-                      </button>
-                    {% endfor %}
-                  </div>
-                </div>
+                {% endfor %}
               </div>
             </div>
+          </div>
           {% endfor %}
         </div>
       </div>
-    </section>
-  </aside>
+    </aside>
 
-  <section class="drawing-stage data-section">
-    <div class="section-title">
-      <h2>Rajzvászon</h2>
-      <span class="text-secondary small">Objektumok: id, type, label, x, y, rotation, scale, notes, status</span>
-    </div>
-    <div class="drawing-canvas-wrap">
-      <canvas id="drawingCanvas" width="1600" height="1000"></canvas>
-    </div>
-  </section>
+    <main class="drawing-stage">
+      <div class="drawing-canvas-toolbar">
+        <div class="drawing-mode-pill"><span class="status-dot"></span><span id="modeIndicator">Kijelölés</span></div>
+        <label class="drawing-compact-control" title="Rács megjelenítése"><input id="showGrid" type="checkbox" checked> Rács</label>
+        <label class="drawing-compact-control" title="Rácsra illesztés"><input id="snapToGrid" type="checkbox" checked> Illesztés</label>
+        <label class="drawing-grid-size">Méret <input id="gridSize" type="number" min="5" max="100" step="5" value="20"></label>
+        <select class="form-select form-select-sm drawing-line-select" id="lineType" title="Kapcsolat típusa">
+          {% for key, label, color in line_types %}
+          <option value="{{ key }}" data-color="{{ color }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="drawing-canvas-wrap" id="drawingDropZone">
+        <canvas id="drawingCanvas" width="1600" height="1000"></canvas>
+        <div class="drawing-drop-hint"><i class="bi bi-box-arrow-in-down"></i> Húzd ide az eszközt</div>
+      </div>
+      <div class="drawing-statusbar">
+        <span><i class="bi bi-mouse"></i> Görgő: zoom · Space+húzás: pan</span>
+        <span id="objectCount">0 objektum</span>
+      </div>
+    </main>
 
-  <aside class="drawing-properties">
-    <section class="data-section">
-      <div class="section-title"><h2>Tulajdonságok</h2></div>
-      <div class="p-3">
-        <div class="detail-grid mb-3 drawing-properties-grid">
-          <div><strong>Típus:</strong> <span id="objectType">-</span></div>
-          <div><strong>X:</strong> <span id="objectX">-</span></div>
-          <div><strong>Y:</strong> <span id="objectY">-</span></div>
-          <div><strong>Forgatás:</strong> <span id="objectRotation">-</span></div>
-          <div><strong>Skála:</strong> <span id="objectScale">-</span></div>
-        </div>
-        <div class="mb-2">
-          <label class="form-label" for="objectLabel">Címke</label>
+    <aside class="drawing-right-panel is-empty" id="drawingRightPanel">
+      <div class="drawing-panel-head">
+        <strong id="inspectorTitle">Tulajdonságok</strong>
+        <button class="drawing-panel-toggle" type="button" data-collapse-panel="right" title="Panel összecsukása"><i class="bi bi-layout-sidebar-reverse"></i></button>
+      </div>
+      <div class="drawing-empty-inspector">
+        <i class="bi bi-cursor"></i>
+        <strong>Jelölj ki egy elemet</strong>
+        <span>Itt szerkesztheted a tulajdonságait.</span>
+      </div>
+      <div class="drawing-inspector" id="drawingInspector">
+        <div class="inspector-section">
+          <label for="objectLabel">Név</label>
           <input class="form-control form-control-sm" id="objectLabel">
-        </div>
-        <div class="mb-2">
-          <label class="form-label" for="objectStatus">Státusz</label>
+          <label for="objectIdentifier">Azonosító</label>
+          <input class="form-control form-control-sm" id="objectIdentifier">
+          <label for="objectStatus">Státusz</label>
           <select class="form-select form-select-sm" id="objectStatus">
             <option value="planned">Tervezett</option>
             <option value="installed">Telepítve</option>
             <option value="needs_check">Ellenőrizendő</option>
             <option value="removed">Eltávolítandó</option>
           </select>
-        </div>
-        <div>
-          <label class="form-label" for="objectNotes">Megjegyzés</label>
+          <label for="objectNotes">Megjegyzés</label>
           <textarea class="form-control form-control-sm" id="objectNotes" rows="3"></textarea>
         </div>
+        <div class="inspector-section">
+          <div class="inspector-section-title">Megjelenés</div>
+          <label for="objectColor">Szín</label>
+          <input class="form-control form-control-color" id="objectColor" type="color" value="#6f42c1">
+          <label for="objectSize">Méret <span id="objectScale">100%</span></label>
+          <input class="form-range" id="objectSize" type="range" min="40" max="220" value="100">
+          <div class="inspector-metrics"><span>X <strong id="objectX">-</strong></span><span>Y <strong id="objectY">-</strong></span><span>° <strong id="objectRotation">-</strong></span></div>
+        </div>
+        <div class="inspector-section erp-object-data" id="erpObjectData">
+          <div class="inspector-section-title">ERP kapcsolat</div>
+          <div><span>Projekt</span><strong>{{ project.code }}</strong></div>
+          <div><span>Eszköz</span><strong id="erpObjectName">-</strong></div>
+          <div><span>ERP ID</span><strong id="erpObjectId">-</strong></div>
+        </div>
+        <div class="inspector-actions">
+          <button class="btn btn-outline-secondary btn-sm" id="duplicateObject" type="button"><i class="bi bi-copy"></i> Másolás</button>
+          <button class="btn btn-outline-danger btn-sm" id="deleteObject" type="button"><i class="bi bi-trash"></i> Törlés</button>
+        </div>
       </div>
-    </section>
-  </aside>
+
+      <section class="drawing-side-section">
+        <button class="drawing-section-toggle collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#backgroundControls">
+          <span><i class="bi bi-image"></i> Háttérrajz</span><i class="bi bi-chevron-down"></i>
+        </button>
+        <div class="collapse" id="backgroundControls">
+          <div class="side-section-body">
+            <label for="backgroundOpacity">Átlátszóság <span id="backgroundOpacityValue">100%</span></label>
+            <input class="form-range" id="backgroundOpacity" type="range" min="10" max="100" value="100">
+            <label class="drawing-compact-control"><input id="backgroundLocked" type="checkbox" checked> Háttér zárolása</label>
+          </div>
+        </div>
+      </section>
+
+      <section class="drawing-side-section">
+        <button class="drawing-section-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#layerPanel" aria-expanded="true">
+          <span><i class="bi bi-layers"></i> Rétegek</span><span class="badge text-bg-light" id="layerCount">0</span>
+        </button>
+        <div class="collapse show" id="layerPanel">
+          <div class="drawing-layer-list" id="layerList"></div>
+        </div>
+      </section>
+
+      <section class="drawing-side-section">
+        <button class="drawing-section-toggle collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#cableLegend">
+          <span><i class="bi bi-diagram-3"></i> Kábeljelmagyarázat</span><i class="bi bi-chevron-down"></i>
+        </button>
+        <div class="collapse" id="cableLegend">
+          <div class="drawing-legend side-section-body">
+            {% for key, label, color in line_types %}
+            <div><span style="--line-color: {{ color }}"></span>{{ label }}</div>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<div class="drawing-context-menu" id="drawingContextMenu">
+  <button type="button" data-context-action="duplicate"><i class="bi bi-copy"></i> Duplikálás</button>
+  <button type="button" data-context-action="front"><i class="bi bi-front"></i> Előre hozás</button>
+  <button type="button" data-context-action="back"><i class="bi bi-back"></i> Hátra küldés</button>
+  <button type="button" data-context-action="lock"><i class="bi bi-lock"></i> Zárolás</button>
+  <hr>
+  <button class="text-danger" type="button" data-context-action="delete"><i class="bi bi-trash"></i> Törlés</button>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <script>
   window.ParklDrawing = {
     saveUrl: "{{ url_for('project_drawing_save', project_id=project.id, drawing_id=drawing.id) }}",
     backgroundUrl: {{ background_url|tojson }},
+    backgroundIsPdf: {{ (drawing.background_filename and drawing.background_filename.lower().endswith('.pdf'))|tojson }},
     canvasJson: {{ (drawing.canvas_json or "")|tojson }},
-    lineTypes: {{ line_types|tojson }}
+    lineTypes: {{ line_types|tojson }},
+    project: {{ {"id": project.id, "code": project.code, "name": project.name}|tojson }}
   };
 </script>
 <script src="{{ url_for('static', filename='drawing_editor.js') }}"></script>

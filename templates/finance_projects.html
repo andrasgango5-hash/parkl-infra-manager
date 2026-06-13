@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Projekt pénzügy - Parkl Infra Manager{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div><h1>Projekt pénzügy</h1><p class="text-secondary mb-0">Projektkészlet, számlasorok és adatminőség projektenként.</p></div>
+  <a class="btn btn-outline-secondary btn-icon" href="{{ url_for('finance_overview') }}"><i class="bi bi-arrow-left"></i> Áttekintés</a>
+</div>
+<nav class="finance-subnav mb-4" aria-label="Pénzügyi modul">
+  <a href="{{ url_for('finance_overview') }}">Áttekintés</a><a class="active" href="{{ url_for('finance_projects') }}">Projekt pénzügy</a><a href="{{ url_for('finance_inventory') }}">Készletérték</a><a href="{{ url_for('finance_suppliers') }}">Beszállítók</a><a href="{{ url_for('finance_invoices') }}">Számlák</a>
+</nav>
+<section class="data-section">
+  <form class="filter-bar" method="get">
+    <div><label class="form-label" for="q">Keresés</label><input class="form-control form-control-sm" id="q" name="q" value="{{ search }}" placeholder="Projektkód, név, ügyfél"></div>
+    <div><label class="form-label" for="status">Státusz</label><select class="form-select form-select-sm" id="status" name="status"><option value="">Minden státusz</option>{% for key, label in project_statuses.items() %}<option value="{{ key }}" {% if selected_status == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div class="filter-actions"><button class="btn btn-purple btn-sm" type="submit">Szűrés</button></div>
+  </form>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Projekt</th><th>Projektkészlet</th><th>Nettó HUF</th><th>Nettó EUR</th><th>Számlasor</th><th>Nyitott / hiányos</th><th></th></tr></thead>
+      <tbody>{% for row in rows %}<tr>
+        <td><strong>{{ row.project.code }}</strong><div class="small text-secondary">{{ row.project.name }}{% if row.project.customer %} · {{ row.project.customer }}{% endif %}</div></td>
+        <td>{{ format_number(row.item_quantity) }} db</td><td>{{ format_number(row.net_huf) }}</td><td>{{ format_number(row.net_eur) }}</td>
+        <td>{{ row.invoice_count }} / {{ format_number(row.invoice_value_huf) }} HUF</td>
+        <td>{% if row.unpaid_count %}<span class="status-badge status-warning">{{ row.unpaid_count }} fizetetlen</span>{% endif %} {% if row.missing_count %}<span class="status-badge status-scrapped">{{ row.missing_count }} hiányos</span>{% endif %}</td>
+        <td><a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('finance_project_detail', project_id=row.project.id) }}"><i class="bi bi-arrow-right"></i> Megnyitás</a></td>
+      </tr>{% else %}<tr><td colspan="7"><div class="empty-state"><strong>Nincs a szűrésnek megfelelő projekt.</strong></div></td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

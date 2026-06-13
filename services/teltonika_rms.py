@@ -13,6 +13,8 @@ from flask import current_app, has_app_context
 DEFAULT_RMS_BASE_URL = "https://api.rms.teltonika-networks.com"
 RMS_TIMEOUT_SECONDS = 20
 RESPONSE_LOG_LIMIT = 500
+RMS_DEVICE_DEFAULT_PAGE_SIZE = 10
+RMS_DEVICE_MAX_PAGES = 1000
 
 
 class TeltonikaRMSError(RuntimeError):
@@ -130,7 +132,62 @@ def rms_get(path, params=None):
 
 def list_rms_devices():
     logger = _get_logger()
-    payload = rms_get("/devices")
+    devices = []
+    seen_devices = set()
+    page = 1
+    page_count = 0
+
+    while page <= RMS_DEVICE_MAX_PAGES:
+        payload = rms_get("/devices", params={"page": page})
+        page_devices = _extract_rms_device_page(payload)
+        page_count += 1
+
+        new_devices = 0
+        for index, raw_device in enumerate(page_devices):
+            identity = _rms_device_identity(raw_device, page, index)
+            if identity in seen_devices:
+                continue
+            seen_devices.add(identity)
+            devices.append(raw_device)
+            new_devices += 1
+
+        pagination = _rms_pagination_state(
+            payload,
+            page=page,
+            page_size=len(page_devices),
+        )
+        logger.info(
+            "Teltonika RMS devices page=%s records=%s new_records=%s "
+            "total_collected=%s last_page=%s total_expected=%s has_more=%s",
+            page,
+            len(page_devices),
+            new_devices,
+            len(devices),
+            pagination["last_page"],
+            pagination["total"],
+            pagination["has_more"],
+        )
+        if not pagination["has_more"]:
+            break
+        if page_devices and new_devices == 0:
+            logger.warning(
+                "Teltonika RMS pagination stopped because page %s repeated "
+                "already collected devices.",
+                page,
+            )
+            break
+        page = pagination["next_page"]
+    else:
+        raise TeltonikaRMSRequestError(
+            "A Teltonika RMS eszközlapozás elérte a biztonsági oldallimitet."
+        )
+
+    _log_rms_device_counts(devices, page_count)
+    return devices
+
+
+def _extract_rms_device_page(payload):
+    logger = _get_logger()
     if not isinstance(payload, dict):
         raise TeltonikaRMSRequestError(
             "A Teltonika RMS válasza nem objektum."
@@ -154,6 +211,11 @@ def list_rms_devices():
         raise TeltonikaRMSRequestError(
             "A Teltonika RMS válasz data mezője nem eszközlista."
         )
+    return devices
+
+
+def _log_rms_device_counts(devices, page_count):
+    logger = _get_logger()
     normalized = []
     iccid_count = 0
     mobile_count = 0
@@ -171,14 +233,130 @@ def list_rms_devices():
         else:
             wired_count += 1
     logger.info(
-        "Teltonika RMS devices received=%s valid=%s with_iccid=%s mobile=%s wired=%s",
+        "Teltonika RMS devices complete pages=%s received=%s valid=%s "
+        "with_iccid=%s mobile=%s wired=%s",
+        page_count,
         len(devices),
         len(normalized),
         iccid_count,
         mobile_count,
         wired_count,
     )
-    return devices
+
+
+def _rms_pagination_state(payload, page, page_size):
+    containers = [payload]
+    for key in ("meta", "pagination", "page"):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            containers.append(value)
+
+    current_page = _first_positive_int(
+        containers,
+        "current_page",
+        "currentPage",
+        "page",
+        "number",
+    ) or page
+    last_page = _first_positive_int(
+        containers,
+        "last_page",
+        "lastPage",
+        "total_pages",
+        "totalPages",
+        "pages",
+    )
+    total = _first_nonnegative_int(
+        containers,
+        "total",
+        "total_count",
+        "totalCount",
+        "total_records",
+        "totalRecords",
+    )
+    per_page = _first_positive_int(
+        containers,
+        "per_page",
+        "perPage",
+        "page_size",
+        "pageSize",
+        "limit",
+    )
+    next_page = _next_page_from_links(payload) or current_page + 1
+
+    if last_page is not None:
+        has_more = current_page < last_page
+    elif total is not None:
+        effective_page_size = per_page or page_size or RMS_DEVICE_DEFAULT_PAGE_SIZE
+        has_more = current_page * effective_page_size < total
+    elif _next_page_from_links(payload) is not None:
+        has_more = True
+    else:
+        has_more = page_size >= RMS_DEVICE_DEFAULT_PAGE_SIZE
+
+    return {
+        "current_page": current_page,
+        "last_page": last_page,
+        "total": total,
+        "next_page": next_page,
+        "has_more": has_more,
+    }
+
+
+def _first_positive_int(containers, *keys):
+    value = _first_int(containers, *keys)
+    return value if value is not None and value > 0 else None
+
+
+def _first_nonnegative_int(containers, *keys):
+    value = _first_int(containers, *keys)
+    return value if value is not None and value >= 0 else None
+
+
+def _first_int(containers, *keys):
+    for container in containers:
+        for key in keys:
+            value = container.get(key)
+            try:
+                if value not in (None, ""):
+                    return int(value)
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+def _next_page_from_links(payload):
+    links = payload.get("links")
+    next_value = links.get("next") if isinstance(links, dict) else None
+    if next_value in (None, "", False):
+        next_value = payload.get("next")
+    if isinstance(next_value, int):
+        return next_value
+    if isinstance(next_value, str):
+        match = re.search(r"[?&]page=(\d+)", next_value)
+        if match:
+            return int(match.group(1))
+    next_page = payload.get("next_page")
+    try:
+        if next_page not in (None, ""):
+            return int(next_page)
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
+def _rms_device_identity(raw_device, page, index):
+    if isinstance(raw_device, dict):
+        for key in ("id", "rms_device_id", "device_id"):
+            if raw_device.get(key) not in (None, ""):
+                return f"id:{raw_device[key]}"
+        return "record:" + json.dumps(
+            raw_device,
+            sort_keys=True,
+            ensure_ascii=False,
+            default=str,
+        )
+    return f"page:{page}:index:{index}:{raw_device!r}"
 
 
 def get_device_usage(device_id, start_date, end_date, return_summary=False):

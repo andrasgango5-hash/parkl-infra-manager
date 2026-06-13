@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ project.code }} pénzügy - Parkl Infra Manager{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div><h1>{{ project.code }} – {{ project.name }}</h1><p class="text-secondary mb-0">{{ project.customer or "Nincs ügyfél" }} · projekt pénzügyi összesítő</p></div>
+  <div class="page-actions"><a class="btn btn-outline-secondary btn-icon" href="{{ url_for('finance_projects') }}"><i class="bi bi-arrow-left"></i> Projektek</a><a class="btn btn-purple btn-icon" href="{{ url_for('finance_project_bom', project_id=project.id) }}"><i class="bi bi-list-check"></i> BOM nézet</a></div>
+</div>
+<div class="finance-kpi-grid mb-4">
+  <div class="finance-kpi"><span>Nettó projektérték</span><strong>{{ format_number(snapshot.net_huf) }} HUF</strong><small>{{ format_number(snapshot.net_eur) }} EUR</small></div>
+  <div class="finance-kpi"><span>Bruttó projektérték</span><strong>{{ format_number(snapshot.gross_huf) }} HUF</strong><small>{{ format_number(snapshot.gross_eur) }} EUR</small></div>
+  <div class="finance-kpi"><span>Projektkészlet</span><strong>{{ format_number(snapshot.item_quantity) }} db</strong><small>{{ snapshot.rows|length }} készletsor</small></div>
+  <div class="finance-kpi"><span>Hozzárendelt számlasor</span><strong>{{ snapshot.invoice_count }}</strong><small>{{ format_number(snapshot.invoice_value_huf) }} HUF</small></div>
+</div>
+<div class="row g-4">
+  <div class="col-xl-8">
+    <section class="data-section mb-4">
+      <div class="section-title"><h2>Projekt költségösszesítő / BOM</h2><a href="{{ url_for('finance_project_bom', project_id=project.id) }}" class="btn btn-outline-secondary btn-sm">Teljes BOM</a></div>
+      <div class="table-responsive"><table class="table table-hover align-middle"><thead><tr><th>Tétel</th><th>Státusz</th><th>Mennyiség</th><th>Egység nettó</th><th>Nettó összesen</th></tr></thead><tbody>
+        {% for row in bom_rows[:12] %}<tr><td><a href="{{ url_for('device_detail', device_id=row.device.id) }}"><strong>{{ device_primary_label(row.device) }}</strong></a><div class="small text-secondary">{{ category_label(row.device.device_type) }}</div></td><td><span class="status-badge {{ status_badge_class(row.status) }}">{{ status_label(row.status) }}</span></td><td>{{ format_number(row.quantity) }}</td><td>{{ format_number(row.device.unit_net_price) }} {{ row.device.currency or "" }}</td><td>{% if row.net_total is not none %}{{ format_number(row.net_total) }} {{ row.device.currency }}{% else %}Nem számolható{% endif %}</td></tr>
+        {% else %}<tr><td colspan="5"><div class="empty-state"><strong>Nincs aktív projektkészlet.</strong></div></td></tr>{% endfor %}
+      </tbody></table></div>
+    </section>
+  </div>
+  <div class="col-xl-4">
+    <section class="data-section mb-4">
+      <div class="section-title"><h2>Lezárási állapot</h2></div>
+      <div class="finance-checklist">
+        <div><span>Fizetetlen eszközszámlák</span><strong class="{% if snapshot.unpaid_count %}text-danger{% endif %}">{{ snapshot.unpaid_count }}</strong></div>
+        <div><span>Hiányos pénzügyi tételek</span><strong class="{% if snapshot.missing_count %}text-danger{% endif %}">{{ snapshot.missing_count }}</strong></div>
+        <div><span>Hozzárendelt számlasorok</span><strong>{{ snapshot.invoice_count }}</strong></div>
+      </div>
+    </section>
+  </div>
+</div>
+<section class="data-section">
+  <div class="section-title"><h2>Projekthez rendelt számlasorok</h2><a class="btn btn-outline-secondary btn-sm" href="{{ url_for('unassigned_invoices', assignment_status='assigned') }}">Tisztázólista</a></div>
+  <div class="table-responsive"><table class="table table-hover align-middle"><thead><tr><th>Számla</th><th>Partner</th><th>Megnevezés</th><th>Nettó</th><th>Bruttó</th><th>Státusz</th></tr></thead><tbody>
+    {% for item in invoice_items %}<tr><td><strong>{{ item.invoice_number or "-" }}</strong><div class="small text-secondary">{{ item.invoice_date or "" }}</div></td><td>{{ item.partner or "-" }}</td><td>{{ item.description or "-" }}</td><td>{{ format_number(line_net_amount(item)) }} HUF</td><td>{{ format_number(invoice_item_value(item)) }} HUF</td><td><span class="status-badge status-in-stock">{{ assignment_status_label(item.assignment_status) }}</span></td></tr>
+    {% else %}<tr><td colspan="6"><div class="empty-state"><strong>Nincs projekthez rendelt számlasor.</strong></div></td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Beszállítói összesítés - Parkl Infra Manager{% endblock %}
+{% block content %}
+<div class="page-header"><div><h1>Beszállítói összesítés</h1><p class="text-secondary mb-0">Beszerzési érték, eszköztételek és számlaállapot beszállítónként.</p></div><a class="btn btn-outline-secondary btn-icon" href="{{ url_for('finance_overview') }}"><i class="bi bi-arrow-left"></i> Áttekintés</a></div>
+<nav class="finance-subnav mb-4"><a href="{{ url_for('finance_overview') }}">Áttekintés</a><a href="{{ url_for('finance_projects') }}">Projekt pénzügy</a><a href="{{ url_for('finance_inventory') }}">Készletérték</a><a class="active" href="{{ url_for('finance_suppliers') }}">Beszállítók</a><a href="{{ url_for('finance_invoices') }}">Számlák</a></nav>
+<section class="data-section">
+  <form class="filter-bar" method="get"><div><label class="form-label" for="q">Beszállító keresése</label><input class="form-control form-control-sm" id="q" name="q" value="{{ search }}" placeholder="Beszállító vagy gyártó"></div><div class="filter-actions"><button class="btn btn-purple btn-sm" type="submit">Keresés</button></div></form>
+  <div class="table-responsive"><table class="table table-hover align-middle"><thead><tr><th>Beszállító</th><th>Tételek</th><th>Nettó HUF</th><th>Bruttó HUF</th><th>Nettó EUR</th><th>Számlák</th><th>Fizetetlen</th></tr></thead><tbody>
+    {% for row in rows %}<tr class="finance-summary-row" data-bs-toggle="collapse" data-bs-target="#supplier-{{ loop.index }}"><td><strong>{{ row.name }}</strong></td><td>{{ row.devices|length }}</td><td>{{ format_number(row.net_huf) }}</td><td>{{ format_number(row.gross_huf) }}</td><td>{{ format_number(row.net_eur) }}</td><td>{{ row.invoice_count }}</td><td>{% if row.unpaid_count %}<span class="status-badge status-warning">{{ row.unpaid_count }}</span>{% else %}<span class="status-badge status-in-stock">0</span>{% endif %}</td></tr>
+    <tr class="collapse" id="supplier-{{ loop.index }}"><td colspan="7"><div class="finance-drilldown">{% for device in row.devices %}<div class="finance-device-line"><a href="{{ url_for('device_detail', device_id=device.id) }}">{{ device_primary_label(device) }}</a><span>{{ format_number(device.total_net_price) }} {{ device.currency or "" }}</span><span>{{ device.supplier_invoice_number or "Nincs számlaszám" }}</span></div>{% endfor %}</div></td></tr>
+    {% else %}<tr><td colspan="7"><div class="empty-state"><strong>Nincs beszállítói adat.</strong></div></td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

@@ -6,48 +6,137 @@
 <div class="page-header">
   <div>
     <h1>Pénzügyi áttekintés</h1>
-    <p class="text-secondary mb-0">Beszerzési értékek, nyitott számlák és tisztázandó pénzügyi adatok egy helyen.</p>
+    <p class="text-secondary mb-0">Projektköltségek, készletérték, beszállítói költések és pénzügyi adatminőség.</p>
   </div>
-  <a class="btn btn-purple btn-icon" href="{{ url_for('unassigned_invoices') }}"><i class="bi bi-receipt"></i> Gazdátlan számlasorok</a>
+  <div class="page-actions">
+    <a class="btn btn-outline-secondary btn-icon" href="{{ url_for('finance_invoices') }}"><i class="bi bi-receipt"></i> Számlák</a>
+    <a class="btn btn-purple btn-icon" href="{{ url_for('unassigned_invoices') }}"><i class="bi bi-link-45deg"></i> Tisztázandó sorok</a>
+  </div>
 </div>
 
 <div class="help-box">
-  <strong>Pénzügyi nézet.</strong> Az itt látható összesítések nem módosítják a készletet, az eszközstátuszokat vagy a mozgástörténetet.
+  <strong>Vezetői pénzügyi nézet.</strong> A készlet- és projektértékek a terméktörzs áraiból, a számlamutatók a számlasorokból készülnek. A két forrás külön jelenik meg, így ugyanaz a költség nem számolódik kétszer.
 </div>
 
-<div class="row g-3 mb-4">
-  <div class="col-sm-6 col-xl-3"><div class="metric"><span>Összes nettó érték (HUF)</span><strong>{{ format_number(summary.net_huf) }}</strong></div></div>
-  <div class="col-sm-6 col-xl-3"><div class="metric"><span>Összes bruttó érték (HUF)</span><strong>{{ format_number(summary.gross_huf) }}</strong></div></div>
-  <div class="col-sm-6 col-xl-3"><div class="metric"><span>Összes nettó érték (EUR)</span><strong>{{ format_number(summary.net_eur) }}</strong></div></div>
-  <div class="col-sm-6 col-xl-3"><div class="metric"><span>Összes bruttó érték (EUR)</span><strong>{{ format_number(summary.gross_eur) }}</strong></div></div>
-  <div class="col-sm-6 col-xl-3"><div class="metric"><span>Fizetetlen beszállítói számlák</span><strong>{{ summary.unpaid_supplier_invoices }}</strong></div></div>
-  <div class="col-sm-6 col-xl-3"><div class="metric"><span>Gazdátlan számlasorok</span><strong>{{ summary.unassigned_invoice_count }}</strong></div></div>
-  <div class="col-sm-6 col-xl-3"><div class="metric"><span>Hiányos pénzügyi adatok</span><strong>{{ summary.missing_financial_data }}</strong></div></div>
-  <div class="col-sm-6 col-xl-3"><div class="metric"><span>Hiányzó deviza</span><strong>{{ summary.missing_currency_count }}</strong></div></div>
+<nav class="finance-subnav mb-4" aria-label="Pénzügyi modul">
+  <a class="active" href="{{ url_for('finance_overview') }}"><i class="bi bi-grid-1x2"></i> Áttekintés</a>
+  <a href="{{ url_for('finance_projects') }}"><i class="bi bi-kanban"></i> Projekt pénzügy</a>
+  <a href="{{ url_for('finance_inventory') }}"><i class="bi bi-box-seam"></i> Készletérték</a>
+  <a href="{{ url_for('finance_suppliers') }}"><i class="bi bi-building"></i> Beszállítók</a>
+  <a href="{{ url_for('finance_invoices') }}"><i class="bi bi-receipt-cutoff"></i> Számlák</a>
+</nav>
+
+<div class="finance-kpi-grid mb-4">
+  <a class="finance-kpi" href="{{ url_for('finance_inventory') }}">
+    <span class="finance-kpi-icon is-purple"><i class="bi bi-boxes"></i></span>
+    <span>Készlet nettó értéke</span><strong>{{ format_number(summary.net_huf) }} HUF</strong>
+    <small>{{ format_number(summary.net_eur) }} EUR</small>
+  </a>
+  <a class="finance-kpi" href="{{ url_for('finance_invoices', payment_status='unpaid') }}">
+    <span class="finance-kpi-icon is-warning"><i class="bi bi-hourglass-split"></i></span>
+    <span>Fizetetlen számlák</span><strong>{{ summary.unpaid_supplier_invoices }}</strong>
+    <small>Beszállítói eszközszámlák</small>
+  </a>
+  <a class="finance-kpi" href="{{ url_for('unassigned_invoices') }}">
+    <span class="finance-kpi-icon is-danger"><i class="bi bi-link-45deg"></i></span>
+    <span>Rendezésre vár</span><strong>{{ summary.unassigned_invoice_count }}</strong>
+    <small>Gazdátlan számlasor</small>
+  </a>
+  <a class="finance-kpi" href="#missing-finance">
+    <span class="finance-kpi-icon is-info"><i class="bi bi-exclamation-diamond"></i></span>
+    <span>Hiányos pénzügyi adat</span><strong>{{ summary.missing_financial_data }}</strong>
+    <small>{{ summary.missing_currency_count }} tételnél devizahiány</small>
+  </a>
 </div>
 
-<div class="row g-4">
-  <div class="col-lg-6">
+<div class="row g-4 mb-4">
+  <div class="col-xl-7">
     <section class="data-section h-100">
-      <div class="section-title"><h2>Hozzárendelt számlasorértékek</h2></div>
-      <div class="p-3">
-        <div class="d-flex justify-content-between py-2 border-bottom"><span>Projekthez rendelt érték</span><strong>{{ format_number(summary.project_assigned_value_huf) }} HUF</strong></div>
-        <div class="d-flex justify-content-between py-2"><span>Eszközhöz rendelt érték</span><strong>{{ format_number(summary.device_assigned_value_huf) }} HUF</strong></div>
-        <p class="small text-secondary mb-0 mt-3">A számlasor bruttó értéke, ennek hiányában nettó értéke alapján.</p>
+      <div class="section-title">
+        <div><h2>Legértékesebb projektek</h2><span class="section-subtitle">Aktív projektkészlet nettó HUF érték szerint</span></div>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('finance_projects') }}">Drill-down</a>
+      </div>
+      <div class="finance-chart-wrap"><canvas id="projectValueChart"></canvas></div>
+    </section>
+  </div>
+  <div class="col-xl-5">
+    <section class="data-section h-100">
+      <div class="section-title"><h2>Projekt rangsor</h2></div>
+      <div class="finance-ranking">
+        {% for row in top_projects[:6] %}
+        <a href="{{ url_for('finance_project_detail', project_id=row.project.id) }}">
+          <span class="finance-rank">{{ loop.index }}</span>
+          <span class="finance-rank-name"><strong>{{ row.project.code }}</strong><small>{{ row.project.name }}</small></span>
+          <span class="finance-rank-value">{{ format_number(row.net_huf) }} HUF<small>{{ format_number(row.item_quantity) }} db</small></span>
+        </a>
+        {% else %}
+        <div class="empty-state"><strong>Nincs értékelhető projektkészlet.</strong></div>
+        {% endfor %}
       </div>
     </section>
   </div>
-  <div class="col-lg-6">
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-xl-6">
     <section class="data-section h-100">
-      <div class="section-title"><h2>Következő pénzügyi nézetek</h2></div>
-      <div class="p-3">
-        <div class="list-group list-group-flush">
-          <div class="list-group-item px-0 d-flex justify-content-between"><span>Projekt pénzügy</span><span class="status-badge status-neutral">Előkészítve</span></div>
-          <div class="list-group-item px-0 d-flex justify-content-between"><span>Fizetetlen számlák</span><span class="status-badge status-neutral">Következő lépés</span></div>
-          <div class="list-group-item px-0 d-flex justify-content-between"><span>Pénzügyi exportok</span><span class="status-badge status-neutral">Következő lépés</span></div>
-        </div>
+      <div class="section-title">
+        <div><h2>Készletérték készlethelyenként</h2><span class="section-subtitle">Fizikailag tárolt, nem selejtezett állomány</span></div>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('finance_inventory') }}">Részletek</a>
       </div>
+      <div class="finance-chart-wrap compact"><canvas id="locationValueChart"></canvas></div>
+    </section>
+  </div>
+  <div class="col-xl-6">
+    <section class="data-section h-100">
+      <div class="section-title">
+        <div><h2>Beszállítói költések</h2><span class="section-subtitle">Terméktörzs nettó beszerzési értéke</span></div>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('finance_suppliers') }}">Részletek</a>
+      </div>
+      <div class="finance-chart-wrap compact"><canvas id="supplierSpendChart"></canvas></div>
     </section>
   </div>
 </div>
+
+<section class="data-section" id="missing-finance">
+  <div class="section-title">
+    <div><h2>Hiányos pénzügyi adatok</h2><span class="section-subtitle">A pontos riportot blokkoló terméktörzs-adatok</span></div>
+    <span class="status-badge status-warning">{{ summary.missing_financial_data }} tétel</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Eszköz / tétel</th><th>Beszállító</th><th>Probléma</th><th>Deviza</th><th></th></tr></thead>
+      <tbody>
+        {% for row in incomplete_devices %}
+        <tr>
+          <td><strong>{{ device_primary_label(row.device) }}</strong><div class="small text-secondary">{{ category_label(row.device.device_type) }}</div></td>
+          <td>{{ row.device.supplier_manufacturer or row.device.manufacturer or "-" }}</td>
+          <td>{% for issue in row.issues %}<span class="finance-issue">{{ issue }}</span>{% endfor %}</td>
+          <td>{{ row.device.currency or "Hiányzik" }}</td>
+          <td><a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_edit', device_id=row.device.id) }}"><i class="bi bi-pencil"></i> Javítás</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5"><div class="empty-state"><strong>Minden aktív tétel pénzügyi adata teljes.</strong></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+  (() => {
+    const data = {{ chart_data|tojson }};
+    const formatHuf = (value) => new Intl.NumberFormat("hu-HU").format(value) + " HUF";
+    const baseOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: context => formatHuf(context.raw) } } },
+      scales: { y: { beginAtZero: true, ticks: { callback: value => new Intl.NumberFormat("hu-HU", { notation: "compact" }).format(value) }, grid: { color: "#ece9f3" } }, x: { grid: { display: false } } }
+    };
+    new Chart(document.querySelector("#projectValueChart"), { type: "bar", data: { labels: data.projects.labels, datasets: [{ data: data.projects.values, backgroundColor: "#7650c4", borderRadius: 5 }] }, options: baseOptions });
+    new Chart(document.querySelector("#locationValueChart"), { type: "doughnut", data: { labels: data.locations.labels, datasets: [{ data: data.locations.values, backgroundColor: ["#7650c4", "#27a58a", "#4f6df5", "#e99a2e", "#d94a7f", "#6f7b8c"] }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { boxWidth: 10 } }, tooltip: { callbacks: { label: context => `${context.label}: ${formatHuf(context.raw)}` } } } } });
+    new Chart(document.querySelector("#supplierSpendChart"), { type: "bar", data: { labels: data.suppliers.labels, datasets: [{ data: data.suppliers.values, backgroundColor: "#27a58a", borderRadius: 5 }] }, options: { ...baseOptions, indexAxis: "y" } });
+  })();
+</script>
 {% endblock %}

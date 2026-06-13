@@ -5,7 +5,9 @@ from werkzeug.security import generate_password_hash
 
 from app import create_app, db
 from models import (
+    BulkStockBalance,
     Device,
+    Location,
     Project,
     StockMovement,
     UnassignedInvoiceItem,
@@ -72,7 +74,13 @@ class FinanceWorkflowTestCase(unittest.TestCase):
             quantity=2,
             currency="HUF",
             unit_net_price=1000,
+            vat_rate=27,
+            supplier_manufacturer="Teszt Beszállító",
+            supplier_invoice_number="SUP-001",
+            supplier_invoice_paid=False,
+            tracking_mode="bulk",
         )
+        self.location = Location(name="Pénzügyi tesztraktár", location_type="warehouse")
         self.item = UnassignedInvoiceItem(
             invoice_number="INV-001",
             partner="Teszt Partner",
@@ -89,7 +97,25 @@ class FinanceWorkflowTestCase(unittest.TestCase):
                 self.viewer,
                 self.project,
                 self.device,
+                self.location,
                 self.item,
+            ]
+        )
+        db.session.flush()
+        db.session.add_all(
+            [
+                BulkStockBalance(
+                    device_id=self.device.id,
+                    status="ISSUED",
+                    quantity=2,
+                    project_id=self.project.id,
+                ),
+                BulkStockBalance(
+                    device_id=self.device.id,
+                    status="IN_STOCK",
+                    quantity=3,
+                    location_id=self.location.id,
+                ),
             ]
         )
         db.session.commit()
@@ -106,12 +132,46 @@ class FinanceWorkflowTestCase(unittest.TestCase):
         return client
 
     def test_finance_pages_are_visible_to_admin_and_manager_only(self):
-        self.assertEqual(self.client_for(self.admin).get("/finance").status_code, 200)
-        self.assertEqual(self.client_for(self.manager).get("/finance").status_code, 200)
+        finance_urls = (
+            "/finance",
+            "/finance/projects",
+            f"/finance/projects/{self.project.id}",
+            f"/finance/projects/{self.project.id}/bom",
+            "/finance/inventory",
+            "/finance/suppliers",
+            "/finance/invoices",
+        )
+        for url in finance_urls:
+            self.assertEqual(self.client_for(self.admin).get(url).status_code, 200)
+            self.assertEqual(self.client_for(self.manager).get(url).status_code, 200)
         for user in (self.technician, self.viewer):
-            response = self.client_for(user).get("/finance")
-            self.assertEqual(response.status_code, 302)
-            self.assertEqual(response.headers["Location"], "/dashboard")
+            for url in finance_urls:
+                response = self.client_for(user).get(url)
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(response.headers["Location"], "/dashboard")
+
+    def test_finance_dashboard_and_drilldowns_use_unit_bulk_inventory(self):
+        dashboard = self.client_for(self.manager).get("/finance").get_data(as_text=True)
+        self.assertIn("Legértékesebb projektek", dashboard)
+        self.assertIn("PRK-FIN", dashboard)
+
+        project_page = self.client_for(self.manager).get(
+            f"/finance/projects/{self.project.id}"
+        ).get_data(as_text=True)
+        self.assertIn("2 000", project_page)
+        self.assertIn("Projekt költségösszesítő / BOM", project_page)
+
+        inventory_page = self.client_for(self.manager).get(
+            "/finance/inventory"
+        ).get_data(as_text=True)
+        self.assertIn("Pénzügyi tesztraktár", inventory_page)
+        self.assertIn("3 000", inventory_page)
+
+        supplier_page = self.client_for(self.manager).get(
+            "/finance/suppliers"
+        ).get_data(as_text=True)
+        self.assertIn("Teszt Beszállító", supplier_page)
+        self.assertIn("1", supplier_page)
 
     def test_invoice_clarification_does_not_create_stock_movement(self):
         movement_count = StockMovement.query.count()

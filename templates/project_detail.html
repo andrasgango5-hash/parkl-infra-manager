@@ -304,7 +304,7 @@
       </div>
       <div class="p-3">
         <div class="help-box mb-3">
-          <strong>Alaprajz alapú jelölés.</strong> Tölts fel parkoló- vagy alaprajz képet háttérként, majd helyezz rá sorompókat, kamerákat, töltőket, hálózati és elektromos elemeket, kábelvonalakat és címkéket.
+          <strong>Alaprajz alapú jelölés.</strong> Tölts fel PDF vagy kép alaprajzot háttérként, majd helyezz rá sorompókat, kamerákat, töltőket, hálózati és elektromos elemeket, kábelkapcsolatokat és címkéket.
         </div>
         <form method="post" enctype="multipart/form-data" action="{{ url_for('project_drawing_create', project_id=project.id) }}" class="row g-3 align-items-end">
           <div class="col-md-4">
@@ -312,8 +312,8 @@
             <input class="form-control" id="drawing_name" name="name" placeholder="Arena bejárati zóna">
           </div>
           <div class="col-md-5">
-            <label class="form-label" for="background_image">Alaprajz / parkoló kép</label>
-            <input class="form-control" id="background_image" name="background_image" type="file" accept=".png,.jpg,.jpeg,.webp">
+            <label class="form-label" for="background_image">Alaprajz (PDF vagy kép)</label>
+            <input class="form-control" id="background_image" name="background_image" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp">
           </div>
           <div class="col-md-3">
             <button class="btn btn-success w-100" type="submit">Rajz létrehozása</button>
@@ -327,7 +327,7 @@
             {% for drawing in drawings %}
               <tr>
                 <td class="fw-semibold">{{ drawing.name }}</td>
-                <td>{{ "Van háttérkép" if drawing.background_filename else "Nincs háttérkép" }}</td>
+                <td>{{ "Van háttérrajz" if drawing.background_filename else "Nincs háttérrajz" }}</td>
                 <td>{{ drawing.updated_at.strftime("%Y-%m-%d %H:%M") }}</td>
                 <td><a class="btn btn-purple btn-sm" href="{{ url_for('project_drawing_editor', project_id=project.id, drawing_id=drawing.id) }}">Szerkesztő megnyitása</a></td>
               </tr>

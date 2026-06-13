@@ -194,7 +194,7 @@ M2M_USAGE_SOURCE_LABELS = {
     "import": "Import",
     "teltonika_api": "Teltonika API",
 }
-ALLOWED_DRAWING_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
+ALLOWED_DRAWING_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "pdf"}
 ALLOWED_PHOTO_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 
 WORK_ORDER_TYPE_LABELS = {
@@ -455,8 +455,10 @@ def create_app(config_class=Config):
             "format_number": format_number,
             "format_vat_rate": format_vat_rate,
             "line_net_amount": line_net_amount,
+            "invoice_item_value": invoice_item_value,
             "device_display_label": device_display_label,
             "device_primary_label": device_primary_label,
+            "device_active_project_codes": device_active_project_codes,
             "device_money_text": device_money_text,
             "device_qr_mode_label": device_qr_mode_label,
             "tracking_mode_label": tracking_mode_label,
@@ -2232,7 +2234,10 @@ def create_app(config_class=Config):
         background_filename = None
         if upload and upload.filename:
             if not allowed_drawing_file(upload.filename):
-                flash("Csak PNG, JPG, JPEG vagy WEBP alaprajz tölthető fel.", "danger")
+                flash(
+                    "Csak PDF, PNG, JPG, JPEG vagy WEBP alaprajz tölthető fel.",
+                    "danger",
+                )
                 return redirect(url_for("project_detail", project_id=project.id) + "#drawings")
             background_filename = save_drawing_background(app, upload, project.id)
 
@@ -2261,6 +2266,51 @@ def create_app(config_class=Config):
             background_url = url_for(
                 "drawing_background", filename=drawing.background_filename
             )
+        drawing_units = (
+            DeviceUnit.query.join(Device)
+            .filter(
+                DeviceUnit.project_id == project.id,
+                DeviceUnit.archived_at.is_(None),
+                Device.archived_at.is_(None),
+            )
+            .order_by(Device.product_name.asc(), DeviceUnit.unit_code.asc())
+            .all()
+        )
+        drawing_bulk_balances = (
+            BulkStockBalance.query.join(Device)
+            .filter(
+                BulkStockBalance.project_id == project.id,
+                BulkStockBalance.quantity > 0,
+                Device.archived_at.is_(None),
+            )
+            .order_by(Device.product_name.asc())
+            .all()
+        )
+        project_drawing_items = [
+            {
+                "kind": "unit",
+                "unit_id": unit.id,
+                "device_id": unit.device_id,
+                "code": unit.unit_code or unit.asset_tag or unit.serial_number,
+                "label": unit.device.product_name or unit.device.name,
+                "category": unit.device.device_type,
+                "status": unit.status,
+                "quantity": 1,
+            }
+            for unit in drawing_units
+        ] + [
+            {
+                "kind": "bulk",
+                "balance_id": balance.id,
+                "device_id": balance.device_id,
+                "code": balance.device.asset_tag,
+                "label": balance.device.product_name or balance.device.name,
+                "category": balance.device.device_type,
+                "status": balance.status,
+                "quantity": balance.quantity,
+            }
+            for balance in drawing_bulk_balances
+        ]
         return render_template(
             "drawing_editor.html",
             project=project,
@@ -2268,6 +2318,7 @@ def create_app(config_class=Config):
             background_url=background_url,
             icon_categories=DRAWING_ICON_CATEGORIES,
             line_types=DRAWING_LINE_TYPES,
+            project_drawing_items=project_drawing_items,
         )
 
     @app.route("/projects/<int:project_id>/drawings/<int:drawing_id>/save", methods=["POST"])
@@ -3116,11 +3167,105 @@ def create_app(config_class=Config):
     @app.route("/finance")
     @finance_required
     def finance_overview():
-        devices = Device.query.filter(Device.archived_at.is_(None)).all()
+        devices = (
+            Device.query.filter(Device.archived_at.is_(None))
+            .order_by(Device.product_name.asc(), Device.asset_tag.asc())
+            .all()
+        )
+        projects = (
+            Project.query.filter(Project.archived_at.is_(None))
+            .order_by(Project.code.asc())
+            .all()
+        )
+        locations = (
+            Location.query.filter(
+                Location.archived_at.is_(None),
+                Location.location_type.in_(LOGISTIC_LOCATION_TYPES),
+            )
+            .order_by(Location.name.asc())
+            .all()
+        )
         invoice_items = UnassignedInvoiceItem.query.filter(
             UnassignedInvoiceItem.archived_at.is_(None)
         ).all()
         currency_totals = device_currency_totals(devices)
+        project_rows = [project_finance_snapshot(project) for project in projects]
+        project_rows.sort(
+            key=lambda item: item["net_huf"] + item["invoice_value_huf"],
+            reverse=True,
+        )
+        location_rows = []
+        for location in locations:
+            rows = [
+                {
+                    "device": unit.device,
+                    "unit": unit,
+                    "quantity": 1,
+                    "status": unit.status,
+                }
+                for unit in location.device_units
+                if unit.archived_at is None and unit.status != "SCRAPPED"
+            ] + [
+                {
+                    "device": balance.device,
+                    "unit": None,
+                    "quantity": balance.quantity,
+                    "status": balance.status,
+                }
+                for balance in location.bulk_balances
+                if balance.quantity > 1e-9 and balance.status != "SCRAPPED"
+            ]
+            totals = finance_rows_totals(rows)
+            location_rows.append(
+                {
+                    "location": location,
+                    "quantity": sum(row["quantity"] for row in rows),
+                    **totals,
+                }
+            )
+        location_rows.sort(key=lambda item: item["net_huf"], reverse=True)
+        inventory_totals = empty_currency_totals()
+        for row in location_rows:
+            for key in (
+                "net_huf",
+                "gross_huf",
+                "net_eur",
+                "gross_eur",
+            ):
+                inventory_totals[key] += row[key]
+        inventory_totals["missing_currency_count"] = currency_totals[
+            "missing_currency_count"
+        ]
+        supplier_map = {}
+        for device in devices:
+            supplier = (
+                device.supplier_manufacturer
+                or device.manufacturer
+                or "Nincs megadva"
+            )
+            entry = supplier_map.setdefault(
+                supplier,
+                {
+                    "name": supplier,
+                    "device_count": 0,
+                    "net_huf": 0,
+                    "net_eur": 0,
+                    "invoice_count": 0,
+                    "unpaid_count": 0,
+                },
+            )
+            entry["device_count"] += 1
+            if device.currency in {"HUF", "EUR"} and device.total_net_price is not None:
+                entry[f"net_{device.currency.lower()}"] += device.total_net_price
+            if device.supplier_invoice_number:
+                entry["invoice_count"] += 1
+                if device.supplier_invoice_paid is not True:
+                    entry["unpaid_count"] += 1
+        supplier_rows = sorted(
+            supplier_map.values(),
+            key=lambda item: item["net_huf"],
+            reverse=True,
+        )
         unpaid_supplier_invoices = sum(
             1
             for device in devices
@@ -3130,14 +3275,37 @@ def create_app(config_class=Config):
         missing_financial_data = sum(
             1
             for device in devices
-            if device.quantity in (None, 0)
-            or not device.currency
-            or device.unit_net_price is None
+            if device_finance_issues(device)
         )
         return render_template(
             "finance_overview.html",
+            top_projects=project_rows[:8],
+            location_rows=location_rows[:8],
+            supplier_rows=supplier_rows[:8],
+            incomplete_devices=[
+                {
+                    "device": device,
+                    "issues": device_finance_issues(device),
+                }
+                for device in devices
+                if device_finance_issues(device)
+            ][:10],
+            chart_data={
+                "projects": {
+                    "labels": [row["project"].code for row in project_rows[:8]],
+                    "values": [row["net_huf"] for row in project_rows[:8]],
+                },
+                "locations": {
+                    "labels": [row["location"].name for row in location_rows[:8]],
+                    "values": [row["net_huf"] for row in location_rows[:8]],
+                },
+                "suppliers": {
+                    "labels": [row["name"] for row in supplier_rows[:8]],
+                    "values": [row["net_huf"] for row in supplier_rows[:8]],
+                },
+            },
             summary={
-                **currency_totals,
+                **inventory_totals,
                 "unpaid_supplier_invoices": unpaid_supplier_invoices,
                 "unassigned_invoice_count": sum(
                     1
@@ -3164,6 +3332,218 @@ def create_app(config_class=Config):
                 ),
                 "missing_financial_data": missing_financial_data,
             },
+        )
+
+    @app.route("/finance/projects")
+    @finance_required
+    def finance_projects():
+        search = request.args.get("q", "").strip()
+        status = request.args.get("status", "").strip()
+        query = Project.query.filter(Project.archived_at.is_(None))
+        if search:
+            term = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Project.code.ilike(term),
+                    Project.name.ilike(term),
+                    Project.customer.ilike(term),
+                )
+            )
+        if status in PROJECT_STATUS_LABELS:
+            query = query.filter(Project.status == status)
+        rows = [project_finance_snapshot(project) for project in query.order_by(Project.code.asc()).all()]
+        rows.sort(key=lambda item: item["net_huf"] + item["invoice_value_huf"], reverse=True)
+        return render_template(
+            "finance_projects.html",
+            rows=rows,
+            search=search,
+            selected_status=status,
+            project_statuses=PROJECT_STATUS_LABELS,
+        )
+
+    @app.route("/finance/projects/<int:project_id>")
+    @finance_required
+    def finance_project_detail(project_id):
+        project = Project.query.get_or_404(project_id)
+        snapshot = project_finance_snapshot(project)
+        bom_rows = project_bom_rows(project)
+        invoice_items = (
+            UnassignedInvoiceItem.query.filter(
+                UnassignedInvoiceItem.archived_at.is_(None),
+                UnassignedInvoiceItem.assigned_project_id == project.id,
+            )
+            .order_by(UnassignedInvoiceItem.invoice_date.desc())
+            .all()
+        )
+        return render_template(
+            "finance_project_detail.html",
+            project=project,
+            snapshot=snapshot,
+            bom_rows=bom_rows,
+            invoice_items=invoice_items,
+        )
+
+    @app.route("/finance/projects/<int:project_id>/bom")
+    @finance_required
+    def finance_project_bom(project_id):
+        project = Project.query.get_or_404(project_id)
+        rows = project_bom_rows(project)
+        return render_template(
+            "finance_bom.html",
+            project=project,
+            rows=rows,
+            totals=finance_rows_totals(
+                [
+                    {
+                        "device": row["device"],
+                        "quantity": row["quantity"],
+                    }
+                    for row in rows
+                ]
+            ),
+        )
+
+    @app.route("/finance/inventory")
+    @finance_required
+    def finance_inventory():
+        location_id = optional_int(request.args.get("location_id"))
+        locations = (
+            Location.query.filter(
+                Location.archived_at.is_(None),
+                Location.location_type.in_(LOGISTIC_LOCATION_TYPES),
+            )
+            .order_by(Location.name.asc())
+            .all()
+        )
+        rows = []
+        for location in locations:
+            if location_id and location.id != location_id:
+                continue
+            item_rows = [
+                {
+                    "device": unit.device,
+                    "quantity": 1,
+                    "status": unit.status,
+                    "unit": unit,
+                }
+                for unit in location.device_units
+                if unit.archived_at is None and unit.status != "SCRAPPED"
+            ] + [
+                {
+                    "device": balance.device,
+                    "quantity": balance.quantity,
+                    "status": balance.status,
+                    "unit": None,
+                }
+                for balance in location.bulk_balances
+                if balance.quantity > 1e-9 and balance.status != "SCRAPPED"
+            ]
+            rows.append(
+                {
+                    "location": location,
+                    "detail_rows": item_rows,
+                    "quantity": sum(item["quantity"] for item in item_rows),
+                    **finance_rows_totals(item_rows),
+                }
+            )
+        return render_template(
+            "finance_inventory.html",
+            rows=rows,
+            locations=locations,
+            selected_location_id=location_id,
+        )
+
+    @app.route("/finance/suppliers")
+    @finance_required
+    def finance_suppliers():
+        search = request.args.get("q", "").strip().lower()
+        suppliers = {}
+        devices = Device.query.filter(Device.archived_at.is_(None)).all()
+        for device in devices:
+            supplier = (
+                device.supplier_manufacturer
+                or device.manufacturer
+                or "Nincs megadva"
+            )
+            if search and search not in supplier.lower():
+                continue
+            entry = suppliers.setdefault(
+                supplier,
+                {
+                    "name": supplier,
+                    "devices": [],
+                    "net_huf": 0,
+                    "gross_huf": 0,
+                    "net_eur": 0,
+                    "gross_eur": 0,
+                    "invoice_count": 0,
+                    "unpaid_count": 0,
+                },
+            )
+            entry["devices"].append(device)
+            if device.currency in {"HUF", "EUR"}:
+                currency = device.currency.lower()
+                entry[f"net_{currency}"] += device.total_net_price or 0
+                entry[f"gross_{currency}"] += device.total_gross_price or 0
+            if device.supplier_invoice_number:
+                entry["invoice_count"] += 1
+                if device.supplier_invoice_paid is not True:
+                    entry["unpaid_count"] += 1
+        rows = sorted(suppliers.values(), key=lambda item: item["net_huf"], reverse=True)
+        return render_template("finance_suppliers.html", rows=rows, search=search)
+
+    @app.route("/finance/invoices")
+    @finance_required
+    def finance_invoices():
+        search = request.args.get("q", "").strip()
+        payment_status = request.args.get("payment_status", "all").strip()
+        device_query = Device.query.filter(
+            Device.archived_at.is_(None),
+            or_(
+                Device.supplier_invoice_number.is_not(None),
+                Device.shipping_invoice_number.is_not(None),
+            ),
+        )
+        item_query = UnassignedInvoiceItem.query.filter(
+            UnassignedInvoiceItem.archived_at.is_(None)
+        )
+        if search:
+            term = f"%{search}%"
+            device_query = device_query.filter(
+                or_(
+                    Device.supplier_invoice_number.ilike(term),
+                    Device.shipping_invoice_number.ilike(term),
+                    Device.supplier_manufacturer.ilike(term),
+                    Device.product_name.ilike(term),
+                )
+            )
+            item_query = item_query.filter(
+                or_(
+                    UnassignedInvoiceItem.invoice_number.ilike(term),
+                    UnassignedInvoiceItem.partner.ilike(term),
+                    UnassignedInvoiceItem.description.ilike(term),
+                )
+            )
+        device_invoices = device_query.order_by(Device.updated_at.desc()).all()
+        if payment_status == "unpaid":
+            device_invoices = [
+                device
+                for device in device_invoices
+                if is_financially_open(device)
+            ]
+        elif payment_status == "paid":
+            device_invoices = [
+                device
+                for device in device_invoices
+                if not is_financially_open(device)
+            ]
+        invoice_items = item_query.order_by(UnassignedInvoiceItem.invoice_date.desc()).all()
+        return render_template(
+            "finance_invoices.html",
+            device_invoices=device_invoices,
+            invoice_items=invoice_items,
+            search=search,
+            payment_status=payment_status,
         )
 
     @app.route("/unassigned-invoices")
@@ -4955,6 +5335,135 @@ def device_currency_totals(devices):
         if device.total_gross_price is not None:
             totals[f"gross_{currency_key}"] += device.total_gross_price
     return totals
+
+
+def empty_currency_totals():
+    return {
+        "net_huf": 0,
+        "net_eur": 0,
+        "gross_huf": 0,
+        "gross_eur": 0,
+        "missing_currency_count": 0,
+    }
+
+
+def add_finance_value(totals, device, quantity):
+    if device.currency not in {"HUF", "EUR"}:
+        totals["missing_currency_count"] += 1
+        return
+    currency = device.currency.lower()
+    if device.unit_net_price is not None:
+        totals[f"net_{currency}"] += device.unit_net_price * quantity
+    if device.unit_gross_price is not None:
+        totals[f"gross_{currency}"] += device.unit_gross_price * quantity
+
+
+def finance_rows_totals(rows):
+    totals = empty_currency_totals()
+    for row in rows:
+        add_finance_value(totals, row["device"], row["quantity"])
+    return totals
+
+
+def device_finance_issues(device):
+    issues = []
+    if device.quantity in (None, 0):
+        issues.append("Hiányzó vagy nulla mennyiség")
+    if device.currency not in {"HUF", "EUR"}:
+        issues.append("Hiányzó vagy ismeretlen deviza")
+    if device.unit_net_price is None and device.huf_value is None:
+        issues.append("Hiányzó nettó egységár vagy importált összérték")
+    if device.vat_rate is None:
+        issues.append("Hiányzó ÁFA")
+    if not (device.supplier_manufacturer or device.manufacturer):
+        issues.append("Hiányzó beszállító / gyártó")
+    return issues
+
+
+def invoice_item_value(item):
+    if item.line_gross_amount_huf is not None:
+        return item.line_gross_amount_huf
+    if item.gross_amount_huf is not None:
+        return item.gross_amount_huf
+    return line_net_amount(item) or 0
+
+
+def project_finance_snapshot(project):
+    rows = project_inventory_rows(project)
+    totals = finance_rows_totals(rows)
+    invoice_items = [
+        item
+        for item in project.unassigned_invoice_items
+        if item.archived_at is None
+    ]
+    unique_devices = {row["device"].id: row["device"] for row in rows}.values()
+    totals.update(
+        {
+            "project": project,
+            "rows": rows,
+            "item_quantity": sum(row["quantity"] for row in rows),
+            "invoice_count": len(invoice_items),
+            "invoice_value_huf": sum(invoice_item_value(item) for item in invoice_items),
+            "unpaid_count": sum(
+                1
+                for device in unique_devices
+                if device.supplier_invoice_number
+                and device.supplier_invoice_paid is not True
+            ),
+            "missing_count": sum(
+                1 for device in unique_devices if device_finance_issues(device)
+            ),
+        }
+    )
+    return totals
+
+
+def device_active_project_codes(device):
+    if device.tracking_mode == "unit":
+        projects = {
+            unit.project.code
+            for unit in active_device_units(device)
+            if unit.project is not None and unit.status in PROJECT_ACTIVE_STATUSES
+        }
+    else:
+        projects = {
+            balance.project.code
+            for balance in active_bulk_balances(device)
+            if balance.project is not None and balance.status in PROJECT_ACTIVE_STATUSES
+        }
+    return ", ".join(sorted(projects)) or "-"
+
+
+def project_bom_rows(project):
+    grouped = {}
+    for row in project_inventory_rows(project):
+        device = row["device"]
+        key = (device.id, row["status"])
+        if key not in grouped:
+            grouped[key] = {
+                "device": device,
+                "status": row["status"],
+                "quantity": 0,
+                "unit_count": 0,
+                "net_total": None,
+                "gross_total": None,
+            }
+        grouped[key]["quantity"] += row["quantity"]
+        grouped[key]["unit_count"] += 1 if row["unit"] else 0
+    for item in grouped.values():
+        device = item["device"]
+        if device.unit_net_price is not None and device.currency in {"HUF", "EUR"}:
+            item["net_total"] = device.unit_net_price * item["quantity"]
+        if device.unit_gross_price is not None and device.currency in {"HUF", "EUR"}:
+            item["gross_total"] = device.unit_gross_price * item["quantity"]
+    return sorted(
+        grouped.values(),
+        key=lambda item: (
+            item["device"].device_type or "",
+            item["device"].product_name or item["device"].asset_tag,
+            item["status"],
+        ),
+    )
 
 
 def line_net_amount(item):

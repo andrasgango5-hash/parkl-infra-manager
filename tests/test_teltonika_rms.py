@@ -179,6 +179,84 @@ class TeltonikaRMSTestCase(unittest.TestCase):
         self.assertIn("mobile=1", logs)
         self.assertIn("wired=1", logs)
 
+    def test_list_devices_fetches_all_pages_from_pagination_meta(self):
+        pages = [
+            {
+                "success": True,
+                "data": [{"id": index} for index in range(1, 11)],
+                "meta": {
+                    "current_page": 1,
+                    "last_page": 3,
+                    "per_page": 10,
+                    "total": 23,
+                },
+            },
+            {
+                "success": True,
+                "data": [{"id": index} for index in range(11, 21)],
+                "meta": {
+                    "current_page": 2,
+                    "last_page": 3,
+                    "per_page": 10,
+                    "total": 23,
+                },
+            },
+            {
+                "success": True,
+                "data": [{"id": index} for index in range(21, 24)],
+                "meta": {
+                    "current_page": 3,
+                    "last_page": 3,
+                    "per_page": 10,
+                    "total": 23,
+                },
+            },
+        ]
+        with patch(
+            "services.teltonika_rms.rms_get",
+            side_effect=pages,
+        ) as mocked_get:
+            devices = list_rms_devices()
+
+        self.assertEqual(len(devices), 23)
+        self.assertEqual(
+            [call.kwargs["params"]["page"] for call in mocked_get.call_args_list],
+            [1, 2, 3],
+        )
+
+    def test_list_devices_uses_default_ten_record_page_fallback(self):
+        with patch(
+            "services.teltonika_rms.rms_get",
+            side_effect=[
+                {
+                    "success": True,
+                    "data": [{"id": index} for index in range(1, 11)],
+                },
+                {
+                    "success": True,
+                    "data": [{"id": index} for index in range(11, 14)],
+                },
+            ],
+        ) as mocked_get:
+            devices = list_rms_devices()
+
+        self.assertEqual(len(devices), 13)
+        self.assertEqual(mocked_get.call_count, 2)
+
+    def test_list_devices_stops_if_api_repeats_same_page(self):
+        repeated_page = {
+            "success": True,
+            "data": [{"id": index} for index in range(1, 11)],
+        }
+        with patch(
+            "services.teltonika_rms.rms_get",
+            side_effect=[repeated_page, repeated_page],
+        ) as mocked_get:
+            devices = list_rms_devices()
+
+        self.assertEqual(len(devices), 10)
+        self.assertEqual(mocked_get.call_count, 2)
+
     def test_normalize_supports_real_rms_fields(self):
         normalized = normalize_rms_device(
             {

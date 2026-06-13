@@ -23,7 +23,7 @@
       {% set work_orders_active = endpoint.startswith('work_order') and endpoint != 'work_order_pdf' %}
       {% set documents_active = endpoint in ['documents', 'work_order_pdf', 'project_pdf'] %}
       {% set attention_active = endpoint == 'attention' %}
-      {% set finance_active = endpoint == 'finance_overview' %}
+      {% set finance_active = endpoint in ['finance_overview', 'finance_projects', 'finance_project_detail', 'finance_project_bom', 'finance_inventory', 'finance_suppliers', 'finance_invoices'] %}
       {% set invoices_active = endpoint in ['unassigned_invoices', 'unassigned_invoice_new', 'unassigned_invoice_edit', 'unassigned_invoice_clarify', 'unassigned_invoice_archive'] %}
       {% set admin_active = endpoint == 'admin_tools' %}
       {% set legacy_active = endpoint in ['legacy', 'legacy_parkl_excel_import', 'import_batch_detail', 'import_batch_rollback', 'import_batch_archive'] %}
@@ -112,6 +112,15 @@
             <div class="sidebar-group-label">Pénzügy</div>
             <a class="sidebar-link {% if finance_active %}active{% endif %}" href="{{ url_for('finance_overview') }}" title="Pénzügyi áttekintés">
               <i class="bi bi-graph-up-arrow"></i><span>Pénzügyi áttekintés</span>
+            </a>
+            <a class="sidebar-link {% if endpoint in ['finance_projects', 'finance_project_detail', 'finance_project_bom'] %}active{% endif %}" href="{{ url_for('finance_projects') }}" title="Projekt pénzügy">
+              <i class="bi bi-kanban"></i><span>Projekt pénzügy</span>
+            </a>
+            <a class="sidebar-link {% if endpoint == 'finance_inventory' %}active{% endif %}" href="{{ url_for('finance_inventory') }}" title="Készletérték">
+              <i class="bi bi-box-seam"></i><span>Készletérték</span>
+            </a>
+            <a class="sidebar-link {% if endpoint == 'finance_invoices' %}active{% endif %}" href="{{ url_for('finance_invoices') }}" title="Számlák">
+              <i class="bi bi-receipt-cutoff"></i><span>Számlák</span>
             </a>
             <a class="sidebar-link {% if invoices_active %}active{% endif %}" href="{{ url_for('unassigned_invoices') }}" title="Gazdátlan számlasorok">
               <i class="bi bi-receipt"></i><span>Gazdátlan számlasorok</span>
