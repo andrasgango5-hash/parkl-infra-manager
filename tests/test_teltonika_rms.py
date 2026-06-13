@@ -179,15 +179,14 @@ class TeltonikaRMSTestCase(unittest.TestCase):
         self.assertIn("mobile=1", logs)
         self.assertIn("wired=1", logs)
 
-    def test_list_devices_fetches_all_pages_from_pagination_meta(self):
+    def test_list_devices_fetches_all_records_with_offset_pagination(self):
         pages = [
             {
                 "success": True,
                 "data": [{"id": index} for index in range(1, 11)],
                 "meta": {
-                    "current_page": 1,
-                    "last_page": 3,
-                    "per_page": 10,
+                    "offset": 0,
+                    "limit": 10,
                     "total": 23,
                 },
             },
@@ -195,9 +194,8 @@ class TeltonikaRMSTestCase(unittest.TestCase):
                 "success": True,
                 "data": [{"id": index} for index in range(11, 21)],
                 "meta": {
-                    "current_page": 2,
-                    "last_page": 3,
-                    "per_page": 10,
+                    "offset": 10,
+                    "limit": 10,
                     "total": 23,
                 },
             },
@@ -205,36 +203,57 @@ class TeltonikaRMSTestCase(unittest.TestCase):
                 "success": True,
                 "data": [{"id": index} for index in range(21, 24)],
                 "meta": {
-                    "current_page": 3,
-                    "last_page": 3,
-                    "per_page": 10,
+                    "offset": 20,
+                    "limit": 10,
                     "total": 23,
                 },
             },
         ]
-        with patch(
-            "services.teltonika_rms.rms_get",
-            side_effect=pages,
-        ) as mocked_get:
+        with (
+            patch(
+                "services.teltonika_rms.rms_get",
+                side_effect=pages,
+            ) as mocked_get,
+            self.assertLogs(self.app.logger.name, level="INFO") as captured,
+        ):
             devices = list_rms_devices()
 
         self.assertEqual(len(devices), 23)
         self.assertEqual(
-            [call.kwargs["params"]["page"] for call in mocked_get.call_args_list],
-            [1, 2, 3],
+            [call.kwargs["params"]["offset"] for call in mocked_get.call_args_list],
+            [0, 10, 20],
         )
+        self.assertTrue(
+            all(
+                call.kwargs["params"]["limit"] == 100
+                for call in mocked_get.call_args_list
+            )
+        )
+        logs = "\n".join(captured.output)
+        self.assertIn("offset=0", logs)
+        self.assertIn("offset=10", logs)
+        self.assertIn("total=23", logs)
+        self.assertIn('"total": 23', logs)
+        self.assertNotIn("never-log-this-token", logs)
 
-    def test_list_devices_uses_default_ten_record_page_fallback(self):
+    def test_list_devices_uses_next_link_offset(self):
         with patch(
             "services.teltonika_rms.rms_get",
             side_effect=[
                 {
                     "success": True,
                     "data": [{"id": index} for index in range(1, 11)],
+                    "links": {
+                        "next": (
+                            "https://api.rms.teltonika-networks.com/devices"
+                            "?offset=10&limit=10"
+                        )
+                    },
                 },
                 {
                     "success": True,
                     "data": [{"id": index} for index in range(11, 14)],
+                    "links": {"next": None},
                 },
             ],
         ) as mocked_get:
@@ -242,11 +261,16 @@ class TeltonikaRMSTestCase(unittest.TestCase):
 
         self.assertEqual(len(devices), 13)
         self.assertEqual(mocked_get.call_count, 2)
+        self.assertEqual(
+            mocked_get.call_args_list[1].kwargs["params"]["offset"],
+            10,
+        )
 
-    def test_list_devices_stops_if_api_repeats_same_page(self):
+    def test_list_devices_stops_if_api_repeats_same_offset_page(self):
         repeated_page = {
             "success": True,
             "data": [{"id": index} for index in range(1, 11)],
+            "meta": {"offset": 0, "limit": 10, "total": 20},
         }
         with patch(
             "services.teltonika_rms.rms_get",

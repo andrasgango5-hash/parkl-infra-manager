@@ -154,12 +154,25 @@ class FinanceWorkflowTestCase(unittest.TestCase):
         dashboard = self.client_for(self.manager).get("/finance").get_data(as_text=True)
         self.assertIn("Legértékesebb projektek", dashboard)
         self.assertIn("PRK-FIN", dashboard)
+        self.assertIn('class="sidebar-link active" href="/finance"', dashboard)
+        self.assertNotIn(
+            'class="sidebar-link active" href="/finance/projects"',
+            dashboard,
+        )
 
         project_page = self.client_for(self.manager).get(
             f"/finance/projects/{self.project.id}"
         ).get_data(as_text=True)
         self.assertIn("2 000", project_page)
         self.assertIn("Projekt költségösszesítő / BOM", project_page)
+        self.assertNotIn(
+            'class="sidebar-link active" href="/finance"',
+            project_page,
+        )
+        self.assertIn(
+            'class="sidebar-link active" href="/finance/projects"',
+            project_page,
+        )
 
         inventory_page = self.client_for(self.manager).get(
             "/finance/inventory"
@@ -172,6 +185,11 @@ class FinanceWorkflowTestCase(unittest.TestCase):
         ).get_data(as_text=True)
         self.assertIn("Teszt Beszállító", supplier_page)
         self.assertIn("1", supplier_page)
+        self.assertIn(
+            'class="sidebar-link active" href="/finance/suppliers"',
+            supplier_page,
+        )
+        self.assertEqual(supplier_page.count('class="sidebar-link active"'), 1)
 
     def test_invoice_clarification_does_not_create_stock_movement(self):
         movement_count = StockMovement.query.count()

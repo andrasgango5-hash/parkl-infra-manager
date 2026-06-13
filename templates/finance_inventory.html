@@ -1,8 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Készletérték - Parkl Infra Manager{% endblock %}
 {% block content %}
-<div class="page-header"><div><h1>Készletérték kimutatás</h1><p class="text-secondary mb-0">Fizikailag készlethelyen lévő unit és bulk állomány pénzügyi értéke.</p></div><a class="btn btn-outline-secondary btn-icon" href="{{ url_for('finance_overview') }}"><i class="bi bi-arrow-left"></i> Áttekintés</a></div>
-<nav class="finance-subnav mb-4"><a href="{{ url_for('finance_overview') }}">Áttekintés</a><a href="{{ url_for('finance_projects') }}">Projekt pénzügy</a><a class="active" href="{{ url_for('finance_inventory') }}">Készletérték</a><a href="{{ url_for('finance_suppliers') }}">Beszállítók</a><a href="{{ url_for('finance_invoices') }}">Számlák</a></nav>
+{% set finance_title = "Készletérték kimutatás" %}
+{% set finance_subtitle = "Fizikailag készlethelyen lévő unit és bulk állomány pénzügyi értéke." %}
+{% set finance_help_title = "Logisztikai készletérték." %}
+{% set finance_help_text = "A kimutatás csak az aktív készlethelyeken fizikailag jelen lévő, nem selejtezett állományt összesíti." %}
+{% set finance_active_tab = "inventory" %}
+{% set finance_secondary_action_url = url_for('finance_overview') %}
+{% set finance_secondary_action_label = "Áttekintés" %}
+{% set finance_secondary_action_icon = "bi-arrow-left" %}
+{% include "finance/_module_header.html" %}
 <section class="data-section">
   <form class="filter-bar" method="get"><div><label class="form-label" for="location_id">Készlethely</label><select class="form-select form-select-sm" id="location_id" name="location_id"><option value="">Minden készlethely</option>{% for location in locations %}<option value="{{ location.id }}" {% if selected_location_id == location.id %}selected{% endif %}>{{ location.name }}</option>{% endfor %}</select></div><div class="filter-actions"><button class="btn btn-purple btn-sm" type="submit">Szűrés</button></div></form>
   <div class="table-responsive"><table class="table table-hover align-middle"><thead><tr><th>Készlethely</th><th>Fizikai mennyiség</th><th>Nettó HUF</th><th>Bruttó HUF</th><th>Nettó EUR</th><th>Bruttó EUR</th><th>Hiányos deviza</th></tr></thead><tbody>

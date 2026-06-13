@@ -3,28 +3,18 @@
 {% block title %}Pénzügyi áttekintés - Parkl Infra Manager{% endblock %}
 
 {% block content %}
-<div class="page-header">
-  <div>
-    <h1>Pénzügyi áttekintés</h1>
-    <p class="text-secondary mb-0">Projektköltségek, készletérték, beszállítói költések és pénzügyi adatminőség.</p>
-  </div>
-  <div class="page-actions">
-    <a class="btn btn-outline-secondary btn-icon" href="{{ url_for('finance_invoices') }}"><i class="bi bi-receipt"></i> Számlák</a>
-    <a class="btn btn-purple btn-icon" href="{{ url_for('unassigned_invoices') }}"><i class="bi bi-link-45deg"></i> Tisztázandó sorok</a>
-  </div>
-</div>
-
-<div class="help-box">
-  <strong>Vezetői pénzügyi nézet.</strong> A készlet- és projektértékek a terméktörzs áraiból, a számlamutatók a számlasorokból készülnek. A két forrás külön jelenik meg, így ugyanaz a költség nem számolódik kétszer.
-</div>
-
-<nav class="finance-subnav mb-4" aria-label="Pénzügyi modul">
-  <a class="active" href="{{ url_for('finance_overview') }}"><i class="bi bi-grid-1x2"></i> Áttekintés</a>
-  <a href="{{ url_for('finance_projects') }}"><i class="bi bi-kanban"></i> Projekt pénzügy</a>
-  <a href="{{ url_for('finance_inventory') }}"><i class="bi bi-box-seam"></i> Készletérték</a>
-  <a href="{{ url_for('finance_suppliers') }}"><i class="bi bi-building"></i> Beszállítók</a>
-  <a href="{{ url_for('finance_invoices') }}"><i class="bi bi-receipt-cutoff"></i> Számlák</a>
-</nav>
+{% set finance_title = "Pénzügyi áttekintés" %}
+{% set finance_subtitle = "Projektköltségek, készletérték, beszállítói költések és pénzügyi adatminőség." %}
+{% set finance_help_title = "Vezetői pénzügyi nézet." %}
+{% set finance_help_text = "A készlet- és projektértékek a terméktörzs áraiból, a számlamutatók a számlasorokból készülnek. A két forrás külön jelenik meg, így ugyanaz a költség nem számolódik kétszer." %}
+{% set finance_active_tab = "overview" %}
+{% set finance_secondary_action_url = url_for('finance_invoices') %}
+{% set finance_secondary_action_label = "Számlák" %}
+{% set finance_secondary_action_icon = "bi-receipt" %}
+{% set finance_primary_action_url = url_for('unassigned_invoices') %}
+{% set finance_primary_action_label = "Tisztázandó sorok" %}
+{% set finance_primary_action_icon = "bi-link-45deg" %}
+{% include "finance/_module_header.html" %}
 
 <div class="finance-kpi-grid mb-4">
   <a class="finance-kpi" href="{{ url_for('finance_inventory') }}">

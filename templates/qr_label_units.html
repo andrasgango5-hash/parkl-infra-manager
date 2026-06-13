@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Példánycímkék - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <span class="page-eyebrow"><i class="bi bi-qr-code-scan"></i> QR / címkék</span>
+    <h1>DeviceUnit címkék</h1>
+    <p class="text-secondary mb-0">A konkrét fizikai eszközpéldányok saját QR-kódjai és egyedi nyomtatható címkéi.</p>
+  </div>
+  <div class="page-actions">
+    <a class="btn btn-outline-secondary btn-icon" href="{{ url_for('labels') }}"><i class="bi bi-arrow-left"></i> Címkeközpont</a>
+    <a class="btn btn-purple btn-icon" href="{{ url_for('qr_label_devices') }}"><i class="bi bi-boxes"></i> Eszközcímkék</a>
+  </div>
+</div>
+
+<div class="help-box">
+  <strong>Egyedi fizikai példányok.</strong> Minden sor külön eszközt jelent saját azonosítóval, státusszal, projekttel, készlethellyel és stabil adatlap-QR-rel.
+</div>
+
+<section class="data-section">
+  <form class="filter-bar qr-filter-bar" method="get">
+    <div>
+      <label class="form-label" for="q">Keresés</label>
+      <input class="form-control form-control-sm" id="q" name="q" value="{{ search }}" placeholder="Példány, asset tag, sorozatszám, termék, projekt, készlethely">
+    </div>
+    <div class="filter-actions">
+      <button class="btn btn-purple btn-sm btn-icon" type="submit"><i class="bi bi-search"></i> Keresés</button>
+      {% if search %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('qr_label_units') }}">Törlés</a>{% endif %}
+    </div>
+  </form>
+  <div class="section-title">
+    <div><h2>Fizikai példányok</h2><span class="section-subtitle">{{ units|length }} aktív példány</span></div>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Példány / asset tag</th><th>Termék</th><th>Sorozatszám</th><th>Projekt</th><th>Készlethely</th><th>Státusz</th><th>QR</th><th>Címke PDF</th></tr></thead>
+      <tbody>
+        {% for unit in units %}
+        <tr>
+          <td><a href="{{ url_for('device_unit_detail', unit_id=unit.id) }}"><strong>{{ unit.asset_tag or unit.unit_code }}</strong></a><div class="small text-secondary">{{ unit.unit_code }}</div></td>
+          <td>{{ unit.device.product_name or unit.device.model or unit.device.asset_tag }}</td>
+          <td>{{ unit.serial_number or "-" }}</td>
+          <td>{{ unit.project.code if unit.project else "-" }}</td>
+          <td>{{ unit.location.name if unit.location else "-" }}</td>
+          <td><span class="status-badge {{ status_badge_class(unit.status) }}">{{ status_label(unit.status) }}</span></td>
+          <td><a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_unit_qr', unit_id=unit.id) }}" target="_blank" rel="noopener"><i class="bi bi-qr-code"></i> Megnyitás</a></td>
+          <td><a class="btn btn-info btn-sm btn-icon" href="{{ url_for('device_unit_label_pdf', unit_id=unit.id) }}"><i class="bi bi-file-earmark-pdf"></i> PDF</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8"><div class="empty-state"><strong>Nincs a keresésnek megfelelő eszközpéldány.</strong><span>Az egyedi példányok az eszköztétel adatlapjáról hozhatók létre.</span></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

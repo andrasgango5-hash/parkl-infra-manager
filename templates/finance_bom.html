@@ -1,7 +1,20 @@
 {% extends "base.html" %}
 {% block title %}{{ project.code }} BOM - Parkl Infra Manager{% endblock %}
 {% block content %}
-<div class="page-header"><div><h1>{{ project.code }} – BOM</h1><p class="text-secondary mb-0">{{ project.name }} projektkészlet és költségbontás.</p></div><a class="btn btn-outline-secondary btn-icon" href="{{ url_for('finance_project_detail', project_id=project.id) }}"><i class="bi bi-arrow-left"></i> Projekt pénzügy</a></div>
-<div class="row g-3 mb-4"><div class="col-md-3"><div class="metric"><span>Nettó HUF</span><strong>{{ format_number(totals.net_huf) }}</strong></div></div><div class="col-md-3"><div class="metric"><span>Bruttó HUF</span><strong>{{ format_number(totals.gross_huf) }}</strong></div></div><div class="col-md-3"><div class="metric"><span>Nettó EUR</span><strong>{{ format_number(totals.net_eur) }}</strong></div></div><div class="col-md-3"><div class="metric"><span>Bruttó EUR</span><strong>{{ format_number(totals.gross_eur) }}</strong></div></div></div>
+{% set finance_title = project.code ~ " – BOM" %}
+{% set finance_subtitle = project.name ~ " projektkészlet és költségbontás." %}
+{% set finance_help_title = "Projekt BOM." %}
+{% set finance_help_text = "Az aktív projektkészlet anyag- és eszközjegyzéke nettó, ÁFA- és bruttó bontással." %}
+{% set finance_active_tab = "projects" %}
+{% set finance_secondary_action_url = url_for('finance_project_detail', project_id=project.id) %}
+{% set finance_secondary_action_label = "Projekt pénzügy" %}
+{% set finance_secondary_action_icon = "bi-arrow-left" %}
+{% include "finance/_module_header.html" %}
+<div class="finance-kpi-grid mb-4">
+  <div class="finance-kpi"><span>Nettó HUF</span><strong>{{ format_number(totals.net_huf) }}</strong><small>Projekt összesen</small></div>
+  <div class="finance-kpi"><span>Bruttó HUF</span><strong>{{ format_number(totals.gross_huf) }}</strong><small>Projekt összesen</small></div>
+  <div class="finance-kpi"><span>Nettó EUR</span><strong>{{ format_number(totals.net_eur) }}</strong><small>Projekt összesen</small></div>
+  <div class="finance-kpi"><span>Bruttó EUR</span><strong>{{ format_number(totals.gross_eur) }}</strong><small>Projekt összesen</small></div>
+</div>
 <section class="data-section"><div class="section-title"><h2>Anyag- és eszközjegyzék</h2></div><div class="table-responsive"><table class="table table-hover align-middle"><thead><tr><th>Kategória</th><th>Termék</th><th>Beszállító</th><th>Státusz</th><th>Mennyiség</th><th>Egység nettó</th><th>Nettó összesen</th><th>ÁFA</th><th>Bruttó összesen</th></tr></thead><tbody>{% for row in rows %}<tr><td>{{ category_label(row.device.device_type) }}</td><td><a href="{{ url_for('device_detail', device_id=row.device.id) }}"><strong>{{ device_primary_label(row.device) }}</strong></a></td><td>{{ row.device.supplier_manufacturer or row.device.manufacturer or "-" }}</td><td>{{ status_label(row.status) }}</td><td>{{ format_number(row.quantity) }}</td><td>{{ format_number(row.device.unit_net_price) }} {{ row.device.currency or "" }}</td><td>{{ format_number(row.net_total) }} {{ row.device.currency or "" }}</td><td>{{ format_vat_rate(row.device.vat_rate) }}</td><td>{{ format_number(row.gross_total) }} {{ row.device.currency or "" }}</td></tr>{% else %}<tr><td colspan="9"><div class="empty-state"><strong>Nincs BOM tétel.</strong></div></td></tr>{% endfor %}</tbody></table></div></section>
 {% endblock %}

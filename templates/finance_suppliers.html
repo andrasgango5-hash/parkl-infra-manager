@@ -1,8 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Beszállítói összesítés - Parkl Infra Manager{% endblock %}
 {% block content %}
-<div class="page-header"><div><h1>Beszállítói összesítés</h1><p class="text-secondary mb-0">Beszerzési érték, eszköztételek és számlaállapot beszállítónként.</p></div><a class="btn btn-outline-secondary btn-icon" href="{{ url_for('finance_overview') }}"><i class="bi bi-arrow-left"></i> Áttekintés</a></div>
-<nav class="finance-subnav mb-4"><a href="{{ url_for('finance_overview') }}">Áttekintés</a><a href="{{ url_for('finance_projects') }}">Projekt pénzügy</a><a href="{{ url_for('finance_inventory') }}">Készletérték</a><a class="active" href="{{ url_for('finance_suppliers') }}">Beszállítók</a><a href="{{ url_for('finance_invoices') }}">Számlák</a></nav>
+{% set finance_title = "Beszállítói összesítés" %}
+{% set finance_subtitle = "Beszerzési érték, eszköztételek és számlaállapot beszállítónként." %}
+{% set finance_help_title = "Beszállítói drill-down." %}
+{% set finance_help_text = "A sorokra kattintva megnyitható a beszállítóhoz tartozó termék- és számlabontás." %}
+{% set finance_active_tab = "suppliers" %}
+{% set finance_secondary_action_url = url_for('finance_overview') %}
+{% set finance_secondary_action_label = "Áttekintés" %}
+{% set finance_secondary_action_icon = "bi-arrow-left" %}
+{% include "finance/_module_header.html" %}
 <section class="data-section">
   <form class="filter-bar" method="get"><div><label class="form-label" for="q">Beszállító keresése</label><input class="form-control form-control-sm" id="q" name="q" value="{{ search }}" placeholder="Beszállító vagy gyártó"></div><div class="filter-actions"><button class="btn btn-purple btn-sm" type="submit">Keresés</button></div></form>
   <div class="table-responsive"><table class="table table-hover align-middle"><thead><tr><th>Beszállító</th><th>Tételek</th><th>Nettó HUF</th><th>Bruttó HUF</th><th>Nettó EUR</th><th>Számlák</th><th>Fizetetlen</th></tr></thead><tbody>

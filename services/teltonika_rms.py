@@ -13,7 +13,7 @@ from flask import current_app, has_app_context
 DEFAULT_RMS_BASE_URL = "https://api.rms.teltonika-networks.com"
 RMS_TIMEOUT_SECONDS = 20
 RESPONSE_LOG_LIMIT = 500
-RMS_DEVICE_DEFAULT_PAGE_SIZE = 10
+RMS_DEVICE_DEFAULT_PAGE_SIZE = 100
 RMS_DEVICE_MAX_PAGES = 1000
 
 
@@ -134,17 +134,20 @@ def list_rms_devices():
     logger = _get_logger()
     devices = []
     seen_devices = set()
-    page = 1
+    offset = 0
+    limit = RMS_DEVICE_DEFAULT_PAGE_SIZE
     page_count = 0
 
-    while page <= RMS_DEVICE_MAX_PAGES:
-        payload = rms_get("/devices", params={"page": page})
+    while page_count < RMS_DEVICE_MAX_PAGES:
+        params = {"offset": offset, "limit": limit}
+        request_url = build_rms_url("/devices", params)
+        payload = rms_get("/devices", params=params)
         page_devices = _extract_rms_device_page(payload)
         page_count += 1
 
         new_devices = 0
         for index, raw_device in enumerate(page_devices):
-            identity = _rms_device_identity(raw_device, page, index)
+            identity = _rms_device_identity(raw_device, page_count, index)
             if identity in seen_devices:
                 continue
             seen_devices.add(identity)
@@ -153,30 +156,46 @@ def list_rms_devices():
 
         pagination = _rms_pagination_state(
             payload,
-            page=page,
-            page_size=len(page_devices),
+            offset=offset,
+            requested_limit=limit,
+            record_count=len(page_devices),
         )
         logger.info(
-            "Teltonika RMS devices page=%s records=%s new_records=%s "
-            "total_collected=%s last_page=%s total_expected=%s has_more=%s",
-            page,
+            "Teltonika RMS pagination payload meta=%s pagination=%s links=%s",
+            _safe_json_preview(payload.get("meta")),
+            _safe_json_preview(payload.get("pagination")),
+            _safe_json_preview(payload.get("links")),
+        )
+        logger.info(
+            "Teltonika RMS devices page=%s URL=%s offset=%s limit=%s "
+            "records=%s new_records=%s total_collected=%s total=%s "
+            "next_link=%s next_offset=%s has_more=%s",
+            page_count,
+            request_url,
+            offset,
+            limit,
             len(page_devices),
             new_devices,
             len(devices),
-            pagination["last_page"],
             pagination["total"],
+            _safe_json_preview(pagination["next_link"]),
+            pagination["next_offset"],
             pagination["has_more"],
         )
         if not pagination["has_more"]:
             break
         if page_devices and new_devices == 0:
             logger.warning(
-                "Teltonika RMS pagination stopped because page %s repeated "
+                "Teltonika RMS pagination stopped because offset %s repeated "
                 "already collected devices.",
-                page,
+                offset,
             )
             break
-        page = pagination["next_page"]
+        if pagination["next_offset"] <= offset:
+            raise TeltonikaRMSRequestError(
+                "A Teltonika RMS lapozás nem adott előre mutató offsetet."
+            )
+        offset = pagination["next_offset"]
     else:
         raise TeltonikaRMSRequestError(
             "A Teltonika RMS eszközlapozás elérte a biztonsági oldallimitet."
@@ -244,28 +263,21 @@ def _log_rms_device_counts(devices, page_count):
     )
 
 
-def _rms_pagination_state(payload, page, page_size):
+def _rms_pagination_state(payload, offset, requested_limit, record_count):
     containers = [payload]
     for key in ("meta", "pagination", "page"):
         value = payload.get(key)
         if isinstance(value, dict):
             containers.append(value)
 
-    current_page = _first_positive_int(
+    response_offset = _first_nonnegative_int(
         containers,
-        "current_page",
-        "currentPage",
-        "page",
-        "number",
-    ) or page
-    last_page = _first_positive_int(
-        containers,
-        "last_page",
-        "lastPage",
-        "total_pages",
-        "totalPages",
-        "pages",
+        "offset",
+        "current_offset",
+        "currentOffset",
     )
+    if response_offset is None:
+        response_offset = offset
     total = _first_nonnegative_int(
         containers,
         "total",
@@ -274,31 +286,37 @@ def _rms_pagination_state(payload, page, page_size):
         "total_records",
         "totalRecords",
     )
-    per_page = _first_positive_int(
+    response_limit = _first_positive_int(
         containers,
+        "limit",
         "per_page",
         "perPage",
         "page_size",
         "pageSize",
-        "limit",
     )
-    next_page = _next_page_from_links(payload) or current_page + 1
+    next_link = _next_link(payload)
+    next_offset = _next_offset_from_links(payload)
+    if next_offset is None:
+        next_offset = response_offset + record_count
 
-    if last_page is not None:
-        has_more = current_page < last_page
-    elif total is not None:
-        effective_page_size = per_page or page_size or RMS_DEVICE_DEFAULT_PAGE_SIZE
-        has_more = current_page * effective_page_size < total
-    elif _next_page_from_links(payload) is not None:
+    if total is not None:
+        has_more = next_offset < total
+    elif next_link:
         has_more = True
+    elif isinstance(payload.get("links"), dict):
+        has_more = False
     else:
-        has_more = page_size >= RMS_DEVICE_DEFAULT_PAGE_SIZE
+        # Some RMS responses omit pagination metadata. Offset pagination can
+        # still be completed safely by requesting until an empty or repeated
+        # page is returned.
+        has_more = record_count > 0
 
     return {
-        "current_page": current_page,
-        "last_page": last_page,
+        "offset": response_offset,
+        "limit": response_limit or requested_limit,
         "total": total,
-        "next_page": next_page,
+        "next_link": next_link,
+        "next_offset": next_offset,
         "has_more": has_more,
     }
 
@@ -325,24 +343,72 @@ def _first_int(containers, *keys):
     return None
 
 
-def _next_page_from_links(payload):
+def _next_link(payload):
     links = payload.get("links")
     next_value = links.get("next") if isinstance(links, dict) else None
     if next_value in (None, "", False):
         next_value = payload.get("next")
+    return next_value
+
+
+def _next_offset_from_links(payload):
+    next_value = _next_link(payload)
     if isinstance(next_value, int):
         return next_value
     if isinstance(next_value, str):
-        match = re.search(r"[?&]page=(\d+)", next_value)
+        match = re.search(r"[?&]offset=(\d+)", next_value)
         if match:
             return int(match.group(1))
-    next_page = payload.get("next_page")
+    containers = [payload]
+    for key in ("meta", "pagination"):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            containers.append(value)
+    return _first_nonnegative_int(
+        containers,
+        "next_offset",
+        "nextOffset",
+    )
+
+
+def _safe_json_preview(value):
+    if value is None:
+        return "null"
     try:
-        if next_page not in (None, ""):
-            return int(next_page)
+        serialized = json.dumps(
+            _redact_sensitive_values(value),
+            ensure_ascii=False,
+            default=str,
+        )
     except (TypeError, ValueError):
-        pass
-    return None
+        serialized = repr(value)
+    return _response_preview(serialized)
+
+
+def _redact_sensitive_values(value):
+    if isinstance(value, dict):
+        return {
+            key: (
+                "<redacted>"
+                if str(key).lower() in {
+                    "authorization",
+                    "token",
+                    "access_token",
+                    "api_key",
+                }
+                else _redact_sensitive_values(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_sensitive_values(item) for item in value]
+    if isinstance(value, str):
+        return re.sub(
+            r"(?i)(authorization|token|access_token|api_key)=([^&\\s]+)",
+            r"\1=<redacted>",
+            value,
+        )
+    return value
 
 
 def _rms_device_identity(raw_device, page, index):

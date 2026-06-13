@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Eszközcímkék - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <span class="page-eyebrow"><i class="bi bi-qr-code"></i> QR / címkék</span>
+    <h1>Eszköztörzs címkék</h1>
+    <p class="text-secondary mb-0">Csoportos termék- és készlettételek QR-kódjai, előnézetei és nyomtatható PDF-címkéi.</p>
+  </div>
+  <div class="page-actions">
+    <a class="btn btn-outline-secondary btn-icon" href="{{ url_for('labels') }}"><i class="bi bi-arrow-left"></i> Címkeközpont</a>
+    <a class="btn btn-purple btn-icon" href="{{ url_for('qr_label_units') }}"><i class="bi bi-box-seam"></i> Példánycímkék</a>
+  </div>
+</div>
+
+<div class="help-box">
+  <strong>Eszköztörzs QR-címkék.</strong> Ezek a QR-kódok a termék- vagy készlettétel adatlapjára mutatnak. Egyedi fizikai eszközhöz a példánycímke használata javasolt.
+</div>
+
+<section class="data-section">
+  <form class="filter-bar qr-filter-bar" method="get">
+    <div>
+      <label class="form-label" for="q">Keresés</label>
+      <input class="form-control form-control-sm" id="q" name="q" value="{{ search }}" placeholder="Azonosító, terméknév, modell, kategória">
+    </div>
+    <div class="filter-actions">
+      <button class="btn btn-purple btn-sm btn-icon" type="submit"><i class="bi bi-search"></i> Keresés</button>
+      {% if search %}<a class="btn btn-outline-secondary btn-sm" href="{{ url_for('qr_label_devices') }}">Törlés</a>{% endif %}
+    </div>
+  </form>
+  <div class="section-title">
+    <div><h2>Eszköztörzs</h2><span class="section-subtitle">{{ devices|length }} aktív tétel</span></div>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Azonosító</th><th>Terméknév</th><th>Kategória</th><th>Aktív példányok</th><th>QR</th><th>Címke PDF</th></tr></thead>
+      <tbody>
+        {% for device in devices %}
+        <tr>
+          <td><a href="{{ url_for('device_detail', device_id=device.id) }}"><strong>{{ device.asset_tag }}</strong></a></td>
+          <td>{{ device.product_name or device.model or "-" }}</td>
+          <td>{{ category_label(device.device_type) }}</td>
+          <td><span class="status-badge status-neutral">{{ active_unit_counts[device.id] }}</span></td>
+          <td><a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('device_qr', device_id=device.id) }}" target="_blank" rel="noopener"><i class="bi bi-qr-code"></i> Megnyitás</a></td>
+          <td><a class="btn btn-info btn-sm btn-icon" href="{{ url_for('device_label_pdf', device_id=device.id) }}"><i class="bi bi-file-earmark-pdf"></i> PDF</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6"><div class="empty-state"><strong>Nincs a keresésnek megfelelő eszköztétel.</strong><span>Módosítsd a keresést, vagy nyisd meg az Eszközök modult.</span></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

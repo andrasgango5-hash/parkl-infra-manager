@@ -1,10 +1,18 @@
 {% extends "base.html" %}
 {% block title %}{{ project.code }} pénzügy - Parkl Infra Manager{% endblock %}
 {% block content %}
-<div class="page-header">
-  <div><h1>{{ project.code }} – {{ project.name }}</h1><p class="text-secondary mb-0">{{ project.customer or "Nincs ügyfél" }} · projekt pénzügyi összesítő</p></div>
-  <div class="page-actions"><a class="btn btn-outline-secondary btn-icon" href="{{ url_for('finance_projects') }}"><i class="bi bi-arrow-left"></i> Projektek</a><a class="btn btn-purple btn-icon" href="{{ url_for('finance_project_bom', project_id=project.id) }}"><i class="bi bi-list-check"></i> BOM nézet</a></div>
-</div>
+{% set finance_title = project.code ~ " – " ~ project.name %}
+{% set finance_subtitle = (project.customer or "Nincs ügyfél") ~ " · projekt pénzügyi összesítő" %}
+{% set finance_help_title = "Projekt pénzügyi drill-down." %}
+{% set finance_help_text = "A projekt aktív készlete, költségösszesítője, lezárási állapota és hozzárendelt számlasorai egy nézetben." %}
+{% set finance_active_tab = "projects" %}
+{% set finance_secondary_action_url = url_for('finance_projects') %}
+{% set finance_secondary_action_label = "Projektlista" %}
+{% set finance_secondary_action_icon = "bi-arrow-left" %}
+{% set finance_primary_action_url = url_for('finance_project_bom', project_id=project.id) %}
+{% set finance_primary_action_label = "BOM nézet" %}
+{% set finance_primary_action_icon = "bi-list-check" %}
+{% include "finance/_module_header.html" %}
 <div class="finance-kpi-grid mb-4">
   <div class="finance-kpi"><span>Nettó projektérték</span><strong>{{ format_number(snapshot.net_huf) }} HUF</strong><small>{{ format_number(snapshot.net_eur) }} EUR</small></div>
   <div class="finance-kpi"><span>Bruttó projektérték</span><strong>{{ format_number(snapshot.gross_huf) }} HUF</strong><small>{{ format_number(snapshot.gross_eur) }} EUR</small></div>

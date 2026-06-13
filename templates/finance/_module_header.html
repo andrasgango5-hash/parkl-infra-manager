@@ -1,0 +1,45 @@
+<div class="finance-module-header">
+  <div class="page-header">
+    <div>
+      <span class="page-eyebrow"><i class="bi bi-graph-up-arrow"></i> Pénzügy</span>
+      <h1>{{ finance_title }}</h1>
+      <p class="text-secondary mb-0">{{ finance_subtitle }}</p>
+    </div>
+    <div class="page-actions">
+      {% if finance_secondary_action_url %}
+      <a class="btn btn-outline-secondary btn-icon" href="{{ finance_secondary_action_url }}">
+        <i class="bi {{ finance_secondary_action_icon or 'bi-arrow-left' }}"></i>
+        {{ finance_secondary_action_label }}
+      </a>
+      {% endif %}
+      {% if finance_primary_action_url %}
+      <a class="btn btn-purple btn-icon" href="{{ finance_primary_action_url }}">
+        <i class="bi {{ finance_primary_action_icon or 'bi-arrow-right' }}"></i>
+        {{ finance_primary_action_label }}
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="help-box finance-help-box">
+    <strong>{{ finance_help_title }}</strong> {{ finance_help_text }}
+  </div>
+
+  <nav class="finance-subnav mb-4" aria-label="Pénzügyi modul">
+    <a class="{% if finance_active_tab == 'overview' %}active{% endif %}" href="{{ url_for('finance_overview') }}">
+      <i class="bi bi-grid-1x2"></i> Áttekintés
+    </a>
+    <a class="{% if finance_active_tab == 'projects' %}active{% endif %}" href="{{ url_for('finance_projects') }}">
+      <i class="bi bi-kanban"></i> Projekt pénzügy
+    </a>
+    <a class="{% if finance_active_tab == 'inventory' %}active{% endif %}" href="{{ url_for('finance_inventory') }}">
+      <i class="bi bi-box-seam"></i> Készletérték
+    </a>
+    <a class="{% if finance_active_tab == 'suppliers' %}active{% endif %}" href="{{ url_for('finance_suppliers') }}">
+      <i class="bi bi-building"></i> Beszállítók
+    </a>
+    <a class="{% if finance_active_tab == 'invoices' %}active{% endif %}" href="{{ url_for('finance_invoices') }}">
+      <i class="bi bi-receipt-cutoff"></i> Számlák
+    </a>
+  </nav>
+</div>

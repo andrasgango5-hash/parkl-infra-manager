@@ -942,6 +942,70 @@ def create_app(config_class=Config):
             active_units=active_units,
         )
 
+    @app.route("/qr-labels/devices")
+    @login_required
+    def qr_label_devices():
+        search = request.args.get("q", "").strip()
+        query = Device.query.filter(Device.archived_at.is_(None))
+        if search:
+            term = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Device.asset_tag.ilike(term),
+                    Device.product_name.ilike(term),
+                    Device.model.ilike(term),
+                    Device.device_type.ilike(term),
+                )
+            )
+        device_list = query.order_by(
+            Device.product_name.asc(),
+            Device.asset_tag.asc(),
+        ).all()
+        active_unit_counts = {
+            device.id: sum(1 for unit in device.units if unit.archived_at is None)
+            for device in device_list
+        }
+        return render_template(
+            "qr_label_devices.html",
+            devices=device_list,
+            active_unit_counts=active_unit_counts,
+            search=search,
+        )
+
+    @app.route("/qr-labels/units")
+    @login_required
+    def qr_label_units():
+        search = request.args.get("q", "").strip()
+        query = (
+            DeviceUnit.query.join(Device)
+            .filter(
+                DeviceUnit.archived_at.is_(None),
+                Device.archived_at.is_(None),
+            )
+        )
+        if search:
+            term = f"%{search}%"
+            query = query.filter(
+                or_(
+                    DeviceUnit.unit_code.ilike(term),
+                    DeviceUnit.asset_tag.ilike(term),
+                    DeviceUnit.serial_number.ilike(term),
+                    Device.product_name.ilike(term),
+                    Device.asset_tag.ilike(term),
+                    DeviceUnit.project.has(Project.code.ilike(term)),
+                    DeviceUnit.location.has(Location.name.ilike(term)),
+                )
+            )
+        units = query.order_by(
+            Device.product_name.asc(),
+            DeviceUnit.unit_code.asc(),
+        ).all()
+        return render_template(
+            "qr_label_units.html",
+            units=units,
+            search=search,
+        )
+
     @app.route("/m2m")
     @m2m_required
     def m2m_subscriptions():
@@ -2832,6 +2896,32 @@ def create_app(config_class=Config):
         device = Device.query.get_or_404(device_id)
         return render_template("device_label.html", device=device)
 
+    @app.route("/devices/<int:device_id>/label.pdf")
+    @login_required
+    def device_label_pdf(device_id):
+        device = Device.query.get_or_404(device_id)
+        project_codes = device_inventory_values(device, "project")
+        buffer = build_single_qr_label_pdf(
+            title=device.product_name or device.model or device.asset_tag,
+            identifier=device.asset_tag,
+            details=[
+                f"Kategória: {category_label(device.device_type)}",
+                f"Sorozatszám: {device.serial_number or '-'}",
+                f"Projekt: {', '.join(project_codes) if project_codes else '-'}",
+            ],
+            target_url=url_for(
+                "device_detail",
+                device_id=device.id,
+                _external=True,
+            ),
+        )
+        return send_file(
+            buffer,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=secure_filename(f"{device.asset_tag}_cimke.pdf"),
+        )
+
     @app.route("/devices/<int:device_id>/units")
     @login_required
     def device_units(device_id):
@@ -3078,6 +3168,35 @@ def create_app(config_class=Config):
     def device_unit_label(unit_id):
         unit = DeviceUnit.query.get_or_404(unit_id)
         return render_template("device_unit_label.html", unit=unit, device=unit.device)
+
+    @app.route("/device-units/<int:unit_id>/label.pdf")
+    @login_required
+    def device_unit_label_pdf(unit_id):
+        unit = DeviceUnit.query.get_or_404(unit_id)
+        buffer = build_single_qr_label_pdf(
+            title=unit.device.product_name
+            or unit.device.model
+            or unit.unit_code,
+            identifier=unit.asset_tag or unit.unit_code,
+            details=[
+                f"Példány: {unit.unit_code}",
+                f"Sorozatszám: {unit.serial_number or '-'}",
+                f"Státusz: {status_label(unit.status)}",
+            ],
+            target_url=url_for(
+                "device_unit_detail",
+                unit_id=unit.id,
+                _external=True,
+            ),
+        )
+        return send_file(
+            buffer,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=secure_filename(
+                f"{unit.asset_tag or unit.unit_code}_cimke.pdf"
+            ),
+        )
 
     @app.route("/device-units/<int:unit_id>/archive", methods=["POST"])
     @manager_write_required
@@ -6722,6 +6841,65 @@ def build_device_unit_labels_pdf(device, units, unit_urls):
                 ("INNERGRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#d8d0e5")),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("PADDING", (0, 0), (-1, -1), 8),
+            ]
+        )
+    )
+    doc.build([table])
+    buffer.seek(0)
+    return buffer
+
+
+def build_single_qr_label_pdf(title, identifier, details, target_url):
+    buffer = BytesIO()
+    label_width = 10.5 * cm
+    label_height = 7 * cm
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=(label_width, label_height),
+        rightMargin=0.45 * cm,
+        leftMargin=0.45 * cm,
+        topMargin=0.4 * cm,
+        bottomMargin=0.4 * cm,
+    )
+    styles = unicode_pdf_styles()
+    qr_buffer = BytesIO()
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=8,
+        border=2,
+    )
+    qr.add_data(target_url)
+    qr.make(fit=True)
+    qr.make_image(
+        fill_color="#21182f",
+        back_color="white",
+    ).save(qr_buffer, format="PNG")
+    qr_buffer.seek(0)
+    qr_image = Image(qr_buffer, width=4.1 * cm, height=4.1 * cm)
+    text = [
+        Paragraph(pdf_escape(identifier), styles["Heading2"]),
+        Paragraph(pdf_escape(title), styles["Heading3"]),
+    ]
+    text.extend(
+        Paragraph(pdf_escape(detail), styles["BodyText"])
+        for detail in details
+    )
+    table = Table(
+        [[text, qr_image]],
+        colWidths=[5.1 * cm, 4.2 * cm],
+        rowHeights=[5.6 * cm],
+    )
+    table.setStyle(
+        TableStyle(
+            [
+                ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#6f42c1")),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (1, 0), (1, 0), "CENTER"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
             ]
         )
     )

@@ -3,6 +3,18 @@
 {% block title %}Eszközök - Parkl Infra Manager{% endblock %}
 
 {% block content %}
+{% macro money_cell(device, field) %}
+  {% set money_text = device_money_text(device, field) %}
+  {% if money_text.startswith("Nem számolható") %}
+    <span class="status-badge status-warning finance-data-warning" data-bs-toggle="tooltip" data-bs-title="{{ money_text }}">
+      <i class="bi bi-exclamation-triangle"></i> Hiányos
+    </span>
+  {% elif money_text == "Nincs megadva" %}
+    <span class="status-badge status-neutral">Nincs adat</span>
+  {% else %}
+    {{ money_text }}
+  {% endif %}
+{% endmacro %}
 <div class="page-header">
   <div>
     <h1>Eszközök</h1>
@@ -24,30 +36,17 @@
 </div>
 
 <section class="data-section">
-      <div class="section-title"><h2>Eszközlista</h2></div>
-      <div class="p-3 border-bottom">
-        <div class="small text-uppercase text-secondary fw-semibold mb-2">Életciklus státusz</div>
-        <div class="nav nav-pills gap-2 mb-3">
-          {% set tabs = [
-            ("all", "Összes"),
-            ("in_stock", "Raktáron"),
-            ("assigned", "Projekthez rendelve"),
-            ("issued", "Kiadva"),
-            ("installed", "Telepítve")
-          ] %}
-          {% for value, label in tabs %}
-            <a class="btn btn-sm {% if selected_view == value and not quick_filter %}btn-purple{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('devices', view=value) }}">{{ label }}</a>
-          {% endfor %}
-        </div>
-        <div class="small text-uppercase text-secondary fw-semibold mb-2">Beszerzés / pénzügy / figyelmeztetés</div>
-        <div class="nav nav-pills gap-2">
-          <a class="btn btn-sm {% if selected_view == 'awaiting_arrival' and not quick_filter %}btn-purple{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('devices', view='awaiting_arrival') }}">Beérkezésre vár</a>
-          {% if can_view_finance %}<a class="btn btn-sm {% if selected_view == 'financial_open' and not quick_filter %}btn-purple{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('devices', view='financial_open') }}">Pénzügyileg nyitott</a>{% endif %}
-          <a class="btn btn-sm {% if selected_view == 'attention' and not quick_filter %}btn-purple{% else %}btn-outline-secondary{% endif %}" href="{{ url_for('devices', view='attention') }}">Figyelmet igényel</a>
-        </div>
+      <div class="section-title">
+        <div><h2>Eszközlista</h2><span class="section-subtitle">{{ visible_summary.count }} találat</span></div>
       </div>
-      <form method="get" class="filter-bar">
-        <input type="hidden" name="view" value="{{ selected_view }}">
+      <div class="device-status-shortcuts">
+        <span class="device-filter-caption">Gyors státusz</span>
+        <a class="device-filter-chip {% if not selected_status %}active{% endif %}" href="{{ url_for('devices', q=search, category=selected_category, project_id=selected_project_id or '', location_id=selected_location_id or '', quick_filter=quick_filter) }}">Összes</a>
+        {% for status in ['IN_STOCK', 'RESERVED', 'ISSUED', 'INSTALLED', 'IN_SERVICE'] %}
+        <a class="device-filter-chip {% if selected_status == status %}active{% endif %}" href="{{ url_for('devices', q=search, status=status, category=selected_category, project_id=selected_project_id or '', location_id=selected_location_id or '', quick_filter=quick_filter) }}">{{ status_label(status) }}</a>
+        {% endfor %}
+      </div>
+      <form method="get" class="filter-bar device-filter-bar">
         <div>
           <label class="form-label" for="q">Keresés</label>
           <input class="form-control form-control-sm" id="q" name="q" value="{{ search }}" placeholder="Termék, azonosító, sorozatszám, beszállító, projekt">
@@ -62,30 +61,11 @@
           </select>
         </div>
         <div>
-          <label class="form-label" for="quick_filter">Beszerzés / pénzügy / figyelmeztetés</label>
-          <select class="form-select form-select-sm" id="quick_filter" name="quick_filter">
-            <option value="">Nincs gyorsszűrő</option>
-            <option value="attention" {% if quick_filter == "attention" %}selected{% endif %}>Csak figyelmet igényel</option>
-            {% if can_view_finance %}<option value="financial_open" {% if quick_filter == "financial_open" %}selected{% endif %}>Pénzügyileg nyitott</option>{% endif %}
-            <option value="awaiting_arrival" {% if quick_filter == "awaiting_arrival" %}selected{% endif %}>Beérkezésre vár</option>
-            <option value="arrived_unassigned" {% if quick_filter == "arrived_unassigned" %}selected{% endif %}>Beérkezett, de nincs hozzárendelve</option>
-          </select>
-        </div>
-        <div>
           <label class="form-label" for="category">Kategória</label>
           <select class="form-select form-select-sm" id="category" name="category">
             <option value="">Minden kategória</option>
             {% for category in categories %}
               <option value="{{ category }}" {% if selected_category == category %}selected{% endif %}>{{ category_label(category) }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div>
-          <label class="form-label" for="source_sheet">Forráslap</label>
-          <select class="form-select form-select-sm" id="source_sheet" name="source_sheet">
-            <option value="">Minden forráslap</option>
-            {% for sheet in source_sheets %}
-              <option value="{{ sheet }}" {% if selected_source_sheet == sheet %}selected{% endif %}>{{ sheet }}</option>
             {% endfor %}
           </select>
         </div>
@@ -107,11 +87,32 @@
             {% endfor %}
           </select>
         </div>
+        <div>
+          <label class="form-label" for="quick_filter">Figyelmeztetés</label>
+          <select class="form-select form-select-sm" id="quick_filter" name="quick_filter">
+            <option value="">Minden tétel</option>
+            <option value="attention" {% if quick_filter == "attention" %}selected{% endif %}>Csak figyelmet igényel</option>
+            {% if can_view_finance %}<option value="financial_open" {% if quick_filter == "financial_open" %}selected{% endif %}>Pénzügyileg nyitott</option>{% endif %}
+            <option value="awaiting_arrival" {% if quick_filter == "awaiting_arrival" %}selected{% endif %}>Beérkezésre vár</option>
+            <option value="arrived_unassigned" {% if quick_filter == "arrived_unassigned" %}selected{% endif %}>Beérkezett, de nincs hozzárendelve</option>
+          </select>
+        </div>
         <div class="filter-actions">
           <button class="btn btn-purple btn-sm btn-icon" type="submit" data-bs-toggle="tooltip" data-bs-title="Eszközlista szűrése"><i class="bi bi-funnel"></i> Szűrés</button>
           <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ url_for('devices') }}" data-bs-toggle="tooltip" data-bs-title="Szűrők törlése"><i class="bi bi-arrow-counterclockwise"></i> Alaphelyzet</a>
         </div>
       </form>
+      {% if search or selected_status or selected_category or selected_project_id or selected_location_id or quick_filter %}
+      <div class="active-filter-strip">
+        <span class="device-filter-caption">Aktív szűrők</span>
+        {% if search %}<a href="{{ url_for('devices', status=selected_status, category=selected_category, project_id=selected_project_id or '', location_id=selected_location_id or '', quick_filter=quick_filter) }}">Keresés: {{ search }} <i class="bi bi-x"></i></a>{% endif %}
+        {% if selected_status %}<a href="{{ url_for('devices', q=search, category=selected_category, project_id=selected_project_id or '', location_id=selected_location_id or '', quick_filter=quick_filter) }}">Státusz: {{ status_label(selected_status) }} <i class="bi bi-x"></i></a>{% endif %}
+        {% if selected_category %}<a href="{{ url_for('devices', q=search, status=selected_status, project_id=selected_project_id or '', location_id=selected_location_id or '', quick_filter=quick_filter) }}">Kategória: {{ category_label(selected_category) }} <i class="bi bi-x"></i></a>{% endif %}
+        {% if selected_project_id %}{% for project in projects if project.id == selected_project_id %}<a href="{{ url_for('devices', q=search, status=selected_status, category=selected_category, location_id=selected_location_id or '', quick_filter=quick_filter) }}">Projekt: {{ project.code }} <i class="bi bi-x"></i></a>{% endfor %}{% endif %}
+        {% if selected_location_id %}{% for location in locations if location.id == selected_location_id %}<a href="{{ url_for('devices', q=search, status=selected_status, category=selected_category, project_id=selected_project_id or '', quick_filter=quick_filter) }}">Készlethely: {{ location.name }} <i class="bi bi-x"></i></a>{% endfor %}{% endif %}
+        {% if quick_filter %}<a href="{{ url_for('devices', q=search, status=selected_status, category=selected_category, project_id=selected_project_id or '', location_id=selected_location_id or '') }}">Figyelmeztetés aktív <i class="bi bi-x"></i></a>{% endif %}
+      </div>
+      {% endif %}
       <div class="summary-strip">
         <span>Látható eszközök: <strong>{{ visible_summary.count }}</strong></span>
         {% if can_view_finance %}
@@ -157,11 +158,11 @@
                 <td class="mobile-hide">{{ format_number(device.quantity) }}</td>
                 {% if can_view_finance %}
                 <td class="mobile-hide">{{ device.currency or "hiányzik" }}</td>
-                <td class="mobile-hide">{{ device_money_text(device, "unit_net") }}</td>
-                <td class="mobile-hide">{{ device_money_text(device, "total_net") }}</td>
+                <td class="mobile-hide">{{ money_cell(device, "unit_net") }}</td>
+                <td class="mobile-hide">{{ money_cell(device, "total_net") }}</td>
                 <td class="mobile-hide">{{ format_vat_rate(device.vat_rate) }}</td>
-                <td class="mobile-hide">{{ device_money_text(device, "unit_gross") }}</td>
-                <td class="mobile-hide">{{ device_money_text(device, "total_gross") }}</td>
+                <td class="mobile-hide">{{ money_cell(device, "unit_gross") }}</td>
+                <td class="mobile-hide">{{ money_cell(device, "total_gross") }}</td>
                 {% endif %}
                 <td>{% if device.tracking_mode == "unit" %}<span class="status-badge status-neutral">Példányonként</span>{% else %}<span class="status-badge status-neutral">{{ bulk_balance_summary(device, "status") }}</span>{% endif %}</td>
                 <td>{% if device.tracking_mode == "unit" %}Példányonként{% else %}{{ bulk_balance_summary(device, "project") }}{% endif %}</td>

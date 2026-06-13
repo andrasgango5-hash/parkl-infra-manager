@@ -1,13 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Projekt pénzügy - Parkl Infra Manager{% endblock %}
 {% block content %}
-<div class="page-header">
-  <div><h1>Projekt pénzügy</h1><p class="text-secondary mb-0">Projektkészlet, számlasorok és adatminőség projektenként.</p></div>
-  <a class="btn btn-outline-secondary btn-icon" href="{{ url_for('finance_overview') }}"><i class="bi bi-arrow-left"></i> Áttekintés</a>
-</div>
-<nav class="finance-subnav mb-4" aria-label="Pénzügyi modul">
-  <a href="{{ url_for('finance_overview') }}">Áttekintés</a><a class="active" href="{{ url_for('finance_projects') }}">Projekt pénzügy</a><a href="{{ url_for('finance_inventory') }}">Készletérték</a><a href="{{ url_for('finance_suppliers') }}">Beszállítók</a><a href="{{ url_for('finance_invoices') }}">Számlák</a>
-</nav>
+{% set finance_title = "Projekt pénzügy" %}
+{% set finance_subtitle = "Projektkészlet, számlasorok és adatminőség projektenként." %}
+{% set finance_help_title = "Projektköltségek egy helyen." %}
+{% set finance_help_text = "Nyisd meg a projektet a részletes költségösszesítőhöz, BOM-hoz és a hozzárendelt számlasorokhoz." %}
+{% set finance_active_tab = "projects" %}
+{% set finance_secondary_action_url = url_for('finance_overview') %}
+{% set finance_secondary_action_label = "Áttekintés" %}
+{% set finance_secondary_action_icon = "bi-arrow-left" %}
+{% include "finance/_module_header.html" %}
 <section class="data-section">
   <form class="filter-bar" method="get">
     <div><label class="form-label" for="q">Keresés</label><input class="form-control form-control-sm" id="q" name="q" value="{{ search }}" placeholder="Projektkód, név, ügyfél"></div>
