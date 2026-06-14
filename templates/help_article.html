@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page.title }} - Parkl dokumentáció{% endblock %}
+
+{% block content %}
+<div class="docs-shell">
+  {% include "help/_sidebar.html" %}
+  <article class="docs-article">
+    <header class="docs-article-header">
+      <span class="docs-article-icon"><i class="bi {{ page.icon }}"></i></span>
+      <div>
+        <span class="page-eyebrow">Parkl dokumentáció</span>
+        <h1>{{ page.title }}</h1>
+        <p>{{ page.summary }}</p>
+      </div>
+    </header>
+
+    <nav class="docs-local-toc" aria-label="Oldalon belüli tartalom">
+      <strong>Ezen az oldalon</strong>
+      {% for section in page.sections %}
+      <a href="#section-{{ loop.index }}">{{ section.title }}</a>
+      {% endfor %}
+    </nav>
+
+    {% for section in page.sections %}
+    <section class="docs-content-section" id="section-{{ loop.index }}">
+      <h2>{{ section.title }}</h2>
+
+      {% for paragraph in section.paragraphs or [] %}<p>{{ paragraph }}</p>{% endfor %}
+
+      {% if section.callout %}
+      <div class="docs-callout"><i class="bi bi-lightbulb"></i><span>{{ section.callout }}</span></div>
+      {% endif %}
+
+      {% if section.bullets %}
+      <ul class="docs-check-list">
+        {% for item in section.bullets %}<li><i class="bi bi-check2"></i><span>{{ item }}</span></li>{% endfor %}
+      </ul>
+      {% endif %}
+
+      {% if section.definitions %}
+      <div class="docs-definition-grid">
+        {% for term, definition in section.definitions %}
+        <div><strong>{{ term }}</strong><p>{{ definition }}</p></div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if section.steps %}
+      <ol class="docs-steps">
+        {% for step, description in section.steps %}
+        <li><span>{{ loop.index }}</span><div><strong>{{ step }}</strong><p>{{ description }}</p></div></li>
+        {% endfor %}
+      </ol>
+      {% endif %}
+
+      {% if section.diagram %}
+      <div class="docs-flow-diagram">
+        {% for item in section.diagram %}
+        <div><span>{{ loop.index }}</span><strong>{{ item }}</strong></div>
+        {% if not loop.last %}<i class="bi bi-arrow-right"></i>{% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if section.media %}
+      <div class="docs-media-placeholder">
+        <i class="bi bi-image"></i>
+        <strong>Illusztráció helye</strong>
+        <span>{{ section.media }}</span>
+      </div>
+      {% endif %}
+
+      {% if section.version_info and version_info %}
+      <div class="docs-version-grid">
+        <div><span>Aktuális verzió</span><strong>{{ version_info.version }}</strong></div>
+        <div><span>Build dátum</span><strong>{{ version_info.build_date }}</strong></div>
+        <div><span>Git commit</span><strong><code>{{ version_info.git_commit }}</code></strong></div>
+        <div><span>Adatbázis migráció</span><strong><code>{{ version_info.migration_version }}</code></strong></div>
+        <div><span>Adatbázis motor</span><strong>{{ version_info.database }}</strong></div>
+        <div><span>Környezet</span><strong>{{ version_info.environment }}</strong></div>
+        <div><span>Python</span><strong>{{ version_info.python }}</strong></div>
+        <div><span>Flask</span><strong>{{ version_info.flask }}</strong></div>
+      </div>
+      {% endif %}
+    </section>
+    {% endfor %}
+
+    <footer class="docs-article-footer">
+      <span>Nem találtad meg a választ?</span>
+      <a href="{{ url_for('help_search') }}"><i class="bi bi-search"></i> Keresés a teljes dokumentációban</a>
+    </footer>
+  </article>
+</div>
+{% endblock %}

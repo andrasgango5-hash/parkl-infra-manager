@@ -27,7 +27,7 @@
       {% set invoices_active = endpoint in ['unassigned_invoices', 'unassigned_invoice_new', 'unassigned_invoice_edit', 'unassigned_invoice_clarify', 'unassigned_invoice_archive'] %}
       {% set admin_active = endpoint == 'admin_tools' %}
       {% set legacy_active = endpoint in ['legacy', 'legacy_parkl_excel_import', 'import_batch_detail', 'import_batch_rollback', 'import_batch_archive'] %}
-      {% set help_active = endpoint == 'help_page' %}
+      {% set help_active = endpoint in ['help_page', 'help_search', 'help_article'] %}
 
       <header class="app-mobile-header">
         <button class="btn sidebar-mobile-toggle" type="button" data-sidebar-toggle aria-controls="appSidebar" aria-expanded="false" aria-label="Navigáció megnyitása">

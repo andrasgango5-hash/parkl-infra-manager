@@ -3,15 +3,55 @@
 {% block title %}Súgó / dokumentáció - Parkl Infra Manager{% endblock %}
 
 {% block content %}
-<div class="page-header">
+<div class="docs-hero">
   <div>
-    <h1>Súgó / dokumentáció</h1>
-    <p class="text-secondary mb-0">Rövid útmutató a Parkl Infra Manager használatához.</p>
+    <span class="page-eyebrow"><i class="bi bi-book"></i> Parkl tudásbázis</span>
+    <h1>Hogyan működik az Infra Manager?</h1>
+    <p>A rendszer céljai, moduljai, készletlogikája, napi munkafolyamatai és technológiai háttere egy helyen.</p>
   </div>
+  <form class="docs-search" method="get" action="{{ url_for('help_search') }}">
+    <i class="bi bi-search"></i>
+    <input name="q" type="search" placeholder="Keresés modulra, funkcióra vagy kulcsszóra..." aria-label="Keresés a dokumentációban">
+    <button type="submit">Keresés</button>
+  </form>
 </div>
 
-<div class="row g-4">
-  <div class="col-lg-6"><section class="data-section h-100"><div class="section-title"><h2>Alap workflow</h2></div><div class="p-3"><ol class="mb-0"><li>Hozz létre projektet és készlethelyet.</li><li>Rögzíts vagy importálj eszközt.</li><li>Rendeld projekthez, majd mozgasd készletműveletekkel.</li><li>Többdarabos fizikai eszköznél hozz létre egyedi példányokat.</li><li>A projekt- és munkalapoldalakról készíts dokumentációt.</li></ol></div></section></div>
-  <div class="col-lg-6"><section class="data-section h-100"><div class="section-title"><h2>Gyors elérések</h2></div><div class="p-3 action-buttons"><a class="btn btn-purple btn-icon" href="{{ url_for('projects') }}"><i class="bi bi-kanban"></i> Projektek</a><a class="btn btn-purple btn-icon" href="{{ url_for('devices') }}"><i class="bi bi-boxes"></i> Eszközök</a><a class="btn btn-outline-secondary btn-icon" href="{{ url_for('work_orders') }}"><i class="bi bi-clipboard-check"></i> Munkalapok</a><a class="btn btn-outline-secondary btn-icon" href="{{ url_for('labels') }}"><i class="bi bi-qr-code"></i> QR / címkék</a></div></section></div>
+<div class="docs-landing-grid">
+  {% for page in featured_pages %}
+  <a class="docs-landing-card" href="{{ url_for('help_article', slug=page.slug) }}">
+    <span class="docs-card-icon"><i class="bi {{ page.icon }}"></i></span>
+    <span><strong>{{ page.title }}</strong><small>{{ page.summary }}</small></span>
+    <i class="bi bi-arrow-right docs-card-arrow"></i>
+  </a>
+  {% endfor %}
+</div>
+
+<section class="docs-start-panel">
+  <div>
+    <span class="page-eyebrow">Gyors kezdés</span>
+    <h2>Az első üzleti folyamat öt lépésben</h2>
+  </div>
+  <div class="docs-process-flow">
+    {% for label in ["Projekt", "Készlethely", "Eszköz", "Mozgás", "Dokumentáció"] %}
+    <a href="{{ url_for('help_article', slug='quick-start') }}"><span>{{ loop.index }}</span>{{ label }}</a>
+    {% endfor %}
+  </div>
+</section>
+
+<div class="docs-section-heading">
+  <div><span class="page-eyebrow">Tartalomjegyzék</span><h2>Dokumentációs területek</h2></div>
+</div>
+<div class="docs-group-grid">
+  {% for group in documentation_groups %}
+  <section class="docs-group-card">
+    <span class="docs-card-icon"><i class="bi {{ group.icon }}"></i></span>
+    <div><h3>{{ group.title }}</h3><p>{{ group.description }}</p></div>
+    <div class="docs-group-links">
+      {% for page in group.pages %}
+      <a href="{{ url_for('help_article', slug=page.slug) }}">{{ page.title }} <i class="bi bi-chevron-right"></i></a>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
 </div>
 {% endblock %}

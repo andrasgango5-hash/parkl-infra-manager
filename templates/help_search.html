@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Dokumentáció keresés - Parkl Infra Manager{% endblock %}
+
+{% block content %}
+<div class="docs-shell">
+  {% include "help/_sidebar.html" %}
+  <main class="docs-article">
+    <header class="docs-article-header">
+      <span class="docs-article-icon"><i class="bi bi-search"></i></span>
+      <div><span class="page-eyebrow">Tudásbázis</span><h1>Dokumentáció keresés</h1><p>Keress modulnévre, funkcióra, mezőre vagy üzleti folyamatra.</p></div>
+    </header>
+    <form class="docs-search docs-search-page" method="get">
+      <i class="bi bi-search"></i>
+      <input name="q" value="{{ query }}" type="search" placeholder="Például: visszavétel, ICCID, DeviceUnit, számla...">
+      <button type="submit">Keresés</button>
+    </form>
+
+    {% if query %}
+    <div class="docs-search-summary"><strong>{{ results|length }} találat</strong> a(z) „{{ query }}” keresésre</div>
+    <div class="docs-search-results">
+      {% for page in results %}
+      <a href="{{ url_for('help_article', slug=page.slug) }}">
+        <span class="docs-card-icon"><i class="bi {{ page.icon }}"></i></span>
+        <span><strong>{{ page.title }}</strong><small>{{ page.summary }}</small></span>
+        <i class="bi bi-arrow-right"></i>
+      </a>
+      {% else %}
+      <div class="docs-empty-search"><i class="bi bi-search"></i><strong>Nincs találat.</strong><span>Próbálj rövidebb kifejezést vagy modulnevet.</span></div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="docs-empty-search"><i class="bi bi-book"></i><strong>Írj be egy keresőkifejezést.</strong><span>A kereső a címekben, funkciókban, lépésekben és kulcsszavakban keres.</span></div>
+    {% endif %}
+  </main>
+</div>
+{% endblock %}

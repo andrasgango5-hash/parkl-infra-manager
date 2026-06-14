@@ -7,6 +7,7 @@ import csv
 import json
 import os
 import re
+import subprocess
 import unicodedata
 from uuid import uuid4
 
@@ -46,11 +47,12 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, text
 from werkzeug.utils import secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from config import Config
+from documentation import DOC_PAGES, documentation_navigation, search_documentation
 
 db = SQLAlchemy()
 migrate = Migrate()
@@ -871,6 +873,11 @@ def create_app(config_class=Config):
     @login_required
     def dashboard():
         active_devices = Device.query.filter(Device.archived_at.is_(None)).all()
+        active_projects = (
+            Project.query.filter(Project.archived_at.is_(None))
+            .order_by(Project.code.asc())
+            .all()
+        )
         active_units = (
             DeviceUnit.query.filter(DeviceUnit.archived_at.is_(None))
             .join(Device)
@@ -906,14 +913,149 @@ def create_app(config_class=Config):
             "financial_open": sum(1 for device in active_devices if is_financially_open(device)),
             "attention": len(attention_items),
         }
-        recent_movements = (
-            StockMovement.query.order_by(StockMovement.created_at.desc()).limit(6).all()
+        project_status_summary = [
+            {
+                "key": status,
+                "label": label,
+                "count": sum(1 for project in active_projects if project.status == status),
+            }
+            for status, label in PROJECT_STATUS_LABELS.items()
+        ]
+        project_rows = []
+        for project in active_projects:
+            unit_count = sum(
+                1
+                for unit in project.device_units
+                if unit.archived_at is None and unit.status in PROJECT_ACTIVE_STATUSES
+            )
+            bulk_quantity = sum(
+                balance.quantity
+                for balance in project.bulk_balances
+                if balance.quantity > 1e-9
+                and balance.status in PROJECT_ACTIVE_STATUSES
+            )
+            project_rows.append(
+                {
+                    "project": project,
+                    "unit_count": unit_count,
+                    "bulk_quantity": bulk_quantity,
+                    "inventory_total": unit_count + bulk_quantity,
+                }
+            )
+        project_rows.sort(
+            key=lambda item: (
+                item["project"].status != "active",
+                -item["inventory_total"],
+                item["project"].code,
+            )
         )
+
+        m2m_subscriptions = M2MSubscription.query.all()
+        m2m_states = [
+            m2m_subscription_usage_state(item, m2m_current_usage(item))
+            for item in m2m_subscriptions
+        ]
+        m2m_summary = {
+            "total": len(m2m_subscriptions),
+            "active": sum(1 for item in m2m_subscriptions if item.status == "active"),
+            "inactive": sum(1 for item in m2m_subscriptions if item.status != "active"),
+            "warning": sum(
+                1 for state in m2m_states if state["key"] in {"warning", "exceeded"}
+            ),
+            "sync_errors": sum(1 for item in m2m_subscriptions if item.last_rms_error),
+        }
+
+        finance_summary = None
+        if finance_visible:
+            currency_totals = device_currency_totals(active_devices)
+            finance_summary = {
+                **currency_totals,
+                "unpaid_invoices": sum(
+                    1
+                    for device in active_devices
+                    if device.supplier_invoice_number
+                    and device.supplier_invoice_paid is not True
+                ),
+                "unassigned_invoices": stats["unassigned_invoices"],
+                "missing_data": sum(
+                    1 for device in active_devices if device_finance_issues(device)
+                ),
+            }
+
+        activities = []
+        for movement in (
+            StockMovement.query.order_by(StockMovement.created_at.desc()).limit(8).all()
+        ):
+            project = movement.to_project or movement.project or movement.from_project
+            activities.append(
+                {
+                    "kind": "movement",
+                    "icon": "bi-arrow-left-right",
+                    "title": movement_type_label(movement.movement_type),
+                    "description": (
+                        movement.unit.human_label
+                        if movement.unit
+                        else device_primary_label(movement.device)
+                    ),
+                    "meta": project.code if project else "Készletmozgás",
+                    "timestamp": movement.created_at,
+                    "url": url_for("device_detail", device_id=movement.device_id),
+                }
+            )
+        for work_order in (
+            WorkOrder.query.filter(WorkOrder.archived_at.is_(None))
+            .order_by(WorkOrder.updated_at.desc())
+            .limit(5)
+            .all()
+        ):
+            activities.append(
+                {
+                    "kind": "work_order",
+                    "icon": "bi-clipboard-check",
+                    "title": f"Munkalap: {work_order.number}",
+                    "description": work_order.site_name or work_order.customer_name or "Munkalap",
+                    "meta": WORK_ORDER_STATUS_LABELS.get(
+                        work_order.status, work_order.status
+                    ),
+                    "timestamp": work_order.updated_at,
+                    "url": url_for("work_order_detail", work_order_id=work_order.id),
+                }
+            )
+        for project in sorted(
+            active_projects,
+            key=lambda item: item.created_at.timestamp() if item.created_at else 0,
+            reverse=True,
+        )[:5]:
+            activities.append(
+                {
+                    "kind": "project",
+                    "icon": "bi-kanban",
+                    "title": f"Projekt: {project.code}",
+                    "description": project.name,
+                    "meta": project_status_label(project.status),
+                    "timestamp": project.created_at,
+                    "url": url_for("project_detail", project_id=project.id),
+                }
+            )
+
+        def activity_timestamp(item):
+            value = item["timestamp"]
+            if value is None:
+                return 0
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
+            return value.timestamp()
+
+        activities.sort(key=activity_timestamp, reverse=True)
         return render_template(
             "dashboard.html",
             stats=stats,
-            recent_movements=recent_movements,
             attention_items=attention_items[:8],
+            project_status_summary=project_status_summary,
+            project_rows=project_rows[:6],
+            m2m_summary=m2m_summary,
+            finance_summary=finance_summary,
+            recent_activities=activities[:10],
         )
 
     @app.route("/attention")
@@ -1578,7 +1720,47 @@ def create_app(config_class=Config):
     @app.route("/help")
     @login_required
     def help_page():
-        return render_template("help.html")
+        return render_template(
+            "help.html",
+            documentation_groups=documentation_navigation(),
+            featured_pages=[
+                {"slug": slug, **DOC_PAGES[slug]}
+                for slug in (
+                    "overview",
+                    "quick-start",
+                    "workflows",
+                    "integrations",
+                    "technology",
+                    "version",
+                    "faq",
+                )
+            ],
+        )
+
+    @app.route("/help/search")
+    @login_required
+    def help_search():
+        query = request.args.get("q", "").strip()
+        return render_template(
+            "help_search.html",
+            documentation_groups=documentation_navigation(),
+            query=query,
+            results=search_documentation(query),
+        )
+
+    @app.route("/help/<slug>")
+    @login_required
+    def help_article(slug):
+        page = DOC_PAGES.get(slug)
+        if page is None:
+            abort(404)
+        return render_template(
+            "help_article.html",
+            documentation_groups=documentation_navigation(),
+            current_slug=slug,
+            page=page,
+            version_info=get_system_version_info() if slug == "version" else None,
+        )
 
     @app.route("/documents")
     @export_required
@@ -6234,6 +6416,44 @@ def yes_no_label(value):
     if value is False:
         return "Nem"
     return "-"
+
+
+def get_system_version_info():
+    repository_root = os.path.dirname(os.path.abspath(__file__))
+
+    def git_value(*args):
+        try:
+            return subprocess.run(
+                ["git", *args],
+                cwd=repository_root,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=2,
+            ).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return None
+
+    commit = git_value("rev-parse", "--short", "HEAD")
+    commit_date = git_value("log", "-1", "--format=%cI")
+    migration_version = None
+    try:
+        migration_version = db.session.execute(
+            text("SELECT version_num FROM alembic_version LIMIT 1")
+        ).scalar()
+    except Exception:
+        db.session.rollback()
+    build_date = os.environ.get("BUILD_DATE") or commit_date
+    return {
+        "version": os.environ.get("APP_VERSION") or (f"build-{commit}" if commit else "development"),
+        "build_date": build_date or "Nem érhető el",
+        "git_commit": commit or "Nem érhető el",
+        "migration_version": migration_version or "Nincs migrációs verzió",
+        "database": db.engine.dialect.name,
+        "environment": os.environ.get("FLASK_ENV", "production"),
+        "python": os.sys.version.split()[0],
+        "flask": Flask.__version__ if hasattr(Flask, "__version__") else "3.x",
+    }
 
 
 def format_number(value):
